@@ -1,7 +1,0 @@
-<Window x:Class="EnputMethod.Setup.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Enput Method" Height="310" Width="500" WindowStartupLocation="CenterScreen" ResizeMode="NoResize">
-  <Grid Margin="28"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <StackPanel><TextBlock Text="Enput Method" FontSize="26" FontWeight="SemiBold"/><TextBlock Text="English Input Method Prototype" Foreground="#555" Margin="0,4,0,0"/></StackPanel>
-    <StackPanel Grid.Row="1" VerticalAlignment="Center"><TextBlock x:Name="StatusText" TextWrapping="Wrap" FontSize="14" LineHeight="22"/><TextBlock Text="安装后可在 Windows 输入法菜单中选择；系统默认快捷键为 Win + Space。" Margin="0,16,0,0" Foreground="#555" TextWrapping="Wrap"/></StackPanel>
-    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right"><Button Content="安装输入法" Click="Install_Click" Padding="16,7" Margin="0,0,8,0"/><Button Content="卸载" Click="Uninstall_Click" Padding="16,7" Margin="0,0,8,0"/><Button Content="打开系统设置" Click="Settings_Click" Padding="16,7"/></StackPanel>
-  </Grid>
-</Window>

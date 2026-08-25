@@ -4,11 +4,11 @@ Enput Method is a prototype Windows English input method built with the Text Ser
 
 ## Features
 
-- System-level TSF input profile: `Enput Method - English`
+- System-level TSF input profile in the Chinese input-method group
 - English inline completion from a small built-in word list
 - `Tab` accepts the highlighted completion
 - `Space` preserves the typed prefix and starts the next word
-- Installs the Windows `Ctrl + Shift` language/layout switching setting
+- Uses the existing Windows `Ctrl + Shift` Chinese-group switching behavior
 
 ## Requirements
 
@@ -23,16 +23,17 @@ Open `EnputMethod.sln` in Visual Studio, select `Debug|x64` or `Release|x64`, an
 
 ## Install and Use
 
-Run `EnputMethod.Setup.Fixed.exe` from the setup output directory and approve the Windows UAC prompt. Then switch away from the current input method and back to `Enput Method - English`.
+Run `EnputMethod.Installer.exe` to install or `EnputMethod.Uninstaller.exe` to remove it. Each program requests UAC, completes its work, and exits automatically.
 
-Windows can cache text services. If the input method or the `Ctrl + Shift` mapping does not refresh immediately, sign out and sign in once. `Ctrl + Space` is not claimed as a system-wide input-method switch shortcut.
+Windows can cache text services. If the Chinese-group entry does not refresh immediately, sign out and sign in once. `Ctrl + Space` is not claimed as a system-wide input-method switch shortcut.
 
 For the inline completion prototype, type a prefix such as `hel`. The remaining letters of `hello` appear selected. Press `Tab` to accept the full word, or `Space` to keep only the prefix.
 
 ## Repository Layout
 
 - `EnputMethod.Tsf/`: native C++ TSF text service
-- `EnputMethod.Setup/`: WPF installer and control panel
+- `EnputMethod.Installer/`: standalone WPF installer
+- `EnputMethod.Uninstaller/`: standalone WPF uninstaller
 - `docs/`: architecture and maintenance notes
 - `EnputMethod.sln`: Visual Studio solution
 

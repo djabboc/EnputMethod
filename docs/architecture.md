@@ -13,9 +13,8 @@ The WPF application provides installation, uninstallation, and a shortcut to Win
 Installation performs these operations:
 
 1. Registers the COM in-process server under `HKLM\Software\Classes\CLSID`.
-2. Registers the text service and `en-US` language profile through TSF.
+2. Registers the text service and the `zh-CN` language profile through TSF.
 3. Registers the TSF keyboard category.
-4. Writes the `Ctrl + Shift` Windows language/layout toggle setting for the installing user.
 
 The system stores the DLL path at install time. Do not remove the setup output directory while the input method is installed. Use the setup application's uninstall command before deleting its active DLL.
 
@@ -27,4 +26,4 @@ Suggestions are intentionally small and deterministic for this prototype. The di
 
 - The service is x64-only, so x86 applications need a matching x86 TSF DLL before they can use it.
 - Suggestions are inline single completions, not a multi-row candidate window.
-- Windows owns global profile switching. The service configures `Ctrl + Shift`, but it deliberately does not capture `Ctrl + Space` system-wide.
+- Windows owns global profile switching. Enput is placed in the Chinese group so the user's existing `Ctrl + Shift` behavior can include it; it does not capture `Ctrl + Space` system-wide.

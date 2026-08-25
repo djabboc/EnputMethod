@@ -17,6 +17,10 @@ public partial class MainWindow : Window
         try
         {
             int hr = InvokeNativeInstaller();
+            if (hr >= 0)
+            {
+                EnsureUserConfiguration();
+            }
             message = hr >= 0
                 ? "安装完成。请切换到其他输入法后再切回 Enput Method。"
                 : $"安装失败 (0x{hr:X8})。";
@@ -36,5 +40,24 @@ public partial class MainWindow : Window
         IntPtr module = NativeLibrary.Load(dllPath);
         IntPtr procedure = NativeLibrary.GetExport(module, "InstallEnglishInputMethod");
         return Marshal.GetDelegateForFunctionPointer<InstallInputMethodDelegate>(procedure)();
+    }
+
+    private static void EnsureUserConfiguration()
+    {
+        string destinationDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Enput Method");
+        Directory.CreateDirectory(destinationDirectory);
+        CopyDefaultFile("conf.json", destinationDirectory);
+        CopyDefaultFile("dictionary.txt", destinationDirectory);
+    }
+
+    private static void CopyDefaultFile(string fileName, string destinationDirectory)
+    {
+        string destination = Path.Combine(destinationDirectory, fileName);
+        if (!File.Exists(destination))
+        {
+            File.Copy(Path.Combine(AppContext.BaseDirectory, fileName), destination);
+        }
     }
 }

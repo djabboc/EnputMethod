@@ -31,7 +31,9 @@ Windows can cache text services. If Enput does not appear in the existing `Ctrl 
 
 For the candidate-window prototype, type a prefix such as `he`. The document retains `he` while a floating window shows up to four matching words. Press `1` through `4` to select a word, or press `Tab` to select the first candidate. Press `Space` to keep only the typed prefix and start the next word.
 
-The Release installer explicitly loads its adjacent TSF DLL, clears a stale per-user Enput COM registration left by older builds, and registers the current service at a versioned DLL path such as `C:\Program Files\Enput Method\EnputMethod.Tsf.4.dll`. This allows an update to proceed while an earlier Enput DLL remains mapped in another application.
+The Release installer explicitly loads its adjacent TSF DLL, clears a stale per-user Enput COM registration left by older builds, and registers the current service at a versioned DLL path such as `C:\Program Files\Enput Method\EnputMethod.Tsf.5.dll`. This allows an update to proceed while an earlier Enput DLL remains mapped in another application.
+
+User-editable settings are stored in `%LOCALAPPDATA%\Enput Method\conf.json`; set `candidateCount` from `1` to `9`. The accompanying `%LOCALAPPDATA%\Enput Method\dictionary.txt` contains one word per line and controls candidate ordering. The installer creates either file only when it does not already exist, so updates preserve user changes.
 
 ## Repository Layout
 
@@ -43,3 +45,4 @@ The Release installer explicitly loads its adjacent TSF DLL, clears a stale per-
 
 See [Architecture](docs/architecture.md) for implementation and registration details.
 See [Root Cause Analysis](docs/root-cause-analysis.md) for the deployment and candidate-window incident review.
+See [Update Notes](docs/update-notes-zh-CN.md) for the Chinese configuration and update guide.

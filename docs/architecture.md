@@ -17,7 +17,9 @@ Installation performs these operations:
 3. Registers the text service and the `zh-CN` language profile through TSF.
 4. Registers the TSF keyboard and immersive-support categories.
 
-The installer explicitly loads the TSF DLL adjacent to its executable, copies it to a versioned path such as `C:\Program Files\Enput Method\EnputMethod.Tsf.4.dll`, then registers that installed path. The versioned deployment filename allows the update to complete when an earlier DLL remains mapped in a running application. The installer and uninstaller can therefore be kept or moved as complete output folders after installation. Use the uninstaller before manually deleting the installed DLL.
+The installer explicitly loads the TSF DLL adjacent to its executable, copies it to a versioned path such as `C:\Program Files\Enput Method\EnputMethod.Tsf.5.dll`, then registers that installed path. The versioned deployment filename allows the update to complete when an earlier DLL remains mapped in a running application. The installer and uninstaller can therefore be kept or moved as complete output folders after installation. Use the uninstaller before manually deleting the installed DLL.
+
+The installer also creates `%LOCALAPPDATA%\Enput Method\conf.json` and `dictionary.txt` from bundled defaults when those files are missing. The native service reads `candidateCount` from `conf.json` and reads the ordered, line-based dictionary at candidate-query time. Existing user files are never overwritten by an update.
 
 ## Suggestions
 

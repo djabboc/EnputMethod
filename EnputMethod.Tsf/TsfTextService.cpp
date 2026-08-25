@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <array>
 #include <cwctype>
+#include <fstream>
+#include <iterator>
 #include <new>
 #include <string>
 #include <vector>
@@ -18,6 +20,77 @@ constexpr LANGID kLegacyEnglishUs = MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US)
 HMODULE g_module = nullptr;
 long g_objectCount = 0;
 long g_lockCount = 0;
+
+std::wstring UserDataDirectory() {
+    wchar_t localAppData[MAX_PATH]{};
+    if (!GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, ARRAYSIZE(localAppData))) return {};
+    return std::wstring(localAppData) + L"\\Enput Method";
+}
+
+std::string ReadUtf8File(const std::wstring& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return {};
+    return { std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
+}
+
+std::wstring Utf8ToWide(const std::string& text) {
+    if (text.empty()) return {};
+    const int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()), nullptr, 0);
+    if (!length) return {};
+    std::wstring result(static_cast<size_t>(length), L'\0');
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()), result.data(), length);
+    return result;
+}
+
+int ConfiguredCandidateCount() {
+    const std::wstring directory = UserDataDirectory();
+    if (directory.empty()) return 4;
+    const std::string json = ReadUtf8File(directory + L"\\conf.json");
+    const size_t key = json.find("\"candidateCount\"");
+    if (key == std::string::npos) return 4;
+    const size_t colon = json.find(':', key);
+    if (colon == std::string::npos) return 4;
+    int value = 0;
+    for (size_t index = colon + 1; index < json.size(); ++index) {
+        const char character = json[index];
+        if (character >= '0' && character <= '9') value = value * 10 + (character - '0');
+        else if (value != 0) break;
+        else if (character != ' ' && character != '\t' && character != '\r' && character != '\n') return 4;
+    }
+    return std::clamp(value, 1, 9);
+}
+
+std::vector<std::wstring> DefaultDictionary() {
+    return {
+        L"a", L"about", L"above", L"after", L"again", L"all", L"also", L"always", L"and", L"another", L"any", L"are", L"as", L"at",
+        L"be", L"because", L"become", L"before", L"between", L"both", L"but", L"by", L"can", L"come", L"could", L"day", L"do", L"down",
+        L"each", L"even", L"every", L"example", L"find", L"first", L"for", L"from", L"function", L"get", L"give", L"go", L"good", L"great", L"have",
+        L"he", L"health", L"hear", L"heart", L"heavy", L"hello", L"help", L"her", L"here", L"high", L"him", L"his", L"how", L"I", L"if", L"in",
+        L"information", L"input", L"into", L"is", L"it", L"its", L"just", L"know", L"language", L"like", L"look", L"make", L"many", L"may", L"me",
+        L"method", L"more", L"most", L"my", L"new", L"no", L"not", L"now", L"of", L"on", L"one", L"only", L"or", L"other", L"our", L"out", L"over",
+        L"people", L"place", L"please", L"project", L"prototype", L"put", L"really", L"right", L"say", L"see", L"service", L"she", L"should", L"simple", L"so",
+        L"some", L"system", L"take", L"than", L"the", L"this", L"that", L"they", L"there", L"their", L"them", L"then", L"these", L"think", L"thing", L"those",
+        L"though", L"thought", L"three", L"through", L"thank", L"time", L"to", L"two", L"up", L"use", L"very", L"want", L"way", L"we", L"well", L"what",
+        L"when", L"where", L"which", L"who", L"will", L"with", L"would", L"write", L"year", L"you", L"your"
+    };
+}
+
+std::vector<std::wstring> LoadDictionary() {
+    const std::wstring directory = UserDataDirectory();
+    const std::string contents = directory.empty() ? std::string{} : ReadUtf8File(directory + L"\\dictionary.txt");
+    std::vector<std::wstring> words;
+    size_t start = 0;
+    while (start < contents.size()) {
+        size_t end = contents.find('\n', start);
+        if (end == std::string::npos) end = contents.size();
+        std::string line = contents.substr(start, end - start);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        const std::wstring word = Utf8ToWide(line);
+        if (!word.empty()) words.push_back(word);
+        start = end + 1;
+    }
+    return words.empty() ? DefaultDictionary() : words;
+}
 
 class KeyEditSession;
 
@@ -158,12 +231,12 @@ public:
         if (key >= 'A' && key <= 'Z') {
             const bool uppercase = (GetKeyState(VK_SHIFT) < 0) ^ ((GetKeyState(VK_CAPITAL) & 1) != 0);
             typed_ += static_cast<wchar_t>(uppercase ? key : key + (L'a' - L'A'));
-            candidates_ = FindCandidates(typed_);
+            candidates_ = FindCandidates(typed_, ConfiguredCandidateCount());
             return UpdateComposition(context, cookie);
         }
         if (key == VK_BACK && !typed_.empty()) {
             typed_.pop_back();
-            candidates_ = FindCandidates(typed_);
+            candidates_ = FindCandidates(typed_, ConfiguredCandidateCount());
             return typed_.empty() ? FinishComposition(cookie, L"", L'\0') : UpdateComposition(context, cookie);
         }
         const int candidateIndex = CandidateIndex(key);
@@ -186,28 +259,22 @@ private:
     }
 
     static int CandidateIndex(WPARAM key) {
-        if (key >= '1' && key <= '4') return static_cast<int>(key - '1');
-        if (key >= VK_NUMPAD1 && key <= VK_NUMPAD4) return static_cast<int>(key - VK_NUMPAD1);
+        if (key >= '1' && key <= '9') return static_cast<int>(key - '1');
+        if (key >= VK_NUMPAD1 && key <= VK_NUMPAD9) return static_cast<int>(key - VK_NUMPAD1);
         return -1;
     }
 
-    static std::vector<std::wstring> FindCandidates(const std::wstring& typed) {
+    static std::vector<std::wstring> FindCandidates(const std::wstring& typed, int maximum) {
         if (typed.empty()) return {};
         std::wstring lower = typed;
         std::transform(lower.begin(), lower.end(), lower.begin(), towlower);
-        static constexpr std::array words{
-            L"about", L"above", L"after", L"again", L"always", L"because", L"before", L"between",
-            L"business", L"different", L"English", L"example", L"first", L"following", L"function",
-            L"great", L"health", L"hear", L"heart", L"heavy", L"hello", L"help", L"information", L"input", L"keyboard", L"language", L"method",
-            L"people", L"please", L"project", L"prototype", L"really", L"service", L"simple", L"system",
-            L"thank", L"through", L"where" };
         std::vector<std::wstring> matches;
-        for (const wchar_t* word : words) {
+        for (const std::wstring& word : LoadDictionary()) {
             std::wstring candidate = word;
             std::transform(candidate.begin(), candidate.end(), candidate.begin(), towlower);
             if (candidate.starts_with(lower) && candidate.size() > typed.size()) {
-                matches.emplace_back(word);
-                if (matches.size() == 4) break;
+                matches.push_back(word);
+                if (matches.size() == static_cast<size_t>(maximum)) break;
             }
         }
         return matches;
@@ -317,7 +384,7 @@ HRESULT InstalledDllPath(std::wstring* path) {
     if (!CreateDirectoryW(directory.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return HRESULT_FROM_WIN32(GetLastError());
     // TSF DLLs stay mapped in applications while a profile is active. Use a new
     // deployment name for this update so an in-use prior version cannot block it.
-    *path = directory + L"\\EnputMethod.Tsf.4.dll";
+    *path = directory + L"\\EnputMethod.Tsf.5.dll";
     return S_OK;
 }
 HRESULT RegisterComServer() {

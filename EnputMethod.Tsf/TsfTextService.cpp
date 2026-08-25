@@ -6,6 +6,7 @@
 #include <cwctype>
 #include <new>
 #include <string>
+#include <vector>
 
 // A system-registered, transparent TSF keyboard profile.  It exists as a real input
 // method in Windows, while leaving normal English keystrokes to the app.
@@ -19,6 +20,85 @@ long g_objectCount = 0;
 long g_lockCount = 0;
 
 class KeyEditSession;
+
+class CandidateWindow final {
+public:
+    ~CandidateWindow() { if (window_) DestroyWindow(window_); }
+
+    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates) {
+        candidates_ = candidates;
+        if (candidates_.empty()) { Hide(); return; }
+        if (!EnsureWindow()) return;
+
+        ITfContextView* view{};
+        RECT textRect{};
+        BOOL clipped{};
+        if (FAILED(context->GetActiveView(&view))) return;
+        const HRESULT hr = view->GetTextExt(cookie, range, &textRect, &clipped);
+        view->Release();
+        if (FAILED(hr)) return;
+
+        const int height = kVerticalPadding * 2 + static_cast<int>(candidates_.size()) * kRowHeight;
+        SetWindowPos(window_, HWND_TOPMOST, textRect.left, textRect.bottom + 2, kWidth, height,
+                     SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        InvalidateRect(window_, nullptr, TRUE);
+    }
+
+    void Hide() {
+        candidates_.clear();
+        if (window_) ShowWindow(window_, SW_HIDE);
+    }
+
+private:
+    static constexpr wchar_t kClassName[] = L"EnputMethodCandidateWindow";
+    static constexpr int kWidth = 208;
+    static constexpr int kRowHeight = 26;
+    static constexpr int kVerticalPadding = 6;
+
+    bool EnsureWindow() {
+        if (window_) return true;
+        WNDCLASSEXW windowClass{ sizeof(windowClass) };
+        windowClass.lpfnWndProc = WindowProc;
+        windowClass.hInstance = g_module;
+        windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        windowClass.lpszClassName = kClassName;
+        RegisterClassExW(&windowClass);
+        window_ = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+                                  kClassName, L"", WS_POPUP | WS_BORDER,
+                                  0, 0, 0, 0, nullptr, nullptr, g_module, this);
+        return window_ != nullptr;
+    }
+
+    static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM, LPARAM parameter) {
+        if (message == WM_NCCREATE) {
+            const auto* create = reinterpret_cast<const CREATESTRUCTW*>(parameter);
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(create->lpCreateParams));
+        }
+        auto* self = reinterpret_cast<CandidateWindow*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        if (message == WM_PAINT && self) {
+            PAINTSTRUCT paint{};
+            HDC dc = BeginPaint(window, &paint);
+            RECT client{};
+            GetClientRect(window, &client);
+            FillRect(dc, &client, reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1));
+            SetBkMode(dc, TRANSPARENT);
+            SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
+            for (size_t index = 0; index < self->candidates_.size(); ++index) {
+                RECT row{ 12, kVerticalPadding + static_cast<int>(index) * kRowHeight, kWidth - 12,
+                          kVerticalPadding + static_cast<int>(index + 1) * kRowHeight };
+                const std::wstring label = std::to_wstring(index + 1) + L".  " + self->candidates_[index];
+                DrawTextW(dc, label.c_str(), static_cast<int>(label.size()), &row, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            }
+            EndPaint(window, &paint);
+            return 0;
+        }
+        if (message == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+        return DefWindowProcW(window, message, 0, parameter);
+    }
+
+    HWND window_ = nullptr;
+    std::vector<std::wstring> candidates_;
+};
 
 class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink, public ITfCompositionSink {
 public:
@@ -51,6 +131,7 @@ public:
     }
     STDMETHODIMP ActivateEx(ITfThreadMgr* threadManager, TfClientId clientId, DWORD) override { return Activate(threadManager, clientId); }
     STDMETHODIMP Deactivate() override {
+        candidateWindow_.Hide();
         if (threadManager_) {
             ITfKeystrokeMgr* keystrokeManager = nullptr;
             if (SUCCEEDED(threadManager_->QueryInterface(IID_PPV_ARGS(&keystrokeManager)))) {
@@ -77,18 +158,20 @@ public:
         if (key >= 'A' && key <= 'Z') {
             const bool uppercase = (GetKeyState(VK_SHIFT) < 0) ^ ((GetKeyState(VK_CAPITAL) & 1) != 0);
             typed_ += static_cast<wchar_t>(uppercase ? key : key + (L'a' - L'A'));
-            suggestion_ = FindSuggestion(typed_);
+            candidates_ = FindCandidates(typed_);
             return UpdateComposition(context, cookie);
         }
         if (key == VK_BACK && !typed_.empty()) {
             typed_.pop_back();
-            suggestion_ = FindSuggestion(typed_);
-            return typed_.empty() ? FinishComposition(cookie, false, L'\0') : UpdateComposition(context, cookie);
+            candidates_ = FindCandidates(typed_);
+            return typed_.empty() ? FinishComposition(cookie, L"", L'\0') : UpdateComposition(context, cookie);
         }
-        if (key == VK_TAB) return FinishComposition(cookie, true, L'\0');
-        if (key == VK_SPACE) return FinishComposition(cookie, false, L' ');
-        if (key == VK_RETURN) return FinishComposition(cookie, false, L'\r');
-        if (key == VK_ESCAPE) return FinishComposition(cookie, false, L'\0');
+        const int candidateIndex = CandidateIndex(key);
+        if (candidateIndex >= 0 && candidateIndex < static_cast<int>(candidates_.size())) return FinishComposition(cookie, candidates_[candidateIndex], L'\0');
+        if (key == VK_TAB && !candidates_.empty()) return FinishComposition(cookie, candidates_.front(), L'\0');
+        if (key == VK_SPACE) return FinishComposition(cookie, typed_, L' ');
+        if (key == VK_RETURN) return FinishComposition(cookie, typed_, L'\r');
+        if (key == VK_ESCAPE) return FinishComposition(cookie, typed_, L'\0');
         return S_FALSE;
     }
 
@@ -98,25 +181,36 @@ private:
     bool ShouldHandleKey(WPARAM key) const {
         if (GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0) return false;
         if (key >= 'A' && key <= 'Z') return true;
-        return !typed_.empty() && (key == VK_BACK || key == VK_TAB || key == VK_SPACE || key == VK_RETURN || key == VK_ESCAPE);
+        return !typed_.empty() && (key == VK_BACK || key == VK_TAB || key == VK_SPACE || key == VK_RETURN || key == VK_ESCAPE ||
+                                  (CandidateIndex(key) >= 0 && CandidateIndex(key) < static_cast<int>(candidates_.size())));
     }
 
-    static std::wstring FindSuggestion(const std::wstring& typed) {
+    static int CandidateIndex(WPARAM key) {
+        if (key >= '1' && key <= '4') return static_cast<int>(key - '1');
+        if (key >= VK_NUMPAD1 && key <= VK_NUMPAD4) return static_cast<int>(key - VK_NUMPAD1);
+        return -1;
+    }
+
+    static std::vector<std::wstring> FindCandidates(const std::wstring& typed) {
         if (typed.empty()) return {};
         std::wstring lower = typed;
         std::transform(lower.begin(), lower.end(), lower.begin(), towlower);
-        static constexpr std::array<const wchar_t*, 34> words{
+        static constexpr std::array words{
             L"about", L"above", L"after", L"again", L"always", L"because", L"before", L"between",
             L"business", L"different", L"English", L"example", L"first", L"following", L"function",
-            L"great", L"hello", L"help", L"information", L"input", L"keyboard", L"language", L"method",
+            L"great", L"health", L"hear", L"heart", L"heavy", L"hello", L"help", L"information", L"input", L"keyboard", L"language", L"method",
             L"people", L"please", L"project", L"prototype", L"really", L"service", L"simple", L"system",
             L"thank", L"through", L"where" };
+        std::vector<std::wstring> matches;
         for (const wchar_t* word : words) {
             std::wstring candidate = word;
             std::transform(candidate.begin(), candidate.end(), candidate.begin(), towlower);
-            if (candidate.starts_with(lower) && candidate.size() > typed.size()) return std::wstring(word + typed.size());
+            if (candidate.starts_with(lower) && candidate.size() > typed.size()) {
+                matches.emplace_back(word);
+                if (matches.size() == 4) break;
+            }
         }
-        return {};
+        return matches;
     }
 
     HRESULT UpdateComposition(ITfContext* context, TfEditCookie cookie) {
@@ -136,30 +230,29 @@ private:
         }
         ITfRange* range{}; HRESULT hr = composition_->GetRange(&range);
         if (FAILED(hr)) return hr;
-        const std::wstring display = typed_ + suggestion_;
-        hr = range->SetText(cookie, 0, display.data(), static_cast<LONG>(display.size()));
+        hr = range->SetText(cookie, 0, typed_.data(), static_cast<LONG>(typed_.size()));
         if (SUCCEEDED(hr)) {
             ITfRange* caret{}; hr = range->Clone(&caret);
             if (SUCCEEDED(hr)) {
                 caret->Collapse(cookie, TF_ANCHOR_END);
-                if (!suggestion_.empty()) caret->ShiftStart(cookie, -static_cast<LONG>(suggestion_.size()), nullptr, nullptr);
-                TF_SELECTION selection{ caret, { suggestion_.empty() ? TF_AE_NONE : TF_AE_END, !suggestion_.empty() } };
+                TF_SELECTION selection{ caret, { TF_AE_NONE, FALSE } };
                 hr = context->SetSelection(cookie, 1, &selection);
                 caret->Release();
             }
         }
+        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_);
         range->Release();
         return hr;
     }
 
-    HRESULT FinishComposition(TfEditCookie cookie, bool acceptSuggestion, wchar_t trailing) {
+    HRESULT FinishComposition(TfEditCookie cookie, const std::wstring& committedText, wchar_t trailing) {
         if (!composition_) return S_FALSE;
         ITfRange* range{}; HRESULT hr = composition_->GetRange(&range);
-        std::wstring finalText = typed_ + (acceptSuggestion ? suggestion_ : L"");
+        std::wstring finalText = committedText;
         if (trailing) finalText += trailing;
         if (SUCCEEDED(hr)) { hr = range->SetText(cookie, 0, finalText.data(), static_cast<LONG>(finalText.size())); range->Release(); }
         ITfComposition* composition = composition_; composition_ = nullptr;
-        typed_.clear(); suggestion_.clear();
+        typed_.clear(); candidates_.clear(); candidateWindow_.Hide();
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
         if (SUCCEEDED(hr)) hr = composition->EndComposition(cookie);
         composition->Release();
@@ -169,7 +262,7 @@ private:
     void ClearComposition() {
         if (composition_) { composition_->Release(); composition_ = nullptr; }
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
-        typed_.clear(); suggestion_.clear();
+        typed_.clear(); candidates_.clear(); candidateWindow_.Hide();
     }
 
     long refs_ = 1;
@@ -178,7 +271,8 @@ private:
     ITfComposition* composition_ = nullptr;
     ITfContext* compositionContext_ = nullptr;
     std::wstring typed_;
-    std::wstring suggestion_;
+    std::vector<std::wstring> candidates_;
+    CandidateWindow candidateWindow_;
 };
 
 class KeyEditSession final : public ITfEditSession {
@@ -223,7 +317,7 @@ HRESULT InstalledDllPath(std::wstring* path) {
     if (!CreateDirectoryW(directory.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return HRESULT_FROM_WIN32(GetLastError());
     // TSF DLLs stay mapped in applications while a profile is active. Use a new
     // deployment name for this update so an in-use prior version cannot block it.
-    *path = directory + L"\\EnputMethod.Tsf.2.dll";
+    *path = directory + L"\\EnputMethod.Tsf.4.dll";
     return S_OK;
 }
 HRESULT RegisterComServer() {

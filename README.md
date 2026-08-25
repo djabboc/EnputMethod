@@ -5,8 +5,8 @@ Enput Method is a prototype Windows English input method built with the Text Ser
 ## Features
 
 - System-level TSF input profile in the Chinese input-method group
-- English inline completion from a small built-in word list
-- `Tab` accepts the pending inline completion
+- Floating candidate window with up to four English suggestions
+- `1` through `4` select the corresponding candidate; `Tab` selects the first
 - `Space` preserves the typed prefix and starts the next word
 - Uses the existing Windows `Ctrl + Shift` Chinese-group switching behavior
 
@@ -29,9 +29,9 @@ Run each executable from its complete build-output folder. The executable requir
 
 Windows can cache text services. If Enput does not appear in the existing `Ctrl + Shift` rotation immediately after installation, switch to another input method and back, then sign out and sign in once. `Ctrl + Space` is not claimed as a system-wide input-method switch shortcut.
 
-For the inline completion prototype, type a prefix such as `he`. Enput temporarily displays `hello`; press `Tab` to accept the completion. Continue typing to refine the prefix, or press `Space` to keep only the typed prefix. Some applications, including current Notepad, do not visibly highlight the pending suffix even though the `Tab` and continued-typing behavior remains the same.
+For the candidate-window prototype, type a prefix such as `he`. The document retains `he` while a floating window shows up to four matching words. Press `1` through `4` to select a word, or press `Tab` to select the first candidate. Press `Space` to keep only the typed prefix and start the next word.
 
-The Release installer explicitly loads its adjacent TSF DLL, clears a stale per-user Enput COM registration left by older builds, and registers the current service at `C:\Program Files\Enput Method\EnputMethod.Tsf.2.dll`. This allows an update to proceed while an earlier Enput DLL remains mapped in another application.
+The Release installer explicitly loads its adjacent TSF DLL, clears a stale per-user Enput COM registration left by older builds, and registers the current service at a versioned DLL path such as `C:\Program Files\Enput Method\EnputMethod.Tsf.4.dll`. This allows an update to proceed while an earlier Enput DLL remains mapped in another application.
 
 ## Repository Layout
 
@@ -42,3 +42,4 @@ The Release installer explicitly loads its adjacent TSF DLL, clears a stale per-
 - `EnputMethod.sln`: Visual Studio solution
 
 See [Architecture](docs/architecture.md) for implementation and registration details.
+See [Root Cause Analysis](docs/root-cause-analysis.md) for the deployment and candidate-window incident review.

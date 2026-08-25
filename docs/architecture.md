@@ -6,7 +6,7 @@
 
 When the Enput profile is active, alphabetic keystrokes are handled in a TSF edit session. The service starts a composition, writes the typed prefix plus an optional suffix, and selects the suffix. This presents completion without opening a separate candidate window.
 
-The WPF application provides installation, uninstallation, and a shortcut to Windows typing settings. Its application manifest requests administrator privileges because TSF service registration is system-level.
+The independent WPF installer and uninstaller each show an operation window. Their manifests request administrator privileges because TSF service registration is system-level. After the user clicks the operation button, the program shows its result and closes when the result is acknowledged.
 
 ## Registration
 
@@ -16,7 +16,7 @@ Installation performs these operations:
 2. Registers the text service and the `zh-CN` language profile through TSF.
 3. Registers the TSF keyboard category.
 
-The system stores the DLL path at install time. Do not remove the setup output directory while the input method is installed. Use the setup application's uninstall command before deleting its active DLL.
+The installer copies the TSF DLL to `C:\Program Files\Enput Method\EnputMethod.Tsf.dll` before registering it. The installer and uninstaller can therefore be kept or moved as complete output folders after installation. Use the uninstaller before manually deleting the installed DLL.
 
 ## Suggestions
 

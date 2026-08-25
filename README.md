@@ -23,9 +23,11 @@ Open `EnputMethod.sln` in Visual Studio, select `Debug|x64` or `Release|x64`, an
 
 ## Install and Use
 
-Run `EnputMethod.Installer.exe` to install or `EnputMethod.Uninstaller.exe` to remove it. Each program requests UAC, completes its work, and exits automatically.
+Run `EnputMethod.Installer.exe` to install or `EnputMethod.Uninstaller.exe` to remove it. Both programs open a window, request UAC approval, perform the operation only after the user clicks its button, display the result, and close after the result is confirmed.
 
-Windows can cache text services. If the Chinese-group entry does not refresh immediately, sign out and sign in once. `Ctrl + Space` is not claimed as a system-wide input-method switch shortcut.
+Run each executable from its complete build-output folder. The executable requires its adjacent `.dll`, `.deps.json`, `.runtimeconfig.json`, and `EnputMethod.Tsf.dll` files.
+
+Windows can cache text services. If Enput does not appear in the existing `Ctrl + Shift` rotation immediately after installation, switch to another input method and back, then sign out and sign in once. `Ctrl + Space` is not claimed as a system-wide input-method switch shortcut.
 
 For the inline completion prototype, type a prefix such as `hel`. The remaining letters of `hello` appear selected. Press `Tab` to accept the full word, or `Space` to keep only the prefix.
 

@@ -11,9 +11,9 @@
   - `candidateCount`: default `9`.
   - `layout`: `vertical` or `horizontal`; default `vertical`.
   - `appendSpaceAfterSelection`: boolean; default `true`.
-  - `fontFamily`: default Windows UI font.
-  - `fontSize`: default readable candidate-window size.
-  - `opacity`: default fully opaque value.
+  - `fontFamily`: `Segoe UI`.
+  - `fontSize`: `16` pixels.
+  - `opacity`: `1.0`.
   - `theme`: default `dark`.
 - [ ] Replace the current narrow configuration reader with a JSON parser that rejects invalid values safely and falls back to defaults.
 

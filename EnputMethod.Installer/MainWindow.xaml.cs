@@ -1,5 +1,6 @@
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows;
 
 namespace EnputMethod.Installer;
@@ -48,8 +49,38 @@ public partial class MainWindow : Window
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Enput Method");
         Directory.CreateDirectory(destinationDirectory);
-        CopyDefaultFile("conf.json", destinationDirectory);
+        MigrateLegacyConfiguration(destinationDirectory);
+        CopyDefaultFile("config.json", destinationDirectory);
         CopyDefaultFile("dictionary.txt", destinationDirectory);
+        CopyDefaultThemes(destinationDirectory);
+    }
+
+    private static void MigrateLegacyConfiguration(string destinationDirectory)
+    {
+        string configuration = Path.Combine(destinationDirectory, "config.json");
+        string legacyConfiguration = Path.Combine(destinationDirectory, "conf.json");
+        if (!File.Exists(configuration) && File.Exists(legacyConfiguration) && !IsLegacyDefaultConfiguration(legacyConfiguration))
+        {
+            File.Copy(legacyConfiguration, configuration);
+        }
+    }
+
+    private static bool IsLegacyDefaultConfiguration(string filePath)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(filePath));
+            JsonElement root = document.RootElement;
+            return root.ValueKind == JsonValueKind.Object
+                && root.EnumerateObject().Count() == 1
+                && root.TryGetProperty("candidateCount", out JsonElement count)
+                && count.ValueKind == JsonValueKind.Number
+                && count.GetInt32() == 4;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static void CopyDefaultFile(string fileName, string destinationDirectory)
@@ -58,6 +89,18 @@ public partial class MainWindow : Window
         if (!File.Exists(destination))
         {
             File.Copy(Path.Combine(AppContext.BaseDirectory, fileName), destination);
+        }
+    }
+
+    private static void CopyDefaultThemes(string destinationDirectory)
+    {
+        string sourceDirectory = Path.Combine(AppContext.BaseDirectory, "themes");
+        string targetDirectory = Path.Combine(destinationDirectory, "themes");
+        Directory.CreateDirectory(targetDirectory);
+        foreach (string source in Directory.EnumerateFiles(sourceDirectory, "*.json"))
+        {
+            string destination = Path.Combine(targetDirectory, Path.GetFileName(source));
+            if (!File.Exists(destination)) File.Copy(source, destination);
         }
     }
 }

@@ -1,0 +1,12 @@
+{
+  "background": "#EAF3E4",
+  "foreground": "#25412B",
+  "border": "#7C9A76",
+  "selectedBackground": "#CFE2C8",
+  "selectedForeground": "#18311E",
+  "borderWidth": 1,
+  "cornerRadius": 12,
+  "padding": 12,
+  "rowHeight": 30,
+  "shadowSize": 4
+}

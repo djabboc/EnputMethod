@@ -21,7 +21,7 @@ Several independent faults looked like one symptom: switching to Enput without g
 1. Release builds link the C++ runtime statically, so the TSF DLL has no Debug runtime dependency.
 2. Installer and uninstaller explicitly load the adjacent native DLL instead of relying on DLL search order.
 3. Installation removes only the legacy Enput user-level CLSID registration before writing the machine-level registration.
-4. Deployment uses versioned DLL filenames (`EnputMethod.Tsf.5.dll` for the current release), avoiding overwrite failures when an older DLL is mapped.
+4. Deployment uses versioned DLL filenames (`EnputMethod.Tsf.8.dll` for the current release), avoiding overwrite failures when an older DLL is mapped.
 5. Suggestions use a non-activating popup window and a bounded vector of up to four candidates.
 6. Candidate-word capacity is derived from the real count and is checked before Release builds during this repair cycle.
 
@@ -36,6 +36,10 @@ Do these checks before asking for a manual typing test:
 5. Test the requested workflow: show candidates, select one candidate, then select a second candidate in the same application.
 
 This order separates deployment, registration, loading, and input behavior. It prevents repeated reinstall-and-guess cycles.
+
+## Configuration Compatibility
+
+The native configuration reader accepts valid UTF-8 JSON both with and without a UTF-8 byte-order mark. This matters because Windows editors can add the mark when users save `config.json`. Invalid JSON falls back to safe defaults. The installer recognizes the legacy `conf.json` filename and migrates custom content to `config.json`; it replaces only the known old default of `candidateCount: 4` with the current default configuration.
 
 ## Why A Target Application Must Be Reopened After A DLL Update
 

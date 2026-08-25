@@ -1,8 +1,9 @@
 #include <windows.h>
 #include <textstor.h>
 #include <msctf.h>
+#include "JsonObjectReader.h"
 #include <algorithm>
-#include <array>
+#include <cmath>
 #include <cwctype>
 #include <fstream>
 #include <iterator>
@@ -42,22 +43,98 @@ std::wstring Utf8ToWide(const std::string& text) {
     return result;
 }
 
-int ConfiguredCandidateCount() {
+struct ThemeStyle {
+    COLORREF background = RGB(31, 41, 55);
+    COLORREF foreground = RGB(243, 244, 246);
+    COLORREF border = RGB(75, 85, 99);
+    COLORREF selectedBackground = RGB(55, 65, 81);
+    COLORREF selectedForeground = RGB(255, 255, 255);
+    int borderWidth = 1;
+    int cornerRadius = 8;
+    int padding = 10;
+    int rowHeight = 28;
+    int shadowSize = 8;
+};
+
+struct RuntimeConfiguration {
+    int candidateCount = 9;
+    bool horizontal = false;
+    bool appendSpaceAfterSelection = true;
+    std::wstring fontFamily = L"Segoe UI";
+    int fontSize = 16;
+    BYTE opacity = 255;
+    ThemeStyle theme{};
+};
+
+std::wstring ConfigurationPath() {
     const std::wstring directory = UserDataDirectory();
-    if (directory.empty()) return 4;
-    const std::string json = ReadUtf8File(directory + L"\\conf.json");
-    const size_t key = json.find("\"candidateCount\"");
-    if (key == std::string::npos) return 4;
-    const size_t colon = json.find(':', key);
-    if (colon == std::string::npos) return 4;
-    int value = 0;
-    for (size_t index = colon + 1; index < json.size(); ++index) {
-        const char character = json[index];
-        if (character >= '0' && character <= '9') value = value * 10 + (character - '0');
-        else if (value != 0) break;
-        else if (character != ' ' && character != '\t' && character != '\r' && character != '\n') return 4;
+    if (directory.empty()) return {};
+    const std::wstring current = directory + L"\\config.json";
+    if (GetFileAttributesW(current.c_str()) != INVALID_FILE_ATTRIBUTES) return current;
+    return directory + L"\\conf.json"; // Compatibility with releases before config.json.
+}
+
+bool IsSafeThemeName(const std::string& name) {
+    if (name.empty() || name.size() > 64) return false;
+    return std::all_of(name.begin(), name.end(), [](char character) {
+        return (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') || character == '-';
+    });
+}
+
+COLORREF ColorOr(const enput::json::Object& object, const char* key, COLORREF fallback) {
+    const std::string text = enput::json::StringOr(object, key, "");
+    if (text.size() != 7 || text[0] != '#') return fallback;
+    int channels[3]{};
+    for (int channel = 0; channel < 3; ++channel) {
+        const char high = text[1 + channel * 2];
+        const char low = text[2 + channel * 2];
+        const auto hexValue = [](char value) -> int {
+            if (value >= '0' && value <= '9') return value - '0';
+            if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+            if (value >= 'A' && value <= 'F') return value - 'A' + 10;
+            return -1;
+        };
+        const int highValue = hexValue(high);
+        const int lowValue = hexValue(low);
+        if (highValue < 0 || lowValue < 0) return fallback;
+        channels[channel] = highValue * 16 + lowValue;
     }
-    return std::clamp(value, 1, 9);
+    return RGB(channels[0], channels[1], channels[2]);
+}
+
+ThemeStyle LoadTheme(const std::string& name) {
+    ThemeStyle theme;
+    const std::wstring directory = UserDataDirectory();
+    if (!IsSafeThemeName(name) || directory.empty()) return theme;
+    enput::json::Object object;
+    if (!enput::json::ReadObject(ReadUtf8File(directory + L"\\themes\\" + Utf8ToWide(name) + L".json"), &object)) return theme;
+    theme.background = ColorOr(object, "background", theme.background);
+    theme.foreground = ColorOr(object, "foreground", theme.foreground);
+    theme.border = ColorOr(object, "border", theme.border);
+    theme.selectedBackground = ColorOr(object, "selectedBackground", theme.selectedBackground);
+    theme.selectedForeground = ColorOr(object, "selectedForeground", theme.selectedForeground);
+    theme.borderWidth = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "borderWidth", theme.borderWidth))), 0, 6);
+    theme.cornerRadius = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "cornerRadius", theme.cornerRadius))), 0, 32);
+    theme.padding = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "padding", theme.padding))), 4, 32);
+    theme.rowHeight = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "rowHeight", theme.rowHeight))), 20, 64);
+    theme.shadowSize = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "shadowSize", theme.shadowSize))), 0, 24);
+    return theme;
+}
+
+RuntimeConfiguration LoadRuntimeConfiguration() {
+    RuntimeConfiguration configuration;
+    enput::json::Object object;
+    if (!enput::json::ReadObject(ReadUtf8File(ConfigurationPath()), &object)) return configuration;
+    configuration.candidateCount = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "candidateCount", configuration.candidateCount))), 1, 9);
+    configuration.horizontal = enput::json::StringOr(object, "layout", "vertical") == "horizontal";
+    configuration.appendSpaceAfterSelection = enput::json::BooleanOr(object, "appendSpaceAfterSelection", configuration.appendSpaceAfterSelection);
+    configuration.fontFamily = Utf8ToWide(enput::json::StringOr(object, "fontFamily", "Segoe UI"));
+    if (configuration.fontFamily.empty()) configuration.fontFamily = L"Segoe UI";
+    configuration.fontSize = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "fontSize", configuration.fontSize))), 10, 32);
+    const double opacity = std::clamp(enput::json::NumberOr(object, "opacity", 1.0), 0.2, 1.0);
+    configuration.opacity = static_cast<BYTE>(std::lround(opacity * 255.0));
+    configuration.theme = LoadTheme(enput::json::StringOr(object, "theme", "dark"));
+    return configuration;
 }
 
 std::vector<std::wstring> DefaultDictionary() {
@@ -75,9 +152,25 @@ std::vector<std::wstring> DefaultDictionary() {
     };
 }
 
-std::vector<std::wstring> LoadDictionary() {
+const std::vector<std::wstring>& LoadDictionary() {
+    struct Cache {
+        std::wstring path;
+        WIN32_FILE_ATTRIBUTE_DATA attributes{};
+        bool hasAttributes = false;
+        std::vector<std::wstring> words;
+    };
+    static Cache cache;
     const std::wstring directory = UserDataDirectory();
-    const std::string contents = directory.empty() ? std::string{} : ReadUtf8File(directory + L"\\dictionary.txt");
+    const std::wstring path = directory.empty() ? std::wstring{} : directory + L"\\dictionary.txt";
+    WIN32_FILE_ATTRIBUTE_DATA attributes{};
+    const bool fileAvailable = !path.empty() && GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attributes);
+    if (cache.path == path && cache.hasAttributes == fileAvailable && !cache.words.empty() &&
+        (!fileAvailable || (CompareFileTime(&cache.attributes.ftLastWriteTime, &attributes.ftLastWriteTime) == 0 &&
+                            cache.attributes.nFileSizeHigh == attributes.nFileSizeHigh && cache.attributes.nFileSizeLow == attributes.nFileSizeLow))) {
+        return cache.words;
+    }
+
+    const std::string contents = fileAvailable ? ReadUtf8File(path) : std::string{};
     std::vector<std::wstring> words;
     size_t start = 0;
     while (start < contents.size()) {
@@ -89,19 +182,28 @@ std::vector<std::wstring> LoadDictionary() {
         if (!word.empty()) words.push_back(word);
         start = end + 1;
     }
-    return words.empty() ? DefaultDictionary() : words;
+    cache.path = path;
+    cache.attributes = attributes;
+    cache.hasAttributes = fileAvailable;
+    cache.words = words.empty() ? DefaultDictionary() : std::move(words);
+    return cache.words;
 }
 
 class KeyEditSession;
 
 class CandidateWindow final {
 public:
-    ~CandidateWindow() { if (window_) DestroyWindow(window_); }
+    ~CandidateWindow() {
+        if (font_) DeleteObject(font_);
+        if (window_) DestroyWindow(window_);
+    }
 
-    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates) {
+    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration) {
         candidates_ = candidates;
+        configuration_ = configuration;
         if (candidates_.empty()) { Hide(); return; }
         if (!EnsureWindow()) return;
+        ConfigureWindow();
 
         ITfContextView* view{};
         RECT textRect{};
@@ -111,8 +213,10 @@ public:
         view->Release();
         if (FAILED(hr)) return;
 
-        const int height = kVerticalPadding * 2 + static_cast<int>(candidates_.size()) * kRowHeight;
-        SetWindowPos(window_, HWND_TOPMOST, textRect.left, textRect.bottom + 2, kWidth, height,
+        const SIZE size = MeasureWindow();
+        const int diameter = (std::max)(1, configuration_.theme.cornerRadius * 2);
+        SetWindowRgn(window_, CreateRoundRectRgn(0, 0, size.cx, size.cy, diameter, diameter), TRUE);
+        SetWindowPos(window_, HWND_TOPMOST, textRect.left, textRect.bottom + 2, size.cx, size.cy,
                      SWP_NOACTIVATE | SWP_SHOWWINDOW);
         InvalidateRect(window_, nullptr, TRUE);
     }
@@ -124,9 +228,43 @@ public:
 
 private:
     static constexpr wchar_t kClassName[] = L"EnputMethodCandidateWindow";
-    static constexpr int kWidth = 208;
-    static constexpr int kRowHeight = 26;
-    static constexpr int kVerticalPadding = 6;
+
+    void ConfigureWindow() {
+        if (font_) DeleteObject(font_);
+        HDC dc = GetDC(window_);
+        const int dpi = GetDeviceCaps(dc, LOGPIXELSY);
+        ReleaseDC(window_, dc);
+        font_ = CreateFontW(-MulDiv(configuration_.fontSize, dpi, 72), 0, 0, 0,
+                            FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, configuration_.fontFamily.c_str());
+        SetLayeredWindowAttributes(window_, 0, configuration_.opacity, LWA_ALPHA);
+    }
+
+    SIZE MeasureWindow() const {
+        HDC dc = GetDC(window_);
+        HGDIOBJ previous = font_ ? SelectObject(dc, font_) : nullptr;
+        const int padding = configuration_.theme.padding;
+        const int rowHeight = configuration_.theme.rowHeight;
+        int width = padding * 2;
+        if (configuration_.horizontal) {
+            for (size_t index = 0; index < candidates_.size(); ++index) width += LabelSize(dc, index).cx + padding * 2;
+        } else {
+            int widest = 0;
+            for (size_t index = 0; index < candidates_.size(); ++index) widest = (std::max)(widest, static_cast<int>(LabelSize(dc, index).cx));
+            width = (std::max)(220, widest + padding * 2);
+        }
+        if (previous) SelectObject(dc, previous);
+        ReleaseDC(window_, dc);
+        const int height = configuration_.horizontal ? rowHeight + padding * 2 : rowHeight * static_cast<int>(candidates_.size()) + padding * 2;
+        return { width + configuration_.theme.shadowSize, height + configuration_.theme.shadowSize };
+    }
+
+    SIZE LabelSize(HDC dc, size_t index) const {
+        const std::wstring label = std::to_wstring(index + 1) + L".  " + candidates_[index];
+        SIZE size{};
+        GetTextExtentPoint32W(dc, label.c_str(), static_cast<int>(label.size()), &size);
+        return size;
+    }
 
     bool EnsureWindow() {
         if (window_) return true;
@@ -136,8 +274,8 @@ private:
         windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         windowClass.lpszClassName = kClassName;
         RegisterClassExW(&windowClass);
-        window_ = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-                                  kClassName, L"", WS_POPUP | WS_BORDER,
+        window_ = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED,
+                                  kClassName, L"", WS_POPUP,
                                   0, 0, 0, 0, nullptr, nullptr, g_module, this);
         return window_ != nullptr;
     }
@@ -153,15 +291,49 @@ private:
             HDC dc = BeginPaint(window, &paint);
             RECT client{};
             GetClientRect(window, &client);
-            FillRect(dc, &client, reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1));
+            const int shadow = self->configuration_.theme.shadowSize;
+            RECT surface{ 0, 0, client.right - shadow, client.bottom - shadow };
+            HBRUSH shadowBrush = CreateSolidBrush(self->configuration_.theme.border);
+            if (shadow > 0) {
+                RECT shadowRect{ shadow, shadow, client.right, client.bottom };
+                FillRect(dc, &shadowRect, shadowBrush);
+            }
+            DeleteObject(shadowBrush);
+            HBRUSH background = CreateSolidBrush(self->configuration_.theme.background);
+            HPEN border = CreatePen(PS_SOLID, self->configuration_.theme.borderWidth, self->configuration_.theme.border);
+            HGDIOBJ previousBrush = SelectObject(dc, background);
+            HGDIOBJ previousPen = SelectObject(dc, border);
+            RoundRect(dc, surface.left, surface.top, surface.right, surface.bottom,
+                      self->configuration_.theme.cornerRadius * 2, self->configuration_.theme.cornerRadius * 2);
+            SelectObject(dc, previousBrush);
+            SelectObject(dc, previousPen);
+            DeleteObject(background);
+            DeleteObject(border);
             SetBkMode(dc, TRANSPARENT);
-            SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
+            HGDIOBJ previousFont = self->font_ ? SelectObject(dc, self->font_) : nullptr;
+            const int padding = self->configuration_.theme.padding;
+            const int rowHeight = self->configuration_.theme.rowHeight;
+            int horizontalOffset = padding;
             for (size_t index = 0; index < self->candidates_.size(); ++index) {
-                RECT row{ 12, kVerticalPadding + static_cast<int>(index) * kRowHeight, kWidth - 12,
-                          kVerticalPadding + static_cast<int>(index + 1) * kRowHeight };
+                SIZE labelSize = self->LabelSize(dc, index);
+                RECT row{};
+                if (self->configuration_.horizontal) {
+                    row = { horizontalOffset, padding, horizontalOffset + labelSize.cx + padding * 2, padding + rowHeight };
+                    horizontalOffset = row.right;
+                } else {
+                    row = { padding, padding + static_cast<int>(index) * rowHeight, surface.right - padding,
+                            padding + static_cast<int>(index + 1) * rowHeight };
+                }
+                if (index == 0) {
+                    HBRUSH selected = CreateSolidBrush(self->configuration_.theme.selectedBackground);
+                    FillRect(dc, &row, selected);
+                    DeleteObject(selected);
+                }
+                SetTextColor(dc, index == 0 ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground);
                 const std::wstring label = std::to_wstring(index + 1) + L".  " + self->candidates_[index];
                 DrawTextW(dc, label.c_str(), static_cast<int>(label.size()), &row, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             }
+            if (previousFont) SelectObject(dc, previousFont);
             EndPaint(window, &paint);
             return 0;
         }
@@ -170,6 +342,8 @@ private:
     }
 
     HWND window_ = nullptr;
+    HFONT font_ = nullptr;
+    RuntimeConfiguration configuration_{};
     std::vector<std::wstring> candidates_;
 };
 
@@ -231,17 +405,20 @@ public:
         if (key >= 'A' && key <= 'Z') {
             const bool uppercase = (GetKeyState(VK_SHIFT) < 0) ^ ((GetKeyState(VK_CAPITAL) & 1) != 0);
             typed_ += static_cast<wchar_t>(uppercase ? key : key + (L'a' - L'A'));
-            candidates_ = FindCandidates(typed_, ConfiguredCandidateCount());
+            configuration_ = LoadRuntimeConfiguration();
+            candidates_ = FindCandidates(typed_, configuration_.candidateCount);
             return UpdateComposition(context, cookie);
         }
         if (key == VK_BACK && !typed_.empty()) {
             typed_.pop_back();
-            candidates_ = FindCandidates(typed_, ConfiguredCandidateCount());
+            configuration_ = LoadRuntimeConfiguration();
+            candidates_ = FindCandidates(typed_, configuration_.candidateCount);
             return typed_.empty() ? FinishComposition(cookie, L"", L'\0') : UpdateComposition(context, cookie);
         }
         const int candidateIndex = CandidateIndex(key);
-        if (candidateIndex >= 0 && candidateIndex < static_cast<int>(candidates_.size())) return FinishComposition(cookie, candidates_[candidateIndex], L'\0');
-        if (key == VK_TAB && !candidates_.empty()) return FinishComposition(cookie, candidates_.front(), L'\0');
+        const wchar_t selectionTrailing = configuration_.appendSpaceAfterSelection ? L' ' : L'\0';
+        if (candidateIndex >= 0 && candidateIndex < static_cast<int>(candidates_.size())) return FinishComposition(cookie, candidates_[candidateIndex], selectionTrailing);
+        if (key == VK_TAB && !candidates_.empty()) return FinishComposition(cookie, candidates_.front(), selectionTrailing);
         if (key == VK_SPACE) return FinishComposition(cookie, typed_, L' ');
         if (key == VK_RETURN) return FinishComposition(cookie, typed_, L'\r');
         if (key == VK_ESCAPE) return FinishComposition(cookie, typed_, L'\0');
@@ -307,7 +484,7 @@ private:
                 caret->Release();
             }
         }
-        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_);
+        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_, configuration_);
         range->Release();
         return hr;
     }
@@ -339,6 +516,7 @@ private:
     ITfContext* compositionContext_ = nullptr;
     std::wstring typed_;
     std::vector<std::wstring> candidates_;
+    RuntimeConfiguration configuration_{};
     CandidateWindow candidateWindow_;
 };
 
@@ -384,7 +562,7 @@ HRESULT InstalledDllPath(std::wstring* path) {
     if (!CreateDirectoryW(directory.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return HRESULT_FROM_WIN32(GetLastError());
     // TSF DLLs stay mapped in applications while a profile is active. Use a new
     // deployment name for this update so an in-use prior version cannot block it.
-    *path = directory + L"\\EnputMethod.Tsf.5.dll";
+    *path = directory + L"\\EnputMethod.Tsf.8.dll";
     return S_OK;
 }
 HRESULT RegisterComServer() {

@@ -41,16 +41,22 @@ public:
         if (!threadManager) return E_INVALIDARG;
         Deactivate();
         threadManager_ = threadManager; threadManager_->AddRef(); clientId_ = clientId;
-        ITfSource* source = nullptr;
-        HRESULT hr = threadManager_->QueryInterface(IID_PPV_ARGS(&source));
-        if (SUCCEEDED(hr)) { hr = source->AdviseSink(IID_ITfKeyEventSink, static_cast<ITfKeyEventSink*>(this), &keySinkCookie_); source->Release(); }
+        ITfKeystrokeMgr* keystrokeManager = nullptr;
+        HRESULT hr = threadManager_->QueryInterface(IID_PPV_ARGS(&keystrokeManager));
+        if (SUCCEEDED(hr)) {
+            hr = keystrokeManager->AdviseKeyEventSink(clientId_, static_cast<ITfKeyEventSink*>(this), TRUE);
+            keystrokeManager->Release();
+        }
         return hr;
     }
     STDMETHODIMP Deactivate() override {
         if (threadManager_) {
-            ITfSource* source = nullptr;
-            if (keySinkCookie_ != TF_INVALID_COOKIE && SUCCEEDED(threadManager_->QueryInterface(IID_PPV_ARGS(&source)))) { source->UnadviseSink(keySinkCookie_); source->Release(); }
-            keySinkCookie_ = TF_INVALID_COOKIE; threadManager_->Release(); threadManager_ = nullptr;
+            ITfKeystrokeMgr* keystrokeManager = nullptr;
+            if (SUCCEEDED(threadManager_->QueryInterface(IID_PPV_ARGS(&keystrokeManager)))) {
+                keystrokeManager->UnadviseKeyEventSink(clientId_);
+                keystrokeManager->Release();
+            }
+            threadManager_->Release(); threadManager_ = nullptr;
         }
         return S_OK;
     }
@@ -168,7 +174,6 @@ private:
     long refs_ = 1;
     ITfThreadMgr* threadManager_ = nullptr;
     TfClientId clientId_ = TF_CLIENTID_NULL;
-    DWORD keySinkCookie_ = TF_INVALID_COOKIE;
     ITfComposition* composition_ = nullptr;
     ITfContext* compositionContext_ = nullptr;
     std::wstring typed_;

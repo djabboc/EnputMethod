@@ -6,7 +6,7 @@ Enput Method is a prototype Windows English input method built with the Text Ser
 
 - System-level TSF input profile in the Chinese input-method group
 - English inline completion from a small built-in word list
-- `Tab` accepts the highlighted completion
+- `Tab` accepts the pending inline completion
 - `Space` preserves the typed prefix and starts the next word
 - Uses the existing Windows `Ctrl + Shift` Chinese-group switching behavior
 
@@ -19,7 +19,7 @@ Enput Method is a prototype Windows English input method built with the Text Ser
 
 ## Build
 
-Open `EnputMethod.sln` in Visual Studio, select `Debug|x64` or `Release|x64`, and build the solution. The setup application builds the native TSF DLL before copying it to its output directory.
+Open `EnputMethod.sln` in Visual Studio, select `Release|x64`, and build the solution. The installer builds the native TSF DLL with a static C++ runtime before copying it to its output directory.
 
 ## Install and Use
 
@@ -29,7 +29,9 @@ Run each executable from its complete build-output folder. The executable requir
 
 Windows can cache text services. If Enput does not appear in the existing `Ctrl + Shift` rotation immediately after installation, switch to another input method and back, then sign out and sign in once. `Ctrl + Space` is not claimed as a system-wide input-method switch shortcut.
 
-For the inline completion prototype, type a prefix such as `hel`. The remaining letters of `hello` appear selected. Press `Tab` to accept the full word, or `Space` to keep only the prefix.
+For the inline completion prototype, type a prefix such as `he`. Enput temporarily displays `hello`; press `Tab` to accept the completion. Continue typing to refine the prefix, or press `Space` to keep only the typed prefix. Some applications, including current Notepad, do not visibly highlight the pending suffix even though the `Tab` and continued-typing behavior remains the same.
+
+The Release installer explicitly loads its adjacent TSF DLL, clears a stale per-user Enput COM registration left by older builds, and registers the current service at `C:\Program Files\Enput Method\EnputMethod.Tsf.2.dll`. This allows an update to proceed while an earlier Enput DLL remains mapped in another application.
 
 ## Repository Layout
 

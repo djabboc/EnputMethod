@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 
@@ -5,8 +6,8 @@ namespace EnputMethod.Installer;
 
 public partial class MainWindow : Window
 {
-    [DllImport("EnputMethod.Tsf.dll", ExactSpelling = true)]
-    private static extern int InstallEnglishInputMethod();
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate int InstallInputMethodDelegate();
 
     public MainWindow() => InitializeComponent();
 
@@ -15,7 +16,7 @@ public partial class MainWindow : Window
         string message;
         try
         {
-            int hr = InstallEnglishInputMethod();
+            int hr = InvokeNativeInstaller();
             message = hr >= 0
                 ? "安装完成。请切换到其他输入法后再切回 Enput Method。"
                 : $"安装失败 (0x{hr:X8})。";
@@ -27,5 +28,13 @@ public partial class MainWindow : Window
 
         MessageBox.Show(message, "Enput Method");
         Close();
+    }
+
+    private static int InvokeNativeInstaller()
+    {
+        string dllPath = Path.Combine(AppContext.BaseDirectory, "EnputMethod.Tsf.dll");
+        IntPtr module = NativeLibrary.Load(dllPath);
+        IntPtr procedure = NativeLibrary.GetExport(module, "InstallEnglishInputMethod");
+        return Marshal.GetDelegateForFunctionPointer<InstallInputMethodDelegate>(procedure)();
     }
 }

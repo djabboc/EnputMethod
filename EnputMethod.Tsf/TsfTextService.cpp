@@ -20,7 +20,7 @@ long g_lockCount = 0;
 
 class KeyEditSession;
 
-class TextService final : public ITfTextInputProcessor, public ITfKeyEventSink, public ITfCompositionSink {
+class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink, public ITfCompositionSink {
 public:
     TextService() { InterlockedIncrement(&g_objectCount); }
     ~TextService() { ClearComposition(); Deactivate(); InterlockedDecrement(&g_objectCount); }
@@ -28,7 +28,7 @@ public:
     STDMETHODIMP QueryInterface(REFIID iid, void** result) override {
         if (!result) return E_INVALIDARG;
         *result = nullptr;
-        if (iid == IID_IUnknown || iid == IID_ITfTextInputProcessor) *result = static_cast<ITfTextInputProcessor*>(this);
+        if (iid == IID_IUnknown || iid == IID_ITfTextInputProcessor || iid == IID_ITfTextInputProcessorEx) *result = static_cast<ITfTextInputProcessorEx*>(this);
         else if (iid == IID_ITfKeyEventSink) *result = static_cast<ITfKeyEventSink*>(this);
         else if (iid == IID_ITfCompositionSink) *result = static_cast<ITfCompositionSink*>(this);
         else return E_NOINTERFACE;
@@ -49,6 +49,7 @@ public:
         }
         return hr;
     }
+    STDMETHODIMP ActivateEx(ITfThreadMgr* threadManager, TfClientId clientId, DWORD) override { return Activate(threadManager, clientId); }
     STDMETHODIMP Deactivate() override {
         if (threadManager_) {
             ITfKeystrokeMgr* keystrokeManager = nullptr;
@@ -142,7 +143,7 @@ private:
             if (SUCCEEDED(hr)) {
                 caret->Collapse(cookie, TF_ANCHOR_END);
                 if (!suggestion_.empty()) caret->ShiftStart(cookie, -static_cast<LONG>(suggestion_.size()), nullptr, nullptr);
-                TF_SELECTION selection{ caret, { TF_AE_NONE, !suggestion_.empty() } };
+                TF_SELECTION selection{ caret, { suggestion_.empty() ? TF_AE_NONE : TF_AE_END, !suggestion_.empty() } };
                 hr = context->SetSelection(cookie, 1, &selection);
                 caret->Release();
             }
@@ -220,13 +221,17 @@ HRESULT InstalledDllPath(std::wstring* path) {
     if (!GetEnvironmentVariableW(L"ProgramFiles", programFiles, ARRAYSIZE(programFiles))) return HRESULT_FROM_WIN32(GetLastError());
     const std::wstring directory = std::wstring(programFiles) + L"\\Enput Method";
     if (!CreateDirectoryW(directory.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return HRESULT_FROM_WIN32(GetLastError());
-    *path = directory + L"\\EnputMethod.Tsf.dll";
+    // TSF DLLs stay mapped in applications while a profile is active. Use a new
+    // deployment name for this update so an in-use prior version cannot block it.
+    *path = directory + L"\\EnputMethod.Tsf.2.dll";
     return S_OK;
 }
 HRESULT RegisterComServer() {
     wchar_t source[MAX_PATH]{}; if (!GetModuleFileNameW(g_module, source, ARRAYSIZE(source))) return HRESULT_FROM_WIN32(GetLastError());
     std::wstring path; HRESULT hr = InstalledDllPath(&path); if (FAILED(hr)) return hr;
     if (_wcsicmp(source, path.c_str()) != 0 && !CopyFileW(source, path.c_str(), FALSE)) return HRESULT_FROM_WIN32(GetLastError());
+    // Older builds registered the service per-user. HKCR gives that stale entry precedence over this machine-wide entry.
+    RegDeleteTreeW(HKEY_CURRENT_USER, ClassKey().c_str());
     HKEY key{}; const auto classKey = ClassKey(); LONG status = RegCreateKeyExW(HKEY_LOCAL_MACHINE, classKey.c_str(), 0, nullptr, 0, KEY_WRITE, nullptr, &key, nullptr);
     if (status != ERROR_SUCCESS) return HRESULT_FROM_WIN32(status);
     const wchar_t* name = L"Enput Method English Input"; RegSetValueExW(key, nullptr, 0, REG_SZ, reinterpret_cast<const BYTE*>(name), static_cast<DWORD>((wcslen(name) + 1) * sizeof(wchar_t))); RegCloseKey(key);
@@ -248,13 +253,16 @@ HRESULT RegisterProfile() {
     profiles->Release(); if (FAILED(hr)) return hr;
     ITfCategoryMgr* categories{}; hr = CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories));
     if (FAILED(hr)) return hr;
-    hr = categories->RegisterCategory(kTextServiceClsid, GUID_TFCAT_TIP_KEYBOARD, kTextServiceClsid); categories->Release();
+    hr = categories->RegisterCategory(kTextServiceClsid, GUID_TFCAT_TIP_KEYBOARD, kTextServiceClsid);
+    if (SUCCEEDED(hr)) hr = categories->RegisterCategory(kTextServiceClsid, GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT, kTextServiceClsid);
+    categories->Release();
     return hr;
 }
 HRESULT RemoveProfile() {
     ITfInputProcessorProfiles* profiles{}; HRESULT hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&profiles));
     if (SUCCEEDED(hr)) { profiles->RemoveLanguageProfile(kTextServiceClsid, kChineseSimplified, kProfileGuid); profiles->RemoveLanguageProfile(kTextServiceClsid, kLegacyEnglishUs, kProfileGuid); profiles->Unregister(kTextServiceClsid); profiles->Release(); }
-    ITfCategoryMgr* categories{}; if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories)))) { categories->UnregisterCategory(kTextServiceClsid, GUID_TFCAT_TIP_KEYBOARD, kTextServiceClsid); categories->Release(); }
+    ITfCategoryMgr* categories{}; if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories)))) { categories->UnregisterCategory(kTextServiceClsid, GUID_TFCAT_TIP_KEYBOARD, kTextServiceClsid); categories->UnregisterCategory(kTextServiceClsid, GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT, kTextServiceClsid); categories->Release(); }
+    RegDeleteTreeW(HKEY_CURRENT_USER, ClassKey().c_str());
     RegDeleteTreeW(HKEY_LOCAL_MACHINE, ClassKey().c_str()); std::wstring path; if (SUCCEEDED(InstalledDllPath(&path))) DeleteFileW(path.c_str()); return S_OK;
 }
 }

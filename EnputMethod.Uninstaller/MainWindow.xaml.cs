@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 
@@ -5,8 +6,8 @@ namespace EnputMethod.Uninstaller;
 
 public partial class MainWindow : Window
 {
-    [DllImport("EnputMethod.Tsf.dll", ExactSpelling = true)]
-    private static extern int UninstallEnglishInputMethod();
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate int UninstallInputMethodDelegate();
 
     public MainWindow() => InitializeComponent();
 
@@ -15,7 +16,7 @@ public partial class MainWindow : Window
         string message;
         try
         {
-            int hr = UninstallEnglishInputMethod();
+            int hr = InvokeNativeUninstaller();
             message = hr >= 0 ? "卸载完成。" : $"卸载失败 (0x{hr:X8})。";
         }
         catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
@@ -25,5 +26,13 @@ public partial class MainWindow : Window
 
         MessageBox.Show(message, "Enput Method");
         Close();
+    }
+
+    private static int InvokeNativeUninstaller()
+    {
+        string dllPath = Path.Combine(AppContext.BaseDirectory, "EnputMethod.Tsf.dll");
+        IntPtr module = NativeLibrary.Load(dllPath);
+        IntPtr procedure = NativeLibrary.GetExport(module, "UninstallEnglishInputMethod");
+        return Marshal.GetDelegateForFunctionPointer<UninstallInputMethodDelegate>(procedure)();
     }
 }

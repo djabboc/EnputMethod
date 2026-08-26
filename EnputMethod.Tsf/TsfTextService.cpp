@@ -724,15 +724,31 @@ HRESULT InstalledDllPath(std::wstring* path) {
     if (!GetEnvironmentVariableW(L"ProgramFiles", programFiles, ARRAYSIZE(programFiles))) return HRESULT_FROM_WIN32(GetLastError());
     const std::wstring directory = std::wstring(programFiles) + L"\\Enput Method";
     if (!CreateDirectoryW(directory.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return HRESULT_FROM_WIN32(GetLastError());
-    // TSF DLLs stay mapped in applications while a profile is active. Use a new
-    // deployment name for this update so an in-use prior version cannot block it.
-    *path = directory + L"\\EnputMethod.Tsf.8.dll";
+    wchar_t source[MAX_PATH]{};
+    if (!GetModuleFileNameW(g_module, source, ARRAYSIZE(source))) return HRESULT_FROM_WIN32(GetLastError());
+    WIN32_FILE_ATTRIBUTE_DATA attributes{};
+    if (!GetFileAttributesExW(source, GetFileExInfoStandard, &attributes)) return HRESULT_FROM_WIN32(GetLastError());
+    // TSF DLLs remain mapped while a profile is active. Each produced binary gets
+    // a stable, unique deployment name; re-installing the same binary can reuse it.
+    wchar_t filename[96]{};
+    swprintf_s(filename, L"\\EnputMethod.Tsf.%08lX%08lX.%08lX%08lX.dll",
+               attributes.ftLastWriteTime.dwHighDateTime, attributes.ftLastWriteTime.dwLowDateTime,
+               attributes.nFileSizeHigh, attributes.nFileSizeLow);
+    *path = directory + filename;
     return S_OK;
 }
+
+bool FilesEqual(const std::wstring& left, const std::wstring& right) {
+    return ReadUtf8File(left) == ReadUtf8File(right);
+}
+
 HRESULT RegisterComServer() {
     wchar_t source[MAX_PATH]{}; if (!GetModuleFileNameW(g_module, source, ARRAYSIZE(source))) return HRESULT_FROM_WIN32(GetLastError());
     std::wstring path; HRESULT hr = InstalledDllPath(&path); if (FAILED(hr)) return hr;
-    if (_wcsicmp(source, path.c_str()) != 0 && !CopyFileW(source, path.c_str(), FALSE)) return HRESULT_FROM_WIN32(GetLastError());
+    if (_wcsicmp(source, path.c_str()) != 0 && !CopyFileW(source, path.c_str(), FALSE)) {
+        const DWORD error = GetLastError();
+        if (error != ERROR_FILE_EXISTS || !FilesEqual(source, path)) return HRESULT_FROM_WIN32(error);
+    }
     // Older builds registered the service per-user. HKCR gives that stale entry precedence over this machine-wide entry.
     RegDeleteTreeW(HKEY_CURRENT_USER, ClassKey().c_str());
     HKEY key{}; const auto classKey = ClassKey(); LONG status = RegCreateKeyExW(HKEY_LOCAL_MACHINE, classKey.c_str(), 0, nullptr, 0, KEY_WRITE, nullptr, &key, nullptr);

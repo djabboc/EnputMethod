@@ -5,9 +5,9 @@ Enput Method is a prototype Windows English input method built with the Text Ser
 ## Features
 
 - System-level TSF input profile in the Chinese input-method group
-- Floating candidate window with up to four English suggestions
-- `1` through `4` select the corresponding candidate; `Tab` selects the first
-- User-editable JSON configuration, external dictionary, and four candidate-window themes
+- Floating, paged candidate window that can traverse every matching English word
+- `1` through `9` select the corresponding item on the current page; `Tab` selects the highlighted item
+- Configurable multi-key shortcut actions, external dictionary, and four candidate-window themes
 - `Space` preserves the typed prefix and starts the next word
 - Uses the existing Windows `Ctrl + Shift` Chinese-group switching behavior
 
@@ -30,11 +30,11 @@ Run each executable from its complete build-output folder. The executable requir
 
 Windows can cache text services. If Enput does not appear in the existing `Ctrl + Shift` rotation immediately after installation, switch to another input method and back, then sign out and sign in once. `Ctrl + Space` is not claimed as a system-wide input-method switch shortcut.
 
-For the candidate-window prototype, type a prefix such as `he`. The document retains `he` while a floating window shows up to the configured number of matching words. Press the matching number key to select a word, or press `Tab` to select the first candidate. Press `Space` to keep only the typed prefix and start the next word.
+For the candidate-window prototype, type a prefix such as `he`. The document retains `he` while a floating window shows the configured number of matching words per page. Press `-` or `+` to move between pages, or use Up and Down to move the highlighted candidate across page boundaries. Press the matching number key to select a word on the current page, or press `Tab` to select the highlighted word. Press `Space` to keep only the typed prefix and start the next word. Navigation and punctuation first commit the active composition and are then passed to the target application, so ordinary in-place editing does not overwrite text.
 
 The Release installer explicitly loads its adjacent TSF DLL, clears a stale per-user Enput COM registration left by older builds, and registers the current service at a versioned DLL path such as `C:\Program Files\Enput Method\EnputMethod.Tsf.8.dll`. This allows an update to proceed while an earlier Enput DLL remains mapped in another application.
 
-User-editable settings are stored in `%LOCALAPPDATA%\Enput Method\config.json`. It supports candidate count, layout, automatic spaces, font family, font size, opacity, and the theme name. `conf.json` from older releases remains supported and is migrated when possible. The accompanying `dictionary.txt` contains 370,763 ordered words; common words are first for useful suggestions, followed by a complete word list for broad coverage. The installer creates configuration, dictionary, and theme files only when they are missing, so updates preserve user changes.
+User-editable settings are stored in `%LOCALAPPDATA%\Enput Method\config.json`; shortcut actions are stored independently in `shortcut.json`. An action accepts an array of key names. The defaults are `selectCurrent: ["Tab"]`, `previousPage: ["Minus", "NumpadSubtract"]`, `nextPage: ["Plus", "NumpadAdd"]`, `selectPrevious: ["Up"]`, and `selectNext: ["Down"]`. `config.json` supports candidate count, layout, automatic spaces, font family, font size, opacity, and the theme name. `conf.json` from older releases remains supported and is migrated when possible. The accompanying `dictionary.txt` contains 370,763 ordered words; common words are first for useful suggestions, followed by a complete word list for broad coverage. The installer creates configuration, shortcut, dictionary, and theme files only when they are missing, so updates preserve user changes.
 
 ## Repository Layout
 

@@ -24,7 +24,7 @@
   - Do not append an extra space when the selected word is immediately followed by punctuation or an explicit user action that should not receive one.
 - [x] Apply configured font family, size, and opacity to the floating candidate window.
 - [x] Keep the window non-activating, positioned at the TSF composition caret, and usable with number keys `1` through `9`.
-- [ ] Test repeated selection, backspace, Enter, Escape, Space, no-match input, and input in Notepad and EmEditor.
+- [ ] Test repeated selection, backspace, Enter, Escape, Space, punctuation, cursor movement, no-match input, paging, and input in Notepad, EmEditor, and ChatGPT.
 
 ## Phase 3: Themes
 
@@ -33,7 +33,7 @@
   - `light.json`
   - `eye-care.json`
   - `paper.json`
-- [x] Define theme fields for background, foreground, border, selected-row colors, border width, corner radius, padding, row height, and shadow.
+- [x] Define theme fields for background, foreground, border, selected-row colors and border, border width, corner radius, padding, row height, and shadow.
 - [x] Load the theme selected by `theme` in the user configuration, with a safe fallback to `dark`.
 - [x] Design the candidate-window renderer so themes control both colors and shape without changing input logic.
 

@@ -188,16 +188,17 @@ ThemeStyle LoadTheme(const std::string& name) {
 RuntimeConfiguration LoadRuntimeConfiguration() {
     RuntimeConfiguration configuration;
     enput::json::Object object;
-    if (!enput::json::ReadObject(ReadUtf8File(ConfigurationPath()), &object)) return configuration;
-    configuration.candidateCount = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "candidateCount", configuration.candidateCount))), 1, 9);
-    configuration.horizontal = enput::json::StringOr(object, "layout", "vertical") == "horizontal";
-    configuration.appendSpaceAfterSelection = enput::json::BooleanOr(object, "appendSpaceAfterSelection", configuration.appendSpaceAfterSelection);
-    configuration.fontFamily = Utf8ToWide(enput::json::StringOr(object, "fontFamily", "Segoe UI"));
-    if (configuration.fontFamily.empty()) configuration.fontFamily = L"Segoe UI";
-    configuration.fontSize = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "fontSize", configuration.fontSize))), 10, 32);
-    const double opacity = std::clamp(enput::json::NumberOr(object, "opacity", 1.0), 0.2, 1.0);
-    configuration.opacity = static_cast<BYTE>(std::lround(opacity * 255.0));
-    configuration.theme = LoadTheme(enput::json::StringOr(object, "theme", "dark"));
+    if (enput::json::ReadObject(ReadUtf8File(ConfigurationPath()), &object)) {
+        configuration.candidateCount = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "candidateCount", configuration.candidateCount))), 1, 9);
+        configuration.horizontal = enput::json::StringOr(object, "layout", "vertical") == "horizontal";
+        configuration.appendSpaceAfterSelection = enput::json::BooleanOr(object, "appendSpaceAfterSelection", configuration.appendSpaceAfterSelection);
+        configuration.fontFamily = Utf8ToWide(enput::json::StringOr(object, "fontFamily", "Segoe UI"));
+        if (configuration.fontFamily.empty()) configuration.fontFamily = L"Segoe UI";
+        configuration.fontSize = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "fontSize", configuration.fontSize))), 10, 32);
+        const double opacity = std::clamp(enput::json::NumberOr(object, "opacity", 1.0), 0.2, 1.0);
+        configuration.opacity = static_cast<BYTE>(std::lround(opacity * 255.0));
+        configuration.theme = LoadTheme(enput::json::StringOr(object, "theme", "dark"));
+    }
     configuration.shortcuts = LoadShortcutConfiguration();
     return configuration;
 }

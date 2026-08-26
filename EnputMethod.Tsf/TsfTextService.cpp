@@ -50,15 +50,18 @@ struct ThemeStyle {
     COLORREF border = RGB(75, 85, 99);
     COLORREF selectedBackground = RGB(55, 65, 81);
     COLORREF selectedForeground = RGB(255, 255, 255);
+    COLORREF selectedBorder = RGB(96, 165, 250);
     int borderWidth = 1;
     int cornerRadius = 8;
     int padding = 10;
     int rowHeight = 28;
     int shadowSize = 8;
+    int selectedBorderWidth = 1;
+    int selectedCornerRadius = 5;
 };
 
 struct ShortcutConfiguration {
-    std::vector<WPARAM> selectFirst{ VK_TAB };
+    std::vector<WPARAM> selectCurrent{ VK_TAB };
     std::vector<WPARAM> previousPage{ VK_OEM_MINUS, VK_SUBTRACT };
     std::vector<WPARAM> nextPage{ VK_OEM_PLUS, VK_ADD };
     std::vector<WPARAM> selectPrevious{ VK_UP };
@@ -118,7 +121,9 @@ ShortcutConfiguration LoadShortcutConfiguration() {
     ShortcutConfiguration shortcuts;
     enput::json::Object object;
     if (!enput::json::ReadObject(ReadUtf8File(ShortcutPath()), &object)) return shortcuts;
-    shortcuts.selectFirst = ShortcutKeys(object, "selectFirst", shortcuts.selectFirst);
+    shortcuts.selectCurrent = enput::json::StringArray(object, "selectCurrent")
+        ? ShortcutKeys(object, "selectCurrent", shortcuts.selectCurrent)
+        : ShortcutKeys(object, "selectFirst", shortcuts.selectCurrent);
     shortcuts.previousPage = ShortcutKeys(object, "previousPage", shortcuts.previousPage);
     shortcuts.nextPage = ShortcutKeys(object, "nextPage", shortcuts.nextPage);
     shortcuts.selectPrevious = ShortcutKeys(object, "selectPrevious", shortcuts.selectPrevious);
@@ -169,11 +174,14 @@ ThemeStyle LoadTheme(const std::string& name) {
     theme.border = ColorOr(object, "border", theme.border);
     theme.selectedBackground = ColorOr(object, "selectedBackground", theme.selectedBackground);
     theme.selectedForeground = ColorOr(object, "selectedForeground", theme.selectedForeground);
+    theme.selectedBorder = ColorOr(object, "selectedBorder", theme.selectedBorder);
     theme.borderWidth = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "borderWidth", theme.borderWidth))), 0, 6);
     theme.cornerRadius = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "cornerRadius", theme.cornerRadius))), 0, 32);
     theme.padding = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "padding", theme.padding))), 4, 32);
     theme.rowHeight = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "rowHeight", theme.rowHeight))), 20, 64);
     theme.shadowSize = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "shadowSize", theme.shadowSize))), 0, 24);
+    theme.selectedBorderWidth = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "selectedBorderWidth", theme.selectedBorderWidth))), 0, 6);
+    theme.selectedCornerRadius = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "selectedCornerRadius", theme.selectedCornerRadius))), 0, 32);
     return theme;
 }
 
@@ -255,11 +263,12 @@ public:
         if (window_) DestroyWindow(window_);
     }
 
-    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration, size_t page, size_t pageCount) {
+    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration, size_t page, size_t pageCount, size_t selectedIndex) {
         candidates_ = candidates;
         configuration_ = configuration;
         page_ = page;
         pageCount_ = pageCount;
+        selectedIndex_ = selectedIndex;
         if (candidates_.empty()) { Hide(); return; }
         if (!EnsureWindow()) return;
         ConfigureWindow();
@@ -384,12 +393,22 @@ private:
                     row = { padding, padding + static_cast<int>(index) * rowHeight, surface.right - padding,
                             padding + static_cast<int>(index + 1) * rowHeight };
                 }
-                if (index == 0) {
+                if (index == self->selectedIndex_) {
                     HBRUSH selected = CreateSolidBrush(self->configuration_.theme.selectedBackground);
                     FillRect(dc, &row, selected);
                     DeleteObject(selected);
+                    if (self->configuration_.theme.selectedBorderWidth > 0) {
+                        HPEN selectedBorder = CreatePen(PS_SOLID, self->configuration_.theme.selectedBorderWidth, self->configuration_.theme.selectedBorder);
+                        HGDIOBJ previousSelectedBorder = SelectObject(dc, selectedBorder);
+                        HGDIOBJ previousSelectedBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+                        RoundRect(dc, row.left, row.top, row.right, row.bottom,
+                                  self->configuration_.theme.selectedCornerRadius * 2, self->configuration_.theme.selectedCornerRadius * 2);
+                        SelectObject(dc, previousSelectedBorder);
+                        SelectObject(dc, previousSelectedBrush);
+                        DeleteObject(selectedBorder);
+                    }
                 }
-                SetTextColor(dc, index == 0 ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground);
+                SetTextColor(dc, index == self->selectedIndex_ ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground);
                 const std::wstring label = std::to_wstring(index + 1) + L".  " + self->candidates_[index];
                 DrawTextW(dc, label.c_str(), static_cast<int>(label.size()), &row, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             }
@@ -413,6 +432,7 @@ private:
     std::vector<std::wstring> candidates_;
     size_t page_ = 0;
     size_t pageCount_ = 0;
+    size_t selectedIndex_ = 0;
 };
 
 class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink, public ITfCompositionSink {
@@ -477,6 +497,7 @@ public:
             allCandidates_ = FindCandidates(typed_);
             currentPage_ = 0;
             UpdateCurrentPage();
+            selectedIndex_ = 0;
             return UpdateComposition(context, cookie);
         }
         if (key == VK_BACK && !typed_.empty()) {
@@ -485,14 +506,17 @@ public:
             allCandidates_ = FindCandidates(typed_);
             currentPage_ = 0;
             UpdateCurrentPage();
+            selectedIndex_ = 0;
             return typed_.empty() ? FinishComposition(cookie, L"", L'\0') : UpdateComposition(context, cookie);
         }
         if (HasShortcut(configuration_.shortcuts.previousPage, key)) return MovePage(context, cookie, -1);
         if (HasShortcut(configuration_.shortcuts.nextPage, key)) return MovePage(context, cookie, 1);
+        if (HasShortcut(configuration_.shortcuts.selectPrevious, key)) return MoveSelection(context, cookie, -1);
+        if (HasShortcut(configuration_.shortcuts.selectNext, key)) return MoveSelection(context, cookie, 1);
         const int candidateIndex = CandidateIndex(key);
         const wchar_t selectionTrailing = configuration_.appendSpaceAfterSelection ? L' ' : L'\0';
         if (candidateIndex >= 0 && candidateIndex < static_cast<int>(candidates_.size())) return FinishComposition(cookie, candidates_[candidateIndex], selectionTrailing);
-        if (HasShortcut(configuration_.shortcuts.selectFirst, key) && !candidates_.empty()) return FinishComposition(cookie, candidates_.front(), selectionTrailing);
+        if (HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size()) return FinishComposition(cookie, candidates_[selectedIndex_], selectionTrailing);
         if (key == VK_SPACE) return FinishComposition(cookie, typed_, L' ');
         if (key == VK_RETURN) return FinishComposition(cookie, typed_, L'\r');
         if (key == VK_ESCAPE) return FinishComposition(cookie, typed_, L'\0');
@@ -518,8 +542,9 @@ private:
         if (!hasModifier && key >= 'A' && key <= 'Z') return false;
         if (key == VK_BACK || key == VK_SPACE || key == VK_RETURN || key == VK_ESCAPE) return false;
         if (HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key)) return false;
+        if (HasShortcut(configuration_.shortcuts.selectPrevious, key) || HasShortcut(configuration_.shortcuts.selectNext, key)) return false;
         if (CandidateIndex(key) >= 0 && CandidateIndex(key) < static_cast<int>(candidates_.size())) return false;
-        return !(HasShortcut(configuration_.shortcuts.selectFirst, key) && !candidates_.empty());
+        return !(HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size());
     }
 
     static bool IsModifierKey(WPARAM key) {
@@ -571,6 +596,23 @@ private:
         if (direction < 0 && currentPage_ > 0) --currentPage_;
         if (direction > 0 && currentPage_ + 1 < pageCount) ++currentPage_;
         UpdateCurrentPage();
+        selectedIndex_ = 0;
+        return UpdateComposition(context, cookie);
+    }
+
+    HRESULT MoveSelection(ITfContext* context, TfEditCookie cookie, int direction) {
+        if (candidates_.empty()) return S_OK;
+        if (direction < 0 && selectedIndex_ > 0) --selectedIndex_;
+        else if (direction > 0 && selectedIndex_ + 1 < candidates_.size()) ++selectedIndex_;
+        else if (direction < 0 && currentPage_ > 0) {
+            --currentPage_;
+            UpdateCurrentPage();
+            selectedIndex_ = candidates_.empty() ? 0 : candidates_.size() - 1;
+        } else if (direction > 0 && currentPage_ + 1 < PageCount()) {
+            ++currentPage_;
+            UpdateCurrentPage();
+            selectedIndex_ = 0;
+        }
         return UpdateComposition(context, cookie);
     }
 
@@ -601,7 +643,7 @@ private:
                 caret->Release();
             }
         }
-        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount());
+        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_);
         range->Release();
         return hr;
     }
@@ -613,7 +655,7 @@ private:
         if (trailing) finalText += trailing;
         if (SUCCEEDED(hr)) { hr = range->SetText(cookie, 0, finalText.data(), static_cast<LONG>(finalText.size())); range->Release(); }
         ITfComposition* composition = composition_; composition_ = nullptr;
-        typed_.clear(); allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; candidateWindow_.Hide();
+        typed_.clear(); allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidateWindow_.Hide();
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
         if (SUCCEEDED(hr)) hr = composition->EndComposition(cookie);
         composition->Release();
@@ -623,7 +665,7 @@ private:
     void ClearComposition() {
         if (composition_) { composition_->Release(); composition_ = nullptr; }
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
-        typed_.clear(); allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; candidateWindow_.Hide();
+        typed_.clear(); allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidateWindow_.Hide();
     }
 
     long refs_ = 1;
@@ -635,6 +677,7 @@ private:
     std::vector<std::wstring> allCandidates_;
     std::vector<std::wstring> candidates_;
     size_t currentPage_ = 0;
+    size_t selectedIndex_ = 0;
     RuntimeConfiguration configuration_{};
     CandidateWindow candidateWindow_;
 };

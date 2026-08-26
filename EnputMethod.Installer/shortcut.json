@@ -1,5 +1,5 @@
 {
-  "selectFirst": ["Tab"],
+  "selectCurrent": ["Tab"],
   "previousPage": ["Minus", "NumpadSubtract"],
   "nextPage": ["Plus", "NumpadAdd"],
   "selectPrevious": ["Up"],

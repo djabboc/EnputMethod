@@ -283,11 +283,22 @@ public:
         if (FAILED(hr)) return;
 
         const SIZE size = MeasureWindow();
-        const int diameter = (std::max)(1, configuration_.theme.cornerRadius * 2);
-        SetWindowRgn(window_, CreateRoundRectRgn(0, 0, size.cx, size.cy, diameter, diameter), TRUE);
-        SetWindowPos(window_, HWND_TOPMOST, textRect.left, textRect.bottom + 2, size.cx, size.cy,
-                     SWP_NOACTIVATE | SWP_SHOWWINDOW);
-        InvalidateRect(window_, nullptr, TRUE);
+        const int positionX = textRect.left;
+        const int positionY = textRect.bottom + 2;
+        const bool sizeChanged = size.cx != size_.cx || size.cy != size_.cy;
+        const bool positionChanged = positionX != positionX_ || positionY != positionY_;
+        if (sizeChanged) {
+            const int diameter = (std::max)(1, configuration_.theme.cornerRadius * 2);
+            SetWindowRgn(window_, CreateRoundRectRgn(0, 0, size.cx, size.cy, diameter, diameter), TRUE);
+            size_ = size;
+        }
+        if (!IsWindowVisible(window_) || sizeChanged || positionChanged) {
+            SetWindowPos(window_, HWND_TOPMOST, positionX, positionY, size.cx, size.cy,
+                         SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            positionX_ = positionX;
+            positionY_ = positionY;
+        }
+        InvalidateRect(window_, nullptr, FALSE);
     }
 
     void Hide() {
@@ -434,6 +445,9 @@ private:
     size_t page_ = 0;
     size_t pageCount_ = 0;
     size_t selectedIndex_ = 0;
+    SIZE size_{};
+    int positionX_ = 0;
+    int positionY_ = 0;
 };
 
 class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink, public ITfCompositionSink {
@@ -493,7 +507,8 @@ public:
     HRESULT ApplyKey(ITfContext* context, TfEditCookie cookie, WPARAM key) {
         if (key >= 'A' && key <= 'Z') {
             const bool uppercase = (GetKeyState(VK_SHIFT) < 0) ^ ((GetKeyState(VK_CAPITAL) & 1) != 0);
-            typed_ += static_cast<wchar_t>(uppercase ? key : key + (L'a' - L'A'));
+            typed_.insert(cursor_, 1, static_cast<wchar_t>(uppercase ? key : key + (L'a' - L'A')));
+            ++cursor_;
             configuration_ = LoadRuntimeConfiguration();
             allCandidates_ = FindCandidates(typed_);
             currentPage_ = 0;
@@ -501,8 +516,9 @@ public:
             selectedIndex_ = 0;
             return UpdateComposition(context, cookie);
         }
-        if (key == VK_BACK && !typed_.empty()) {
-            typed_.pop_back();
+        if (key == VK_BACK && cursor_ > 0) {
+            typed_.erase(cursor_ - 1, 1);
+            --cursor_;
             configuration_ = LoadRuntimeConfiguration();
             allCandidates_ = FindCandidates(typed_);
             currentPage_ = 0;
@@ -514,6 +530,8 @@ public:
         if (HasShortcut(configuration_.shortcuts.nextPage, key)) return MovePage(context, cookie, 1);
         if (HasShortcut(configuration_.shortcuts.selectPrevious, key)) return MoveSelection(context, cookie, -1);
         if (HasShortcut(configuration_.shortcuts.selectNext, key)) return MoveSelection(context, cookie, 1);
+        if (key == VK_LEFT && cursor_ > 0) { --cursor_; return UpdateComposition(context, cookie); }
+        if (key == VK_RIGHT && cursor_ < typed_.size()) { ++cursor_; return UpdateComposition(context, cookie); }
         const int candidateIndex = CandidateIndex(key);
         const wchar_t selectionTrailing = configuration_.appendSpaceAfterSelection ? L' ' : L'\0';
         if (candidateIndex >= 0 && candidateIndex < static_cast<int>(candidates_.size())) return FinishComposition(cookie, candidates_[candidateIndex], selectionTrailing);
@@ -526,6 +544,10 @@ public:
 
     HRESULT CommitForPassthrough(TfEditCookie cookie) {
         return FinishComposition(cookie, typed_, L'\0');
+    }
+
+    HRESULT CommitWithCharacter(TfEditCookie cookie, wchar_t character) {
+        return FinishComposition(cookie, typed_ + character, L'\0');
     }
 
 private:
@@ -541,11 +563,23 @@ private:
         if (typed_.empty()) return false;
         const bool hasModifier = GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0;
         if (!hasModifier && key >= 'A' && key <= 'Z') return false;
-        if (key == VK_BACK || key == VK_SPACE || key == VK_RETURN || key == VK_ESCAPE) return false;
+        if (key == VK_BACK) return cursor_ == 0;
+        if (key == VK_SPACE || key == VK_RETURN || key == VK_ESCAPE) return false;
         if (HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key)) return false;
         if (HasShortcut(configuration_.shortcuts.selectPrevious, key) || HasShortcut(configuration_.shortcuts.selectNext, key)) return false;
+        if (key == VK_LEFT) return cursor_ == 0;
+        if (key == VK_RIGHT) return cursor_ == typed_.size();
         if (CandidateIndex(key) >= 0 && CandidateIndex(key) < static_cast<int>(candidates_.size())) return false;
         return !(HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size());
+    }
+
+    static wchar_t PrintableCharacter(WPARAM key, LPARAM keyData) {
+        BYTE keyboardState[256]{};
+        if (!GetKeyboardState(keyboardState)) return L'\0';
+        wchar_t character{};
+        const UINT scanCode = static_cast<UINT>((keyData >> 16) & 0xff);
+        const int result = ToUnicodeEx(static_cast<UINT>(key), scanCode, keyboardState, &character, 1, 0, GetKeyboardLayout(0));
+        return result == 1 && iswprint(character) ? character : L'\0';
     }
 
     static bool IsModifierKey(WPARAM key) {
@@ -594,8 +628,10 @@ private:
     HRESULT MovePage(ITfContext* context, TfEditCookie cookie, int direction) {
         const size_t pageCount = PageCount();
         if (pageCount < 2) return S_OK;
+        const size_t previousPage = currentPage_;
         if (direction < 0 && currentPage_ > 0) --currentPage_;
         if (direction > 0 && currentPage_ + 1 < pageCount) ++currentPage_;
+        if (currentPage_ == previousPage) return S_OK;
         UpdateCurrentPage();
         selectedIndex_ = 0;
         return UpdateComposition(context, cookie);
@@ -603,18 +639,21 @@ private:
 
     HRESULT MoveSelection(ITfContext* context, TfEditCookie cookie, int direction) {
         if (candidates_.empty()) return S_OK;
-        if (direction < 0 && selectedIndex_ > 0) --selectedIndex_;
-        else if (direction > 0 && selectedIndex_ + 1 < candidates_.size()) ++selectedIndex_;
+        bool changed = false;
+        if (direction < 0 && selectedIndex_ > 0) { --selectedIndex_; changed = true; }
+        else if (direction > 0 && selectedIndex_ + 1 < candidates_.size()) { ++selectedIndex_; changed = true; }
         else if (direction < 0 && currentPage_ > 0) {
             --currentPage_;
             UpdateCurrentPage();
             selectedIndex_ = candidates_.empty() ? 0 : candidates_.size() - 1;
+            changed = true;
         } else if (direction > 0 && currentPage_ + 1 < PageCount()) {
             ++currentPage_;
             UpdateCurrentPage();
             selectedIndex_ = 0;
+            changed = true;
         }
-        return UpdateComposition(context, cookie);
+        return changed ? UpdateComposition(context, cookie) : S_OK;
     }
 
     HRESULT UpdateComposition(ITfContext* context, TfEditCookie cookie) {
@@ -638,9 +677,12 @@ private:
         if (SUCCEEDED(hr)) {
             ITfRange* caret{}; hr = range->Clone(&caret);
             if (SUCCEEDED(hr)) {
-                caret->Collapse(cookie, TF_ANCHOR_END);
+                caret->Collapse(cookie, TF_ANCHOR_START);
+                LONG shifted{};
+                hr = caret->ShiftStart(cookie, static_cast<LONG>(cursor_), &shifted, nullptr);
+                if (SUCCEEDED(hr)) caret->Collapse(cookie, TF_ANCHOR_START);
                 TF_SELECTION selection{ caret, { TF_AE_NONE, FALSE } };
-                hr = context->SetSelection(cookie, 1, &selection);
+                if (SUCCEEDED(hr)) hr = context->SetSelection(cookie, 1, &selection);
                 caret->Release();
             }
         }
@@ -656,7 +698,7 @@ private:
         if (trailing) finalText += trailing;
         if (SUCCEEDED(hr)) { hr = range->SetText(cookie, 0, finalText.data(), static_cast<LONG>(finalText.size())); range->Release(); }
         ITfComposition* composition = composition_; composition_ = nullptr;
-        typed_.clear(); allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidateWindow_.Hide();
+        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidateWindow_.Hide();
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
         if (SUCCEEDED(hr)) hr = composition->EndComposition(cookie);
         composition->Release();
@@ -666,7 +708,7 @@ private:
     void ClearComposition() {
         if (composition_) { composition_->Release(); composition_ = nullptr; }
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
-        typed_.clear(); allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidateWindow_.Hide();
+        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidateWindow_.Hide();
     }
 
     long refs_ = 1;
@@ -675,6 +717,7 @@ private:
     ITfComposition* composition_ = nullptr;
     ITfContext* compositionContext_ = nullptr;
     std::wstring typed_;
+    size_t cursor_ = 0;
     std::vector<std::wstring> allCandidates_;
     std::vector<std::wstring> candidates_;
     size_t currentPage_ = 0;
@@ -685,21 +728,23 @@ private:
 
 class KeyEditSession final : public ITfEditSession {
 public:
-    KeyEditSession(TextService* service, ITfContext* context, WPARAM key, bool passThrough) : service_(service), context_(context), key_(key), passThrough_(passThrough) { service_->AddRef(); context_->AddRef(); }
+    KeyEditSession(TextService* service, ITfContext* context, WPARAM key, bool passThrough, wchar_t printableCharacter) : service_(service), context_(context), key_(key), passThrough_(passThrough), printableCharacter_(printableCharacter) { service_->AddRef(); context_->AddRef(); }
     ~KeyEditSession() { context_->Release(); service_->Release(); }
     STDMETHODIMP QueryInterface(REFIID iid, void** result) override { if (!result) return E_INVALIDARG; *result = nullptr; if (iid != IID_IUnknown && iid != IID_ITfEditSession) return E_NOINTERFACE; *result = static_cast<ITfEditSession*>(this); AddRef(); return S_OK; }
     STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&refs_); }
     STDMETHODIMP_(ULONG) Release() override { const auto refs = InterlockedDecrement(&refs_); if (!refs) delete this; return refs; }
-    STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return passThrough_ ? service_->CommitForPassthrough(cookie) : service_->ApplyKey(context_, cookie, key_); }
-private: long refs_ = 1; TextService* service_; ITfContext* context_; WPARAM key_; bool passThrough_;
+    STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return passThrough_ ? service_->CommitForPassthrough(cookie) : printableCharacter_ ? service_->CommitWithCharacter(cookie, printableCharacter_) : service_->ApplyKey(context_, cookie, key_); }
+private: long refs_ = 1; TextService* service_; ITfContext* context_; WPARAM key_; bool passThrough_; wchar_t printableCharacter_;
 };
 
-STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM key, LPARAM, BOOL* eaten) {
+STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM key, LPARAM keyData, BOOL* eaten) {
     if (!eaten) return E_INVALIDARG;
     *eaten = FALSE;
     if (!ShouldHandleKey(key)) return S_OK;
-    const bool passThrough = ShouldPassThrough(key);
-    auto* session = new (std::nothrow) KeyEditSession(this, context, key, passThrough);
+    const bool shouldPassThrough = ShouldPassThrough(key);
+    const wchar_t printableCharacter = shouldPassThrough ? PrintableCharacter(key, keyData) : L'\0';
+    const bool passThrough = shouldPassThrough && !printableCharacter;
+    auto* session = new (std::nothrow) KeyEditSession(this, context, key, passThrough, printableCharacter);
     if (!session) return E_OUTOFMEMORY;
     HRESULT sessionResult{}; const HRESULT hr = context->RequestEditSession(clientId_, session, TF_ES_SYNC | TF_ES_READWRITE, &sessionResult);
     session->Release();

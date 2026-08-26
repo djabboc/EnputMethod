@@ -425,14 +425,33 @@ public:
         return S_FALSE;
     }
 
+    HRESULT CommitForPassthrough(TfEditCookie cookie) {
+        return FinishComposition(cookie, typed_, L'\0');
+    }
+
 private:
     friend class KeyEditSession;
 
     bool ShouldHandleKey(WPARAM key) const {
+        if (!typed_.empty()) return !IsModifierKey(key);
         if (GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0) return false;
-        if (key >= 'A' && key <= 'Z') return true;
-        return !typed_.empty() && (key == VK_BACK || key == VK_TAB || key == VK_SPACE || key == VK_RETURN || key == VK_ESCAPE ||
-                                  (CandidateIndex(key) >= 0 && CandidateIndex(key) < static_cast<int>(candidates_.size())));
+        return key >= 'A' && key <= 'Z';
+    }
+
+    bool ShouldPassThrough(WPARAM key) const {
+        if (typed_.empty()) return false;
+        const bool hasModifier = GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0;
+        if (!hasModifier && key >= 'A' && key <= 'Z') return false;
+        if (key == VK_BACK || key == VK_SPACE || key == VK_RETURN || key == VK_ESCAPE) return false;
+        if (CandidateIndex(key) >= 0 && CandidateIndex(key) < static_cast<int>(candidates_.size())) return false;
+        return !(key == VK_TAB && !candidates_.empty());
+    }
+
+    static bool IsModifierKey(WPARAM key) {
+        return key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT ||
+               key == VK_CONTROL || key == VK_LCONTROL || key == VK_RCONTROL ||
+               key == VK_MENU || key == VK_LMENU || key == VK_RMENU ||
+               key == VK_LWIN || key == VK_RWIN;
     }
 
     static int CandidateIndex(WPARAM key) {
@@ -522,24 +541,25 @@ private:
 
 class KeyEditSession final : public ITfEditSession {
 public:
-    KeyEditSession(TextService* service, ITfContext* context, WPARAM key) : service_(service), context_(context), key_(key) { service_->AddRef(); context_->AddRef(); }
+    KeyEditSession(TextService* service, ITfContext* context, WPARAM key, bool passThrough) : service_(service), context_(context), key_(key), passThrough_(passThrough) { service_->AddRef(); context_->AddRef(); }
     ~KeyEditSession() { context_->Release(); service_->Release(); }
     STDMETHODIMP QueryInterface(REFIID iid, void** result) override { if (!result) return E_INVALIDARG; *result = nullptr; if (iid != IID_IUnknown && iid != IID_ITfEditSession) return E_NOINTERFACE; *result = static_cast<ITfEditSession*>(this); AddRef(); return S_OK; }
     STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&refs_); }
     STDMETHODIMP_(ULONG) Release() override { const auto refs = InterlockedDecrement(&refs_); if (!refs) delete this; return refs; }
-    STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return service_->ApplyKey(context_, cookie, key_); }
-private: long refs_ = 1; TextService* service_; ITfContext* context_; WPARAM key_;
+    STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return passThrough_ ? service_->CommitForPassthrough(cookie) : service_->ApplyKey(context_, cookie, key_); }
+private: long refs_ = 1; TextService* service_; ITfContext* context_; WPARAM key_; bool passThrough_;
 };
 
 STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM key, LPARAM, BOOL* eaten) {
     if (!eaten) return E_INVALIDARG;
     *eaten = FALSE;
     if (!ShouldHandleKey(key)) return S_OK;
-    auto* session = new (std::nothrow) KeyEditSession(this, context, key);
+    const bool passThrough = ShouldPassThrough(key);
+    auto* session = new (std::nothrow) KeyEditSession(this, context, key, passThrough);
     if (!session) return E_OUTOFMEMORY;
     HRESULT sessionResult{}; const HRESULT hr = context->RequestEditSession(clientId_, session, TF_ES_SYNC | TF_ES_READWRITE, &sessionResult);
     session->Release();
-    *eaten = SUCCEEDED(hr) && SUCCEEDED(sessionResult);
+    *eaten = !passThrough && SUCCEEDED(hr) && SUCCEEDED(sessionResult);
     return hr;
 }
 

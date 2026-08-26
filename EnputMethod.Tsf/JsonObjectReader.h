@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace enput::json {
 
@@ -11,6 +12,7 @@ struct Object {
     std::unordered_map<std::string, std::string> strings;
     std::unordered_map<std::string, double> numbers;
     std::unordered_map<std::string, bool> booleans;
+    std::unordered_map<std::string, std::vector<std::string>> stringArrays;
 };
 
 class ObjectReader final {
@@ -50,6 +52,12 @@ private:
             object->strings[key] = std::move(value);
             return true;
         }
+        if (text_[position_] == '[') {
+            std::vector<std::string> values;
+            if (!ReadStringArray(&values)) return false;
+            object->stringArrays[key] = std::move(values);
+            return true;
+        }
         if (text_.compare(position_, 4, "true") == 0) {
             position_ += 4;
             object->booleans[key] = true;
@@ -67,6 +75,21 @@ private:
         position_ += static_cast<size_t>(end - start);
         object->numbers[key] = value;
         return true;
+    }
+
+    bool ReadStringArray(std::vector<std::string>* values) {
+        if (!values || !Consume('[')) return false;
+        SkipWhitespace();
+        if (Consume(']')) return true;
+        while (true) {
+            std::string value;
+            if (!ReadString(&value)) return false;
+            values->push_back(std::move(value));
+            SkipWhitespace();
+            if (Consume(']')) return true;
+            if (!Consume(',')) return false;
+            SkipWhitespace();
+        }
     }
 
     bool ReadString(std::string* value) {
@@ -132,6 +155,11 @@ inline double NumberOr(const Object& object, const char* key, double fallback) {
 inline bool BooleanOr(const Object& object, const char* key, bool fallback) {
     const auto value = object.booleans.find(key);
     return value == object.booleans.end() ? fallback : value->second;
+}
+
+inline const std::vector<std::string>* StringArray(const Object& object, const char* key) {
+    const auto value = object.stringArrays.find(key);
+    return value == object.stringArrays.end() ? nullptr : &value->second;
 }
 
 } // namespace enput::json

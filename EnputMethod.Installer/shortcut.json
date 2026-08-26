@@ -1,0 +1,7 @@
+{
+  "selectFirst": ["Tab"],
+  "previousPage": ["Minus", "NumpadSubtract"],
+  "nextPage": ["Plus", "NumpadAdd"],
+  "selectPrevious": ["Up"],
+  "selectNext": ["Down"]
+}

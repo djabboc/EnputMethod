@@ -9,6 +9,7 @@
 #include <iterator>
 #include <new>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // A system-registered, transparent TSF keyboard profile.  It exists as a real input
@@ -56,6 +57,14 @@ struct ThemeStyle {
     int shadowSize = 8;
 };
 
+struct ShortcutConfiguration {
+    std::vector<WPARAM> selectFirst{ VK_TAB };
+    std::vector<WPARAM> previousPage{ VK_OEM_MINUS, VK_SUBTRACT };
+    std::vector<WPARAM> nextPage{ VK_OEM_PLUS, VK_ADD };
+    std::vector<WPARAM> selectPrevious{ VK_UP };
+    std::vector<WPARAM> selectNext{ VK_DOWN };
+};
+
 struct RuntimeConfiguration {
     int candidateCount = 9;
     bool horizontal = false;
@@ -64,6 +73,7 @@ struct RuntimeConfiguration {
     int fontSize = 16;
     BYTE opacity = 255;
     ThemeStyle theme{};
+    ShortcutConfiguration shortcuts{};
 };
 
 std::wstring ConfigurationPath() {
@@ -72,6 +82,52 @@ std::wstring ConfigurationPath() {
     const std::wstring current = directory + L"\\config.json";
     if (GetFileAttributesW(current.c_str()) != INVALID_FILE_ATTRIBUTES) return current;
     return directory + L"\\conf.json"; // Compatibility with releases before config.json.
+}
+
+std::wstring ShortcutPath() {
+    const std::wstring directory = UserDataDirectory();
+    return directory.empty() ? std::wstring{} : directory + L"\\shortcut.json";
+}
+
+WPARAM ShortcutKey(const std::string& name) {
+    static const std::unordered_map<std::string, WPARAM> keys{
+        { "Tab", VK_TAB }, { "Minus", VK_OEM_MINUS }, { "Plus", VK_OEM_PLUS },
+        { "NumpadSubtract", VK_SUBTRACT }, { "NumpadAdd", VK_ADD },
+        { "Up", VK_UP }, { "Down", VK_DOWN }, { "Space", VK_SPACE },
+        { "Enter", VK_RETURN }, { "Escape", VK_ESCAPE }
+    };
+    const auto named = keys.find(name);
+    if (named != keys.end()) return named->second;
+    if (name.size() == 1 && ((name[0] >= 'A' && name[0] <= 'Z') || (name[0] >= '0' && name[0] <= '9'))) return name[0];
+    return 0;
+}
+
+std::vector<WPARAM> ShortcutKeys(const enput::json::Object& object, const char* action, const std::vector<WPARAM>& fallback) {
+    const std::vector<std::string>* names = enput::json::StringArray(object, action);
+    if (!names) return fallback;
+    std::vector<WPARAM> keys;
+    for (const std::string& name : *names) {
+        const WPARAM key = ShortcutKey(name);
+        if (!key) return fallback;
+        if (std::find(keys.begin(), keys.end(), key) == keys.end()) keys.push_back(key);
+    }
+    return keys;
+}
+
+ShortcutConfiguration LoadShortcutConfiguration() {
+    ShortcutConfiguration shortcuts;
+    enput::json::Object object;
+    if (!enput::json::ReadObject(ReadUtf8File(ShortcutPath()), &object)) return shortcuts;
+    shortcuts.selectFirst = ShortcutKeys(object, "selectFirst", shortcuts.selectFirst);
+    shortcuts.previousPage = ShortcutKeys(object, "previousPage", shortcuts.previousPage);
+    shortcuts.nextPage = ShortcutKeys(object, "nextPage", shortcuts.nextPage);
+    shortcuts.selectPrevious = ShortcutKeys(object, "selectPrevious", shortcuts.selectPrevious);
+    shortcuts.selectNext = ShortcutKeys(object, "selectNext", shortcuts.selectNext);
+    return shortcuts;
+}
+
+bool HasShortcut(const std::vector<WPARAM>& keys, WPARAM key) {
+    return std::find(keys.begin(), keys.end(), key) != keys.end();
 }
 
 bool IsSafeThemeName(const std::string& name) {
@@ -134,6 +190,7 @@ RuntimeConfiguration LoadRuntimeConfiguration() {
     const double opacity = std::clamp(enput::json::NumberOr(object, "opacity", 1.0), 0.2, 1.0);
     configuration.opacity = static_cast<BYTE>(std::lround(opacity * 255.0));
     configuration.theme = LoadTheme(enput::json::StringOr(object, "theme", "dark"));
+    configuration.shortcuts = LoadShortcutConfiguration();
     return configuration;
 }
 
@@ -418,7 +475,7 @@ public:
         const int candidateIndex = CandidateIndex(key);
         const wchar_t selectionTrailing = configuration_.appendSpaceAfterSelection ? L' ' : L'\0';
         if (candidateIndex >= 0 && candidateIndex < static_cast<int>(candidates_.size())) return FinishComposition(cookie, candidates_[candidateIndex], selectionTrailing);
-        if (key == VK_TAB && !candidates_.empty()) return FinishComposition(cookie, candidates_.front(), selectionTrailing);
+        if (HasShortcut(configuration_.shortcuts.selectFirst, key) && !candidates_.empty()) return FinishComposition(cookie, candidates_.front(), selectionTrailing);
         if (key == VK_SPACE) return FinishComposition(cookie, typed_, L' ');
         if (key == VK_RETURN) return FinishComposition(cookie, typed_, L'\r');
         if (key == VK_ESCAPE) return FinishComposition(cookie, typed_, L'\0');
@@ -444,7 +501,7 @@ private:
         if (!hasModifier && key >= 'A' && key <= 'Z') return false;
         if (key == VK_BACK || key == VK_SPACE || key == VK_RETURN || key == VK_ESCAPE) return false;
         if (CandidateIndex(key) >= 0 && CandidateIndex(key) < static_cast<int>(candidates_.size())) return false;
-        return !(key == VK_TAB && !candidates_.empty());
+        return !(HasShortcut(configuration_.shortcuts.selectFirst, key) && !candidates_.empty());
     }
 
     static bool IsModifierKey(WPARAM key) {

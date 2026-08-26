@@ -51,6 +51,7 @@ public partial class MainWindow : Window
         Directory.CreateDirectory(destinationDirectory);
         MigrateLegacyConfiguration(destinationDirectory);
         CopyDefaultFile("config.json", destinationDirectory);
+        CopyDefaultFile("shortcut.json", destinationDirectory);
         CopyDefaultFile("dictionary.txt", destinationDirectory);
         CopyDefaultThemes(destinationDirectory);
     }

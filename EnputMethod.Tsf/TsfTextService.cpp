@@ -255,9 +255,11 @@ public:
         if (window_) DestroyWindow(window_);
     }
 
-    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration) {
+    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration, size_t page, size_t pageCount) {
         candidates_ = candidates;
         configuration_ = configuration;
+        page_ = page;
+        pageCount_ = pageCount;
         if (candidates_.empty()) { Hide(); return; }
         if (!EnsureWindow()) return;
         ConfigureWindow();
@@ -312,7 +314,8 @@ private:
         }
         if (previous) SelectObject(dc, previous);
         ReleaseDC(window_, dc);
-        const int height = configuration_.horizontal ? rowHeight + padding * 2 : rowHeight * static_cast<int>(candidates_.size()) + padding * 2;
+        const int pageHeight = pageCount_ > 1 ? rowHeight : 0;
+        const int height = (configuration_.horizontal ? rowHeight + padding * 2 : rowHeight * static_cast<int>(candidates_.size()) + padding * 2) + pageHeight;
         return { width + configuration_.theme.shadowSize, height + configuration_.theme.shadowSize };
     }
 
@@ -390,6 +393,12 @@ private:
                 const std::wstring label = std::to_wstring(index + 1) + L".  " + self->candidates_[index];
                 DrawTextW(dc, label.c_str(), static_cast<int>(label.size()), &row, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             }
+            if (self->pageCount_ > 1) {
+                const std::wstring pageText = L"Page " + std::to_wstring(self->page_ + 1) + L"/" + std::to_wstring(self->pageCount_);
+                RECT pageRow{ padding, surface.bottom - rowHeight - padding, surface.right - padding, surface.bottom - padding };
+                SetTextColor(dc, self->configuration_.theme.foreground);
+                DrawTextW(dc, pageText.c_str(), static_cast<int>(pageText.size()), &pageRow, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+            }
             if (previousFont) SelectObject(dc, previousFont);
             EndPaint(window, &paint);
             return 0;
@@ -402,6 +411,8 @@ private:
     HFONT font_ = nullptr;
     RuntimeConfiguration configuration_{};
     std::vector<std::wstring> candidates_;
+    size_t page_ = 0;
+    size_t pageCount_ = 0;
 };
 
 class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink, public ITfCompositionSink {
@@ -463,15 +474,21 @@ public:
             const bool uppercase = (GetKeyState(VK_SHIFT) < 0) ^ ((GetKeyState(VK_CAPITAL) & 1) != 0);
             typed_ += static_cast<wchar_t>(uppercase ? key : key + (L'a' - L'A'));
             configuration_ = LoadRuntimeConfiguration();
-            candidates_ = FindCandidates(typed_, configuration_.candidateCount);
+            allCandidates_ = FindCandidates(typed_);
+            currentPage_ = 0;
+            UpdateCurrentPage();
             return UpdateComposition(context, cookie);
         }
         if (key == VK_BACK && !typed_.empty()) {
             typed_.pop_back();
             configuration_ = LoadRuntimeConfiguration();
-            candidates_ = FindCandidates(typed_, configuration_.candidateCount);
+            allCandidates_ = FindCandidates(typed_);
+            currentPage_ = 0;
+            UpdateCurrentPage();
             return typed_.empty() ? FinishComposition(cookie, L"", L'\0') : UpdateComposition(context, cookie);
         }
+        if (HasShortcut(configuration_.shortcuts.previousPage, key)) return MovePage(context, cookie, -1);
+        if (HasShortcut(configuration_.shortcuts.nextPage, key)) return MovePage(context, cookie, 1);
         const int candidateIndex = CandidateIndex(key);
         const wchar_t selectionTrailing = configuration_.appendSpaceAfterSelection ? L' ' : L'\0';
         if (candidateIndex >= 0 && candidateIndex < static_cast<int>(candidates_.size())) return FinishComposition(cookie, candidates_[candidateIndex], selectionTrailing);
@@ -500,6 +517,7 @@ private:
         const bool hasModifier = GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0;
         if (!hasModifier && key >= 'A' && key <= 'Z') return false;
         if (key == VK_BACK || key == VK_SPACE || key == VK_RETURN || key == VK_ESCAPE) return false;
+        if (HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key)) return false;
         if (CandidateIndex(key) >= 0 && CandidateIndex(key) < static_cast<int>(candidates_.size())) return false;
         return !(HasShortcut(configuration_.shortcuts.selectFirst, key) && !candidates_.empty());
     }
@@ -517,7 +535,7 @@ private:
         return -1;
     }
 
-    static std::vector<std::wstring> FindCandidates(const std::wstring& typed, int maximum) {
+    static std::vector<std::wstring> FindCandidates(const std::wstring& typed) {
         if (typed.empty()) return {};
         std::wstring lower = typed;
         std::transform(lower.begin(), lower.end(), lower.begin(), towlower);
@@ -527,10 +545,33 @@ private:
             std::transform(candidate.begin(), candidate.end(), candidate.begin(), towlower);
             if (candidate.starts_with(lower) && candidate.size() > typed.size()) {
                 matches.push_back(word);
-                if (matches.size() == static_cast<size_t>(maximum)) break;
             }
         }
         return matches;
+    }
+
+    size_t PageCount() const {
+        const size_t pageSize = static_cast<size_t>(configuration_.candidateCount);
+        return pageSize ? (allCandidates_.size() + pageSize - 1) / pageSize : 0;
+    }
+
+    void UpdateCurrentPage() {
+        candidates_.clear();
+        const size_t pageCount = PageCount();
+        if (!pageCount) { currentPage_ = 0; return; }
+        currentPage_ = (std::min)(currentPage_, pageCount - 1);
+        const size_t first = currentPage_ * static_cast<size_t>(configuration_.candidateCount);
+        const size_t last = (std::min)(allCandidates_.size(), first + static_cast<size_t>(configuration_.candidateCount));
+        candidates_.insert(candidates_.end(), allCandidates_.begin() + first, allCandidates_.begin() + last);
+    }
+
+    HRESULT MovePage(ITfContext* context, TfEditCookie cookie, int direction) {
+        const size_t pageCount = PageCount();
+        if (pageCount < 2) return S_OK;
+        if (direction < 0 && currentPage_ > 0) --currentPage_;
+        if (direction > 0 && currentPage_ + 1 < pageCount) ++currentPage_;
+        UpdateCurrentPage();
+        return UpdateComposition(context, cookie);
     }
 
     HRESULT UpdateComposition(ITfContext* context, TfEditCookie cookie) {
@@ -560,7 +601,7 @@ private:
                 caret->Release();
             }
         }
-        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_, configuration_);
+        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount());
         range->Release();
         return hr;
     }
@@ -572,7 +613,7 @@ private:
         if (trailing) finalText += trailing;
         if (SUCCEEDED(hr)) { hr = range->SetText(cookie, 0, finalText.data(), static_cast<LONG>(finalText.size())); range->Release(); }
         ITfComposition* composition = composition_; composition_ = nullptr;
-        typed_.clear(); candidates_.clear(); candidateWindow_.Hide();
+        typed_.clear(); allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; candidateWindow_.Hide();
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
         if (SUCCEEDED(hr)) hr = composition->EndComposition(cookie);
         composition->Release();
@@ -582,7 +623,7 @@ private:
     void ClearComposition() {
         if (composition_) { composition_->Release(); composition_ = nullptr; }
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
-        typed_.clear(); candidates_.clear(); candidateWindow_.Hide();
+        typed_.clear(); allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; candidateWindow_.Hide();
     }
 
     long refs_ = 1;
@@ -591,7 +632,9 @@ private:
     ITfComposition* composition_ = nullptr;
     ITfContext* compositionContext_ = nullptr;
     std::wstring typed_;
+    std::vector<std::wstring> allCandidates_;
     std::vector<std::wstring> candidates_;
+    size_t currentPage_ = 0;
     RuntimeConfiguration configuration_{};
     CandidateWindow candidateWindow_;
 };

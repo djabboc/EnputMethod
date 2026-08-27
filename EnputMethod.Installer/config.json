@@ -2,6 +2,7 @@
   "candidateCount": 9,
   "layout": "vertical",
   "appendSpaceAfterSelection": true,
+  "preserveCase": true,
   "fontFamily": "Segoe UI",
   "fontSize": 16,
   "opacity": 1.0,

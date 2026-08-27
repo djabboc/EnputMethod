@@ -72,6 +72,7 @@ struct RuntimeConfiguration {
     int candidateCount = 9;
     bool horizontal = false;
     bool appendSpaceAfterSelection = true;
+    bool preserveCase = true;
     std::wstring fontFamily = L"Segoe UI";
     int fontSize = 16;
     BYTE opacity = 255;
@@ -192,6 +193,7 @@ RuntimeConfiguration LoadRuntimeConfiguration() {
         configuration.candidateCount = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "candidateCount", configuration.candidateCount))), 1, 9);
         configuration.horizontal = enput::json::StringOr(object, "layout", "vertical") == "horizontal";
         configuration.appendSpaceAfterSelection = enput::json::BooleanOr(object, "appendSpaceAfterSelection", configuration.appendSpaceAfterSelection);
+        configuration.preserveCase = enput::json::BooleanOr(object, "preserveCase", configuration.preserveCase);
         configuration.fontFamily = Utf8ToWide(enput::json::StringOr(object, "fontFamily", "Segoe UI"));
         if (configuration.fontFamily.empty()) configuration.fontFamily = L"Segoe UI";
         configuration.fontSize = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "fontSize", configuration.fontSize))), 10, 32);
@@ -264,12 +266,13 @@ public:
         if (window_) DestroyWindow(window_);
     }
 
-    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration, size_t page, size_t pageCount, size_t selectedIndex) {
+    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration, size_t page, size_t pageCount, size_t selectedIndex, bool capsLock) {
         candidates_ = candidates;
         configuration_ = configuration;
         page_ = page;
         pageCount_ = pageCount;
         selectedIndex_ = selectedIndex;
+        capsLock_ = capsLock;
         if (candidates_.empty()) { Hide(); return; }
         if (!EnsureWindow()) return;
         ConfigureWindow();
@@ -335,8 +338,8 @@ private:
         }
         if (previous) SelectObject(dc, previous);
         ReleaseDC(window_, dc);
-        const int pageHeight = pageCount_ > 1 ? rowHeight : 0;
-        const int height = (configuration_.horizontal ? rowHeight + padding * 2 : rowHeight * static_cast<int>(candidates_.size()) + padding * 2) + pageHeight;
+        const int footerHeight = (pageCount_ > 1 || capsLock_) ? rowHeight : 0;
+        const int height = (configuration_.horizontal ? rowHeight + padding * 2 : rowHeight * static_cast<int>(candidates_.size()) + padding * 2) + footerHeight;
         return { width + configuration_.theme.shadowSize, height + configuration_.theme.shadowSize };
     }
 
@@ -424,11 +427,18 @@ private:
                 const std::wstring label = std::to_wstring(index + 1) + L".  " + self->candidates_[index];
                 DrawTextW(dc, label.c_str(), static_cast<int>(label.size()), &row, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             }
-            if (self->pageCount_ > 1) {
+            if (self->pageCount_ > 1 || self->capsLock_) {
                 const std::wstring pageText = L"Page " + std::to_wstring(self->page_ + 1) + L"/" + std::to_wstring(self->pageCount_);
                 RECT pageRow{ padding, surface.bottom - rowHeight - padding, surface.right - padding, surface.bottom - padding };
-                SetTextColor(dc, self->configuration_.theme.foreground);
-                DrawTextW(dc, pageText.c_str(), static_cast<int>(pageText.size()), &pageRow, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+                if (self->capsLock_) {
+                    const std::wstring capsText = L"CAPS";
+                    SetTextColor(dc, self->configuration_.theme.selectedForeground);
+                    DrawTextW(dc, capsText.c_str(), static_cast<int>(capsText.size()), &pageRow, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                }
+                if (self->pageCount_ > 1) {
+                    SetTextColor(dc, self->configuration_.theme.foreground);
+                    DrawTextW(dc, pageText.c_str(), static_cast<int>(pageText.size()), &pageRow, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+                }
             }
             if (previousFont) SelectObject(dc, previousFont);
             EndPaint(window, &paint);
@@ -445,6 +455,7 @@ private:
     size_t page_ = 0;
     size_t pageCount_ = 0;
     size_t selectedIndex_ = 0;
+    bool capsLock_ = false;
     SIZE size_{};
     int positionX_ = 0;
     int positionY_ = 0;
@@ -586,7 +597,7 @@ private:
         return key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT ||
                key == VK_CONTROL || key == VK_LCONTROL || key == VK_RCONTROL ||
                key == VK_MENU || key == VK_LMENU || key == VK_RMENU ||
-               key == VK_LWIN || key == VK_RWIN;
+               key == VK_LWIN || key == VK_RWIN || key == VK_CAPITAL;
     }
 
     static int CandidateIndex(WPARAM key) {
@@ -595,18 +606,60 @@ private:
         return -1;
     }
 
+    static void ToLowerInPlace(std::wstring* text) {
+        std::transform(text->begin(), text->end(), text->begin(), [](wchar_t character) { return static_cast<wchar_t>(towlower(character)); });
+    }
+
+    static void ToUpperInPlace(std::wstring* text) {
+        std::transform(text->begin(), text->end(), text->begin(), [](wchar_t character) { return static_cast<wchar_t>(towupper(character)); });
+    }
+
+    static bool IsAllUpper(const std::wstring& text) {
+        bool hasLetter = false;
+        for (const wchar_t character : text) {
+            if (!iswalpha(character)) continue;
+            hasLetter = true;
+            if (!iswupper(character)) return false;
+        }
+        return hasLetter;
+    }
+
+    static bool IsTitleCase(const std::wstring& text) {
+        if (text.empty() || !iswupper(text.front())) return false;
+        return std::all_of(text.begin() + 1, text.end(), [](wchar_t character) { return !iswalpha(character) || iswlower(character); });
+    }
+
+    static std::wstring DisplayCandidate(const std::wstring& candidate, const std::wstring& typed, const RuntimeConfiguration& configuration) {
+        std::wstring display = candidate;
+        const bool capsLock = (GetKeyState(VK_CAPITAL) & 1) != 0;
+        if (capsLock || (configuration.preserveCase && IsAllUpper(typed))) {
+            ToUpperInPlace(&display);
+        } else if (configuration.preserveCase && IsTitleCase(typed)) {
+            ToLowerInPlace(&display);
+            if (!display.empty()) display.front() = static_cast<wchar_t>(towupper(display.front()));
+        } else if (configuration.preserveCase && !typed.empty() && std::all_of(typed.begin(), typed.end(), [](wchar_t character) { return !iswalpha(character) || iswlower(character); })) {
+            ToLowerInPlace(&display);
+        }
+        return display;
+    }
+
     static std::vector<std::wstring> FindCandidates(const std::wstring& typed) {
         if (typed.empty()) return {};
         std::wstring lower = typed;
-        std::transform(lower.begin(), lower.end(), lower.begin(), towlower);
-        std::vector<std::wstring> matches;
+        ToLowerInPlace(&lower);
+        std::vector<std::wstring> exactMatches;
+        std::vector<std::wstring> prefixMatches;
         for (const std::wstring& word : LoadDictionary()) {
             std::wstring candidate = word;
-            std::transform(candidate.begin(), candidate.end(), candidate.begin(), towlower);
-            if (candidate.starts_with(lower) && candidate.size() > typed.size()) {
-                matches.push_back(word);
-            }
+            ToLowerInPlace(&candidate);
+            if (!candidate.starts_with(lower)) continue;
+            if (candidate == lower) exactMatches.push_back(word);
+            else prefixMatches.push_back(word);
         }
+        std::vector<std::wstring> matches;
+        matches.reserve(exactMatches.size() + prefixMatches.size());
+        matches.insert(matches.end(), exactMatches.begin(), exactMatches.end());
+        matches.insert(matches.end(), prefixMatches.begin(), prefixMatches.end());
         return matches;
     }
 
@@ -622,7 +675,9 @@ private:
         currentPage_ = (std::min)(currentPage_, pageCount - 1);
         const size_t first = currentPage_ * static_cast<size_t>(configuration_.candidateCount);
         const size_t last = (std::min)(allCandidates_.size(), first + static_cast<size_t>(configuration_.candidateCount));
-        candidates_.insert(candidates_.end(), allCandidates_.begin() + first, allCandidates_.begin() + last);
+        for (auto candidate = allCandidates_.begin() + first; candidate != allCandidates_.begin() + last; ++candidate) {
+            candidates_.push_back(DisplayCandidate(*candidate, typed_, configuration_));
+        }
     }
 
     HRESULT MovePage(ITfContext* context, TfEditCookie cookie, int direction) {
@@ -686,7 +741,7 @@ private:
                 caret->Release();
             }
         }
-        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_);
+        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0);
         range->Release();
         return hr;
     }

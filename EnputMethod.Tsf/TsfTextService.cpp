@@ -449,9 +449,18 @@ const TranslationEntry* FindFullTranslation(const std::wstring& lower) {
     for (int attempt = 0; attempt < 48 && first < last; ++attempt) {
         const uintmax_t middle = first + (last - first) / 2;
         input.clear();
-        input.seekg(static_cast<std::streamoff>(middle));
+        uintmax_t lineOffset = middle;
+        // A forward-only skip can discard the only remaining candidate line. Seek to the line containing middle instead.
+        while (lineOffset > 0) {
+            input.seekg(static_cast<std::streamoff>(lineOffset - 1));
+            if (!input) return nullptr;
+            const int previousCharacter = input.get();
+            if (previousCharacter == '\n') break;
+            --lineOffset;
+        }
+        input.clear();
+        input.seekg(static_cast<std::streamoff>(lineOffset));
         if (!input) return nullptr;
-        if (middle > 0) input.ignore((std::numeric_limits<std::streamsize>::max)(), '\n');
         const std::streampos lineStart = input.tellg();
         std::string line;
         if (!std::getline(input, line) || line.empty()) return nullptr;

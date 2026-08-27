@@ -499,10 +499,16 @@ public:
             previousPage == page_ && previousPageCount == pageCount_ && previousCapsLock == capsLock_ &&
             previousModeMarker == modeMarker_ && previousSelectedIndex != selectedIndex_;
         if (selectionOnly) {
-            const RECT previousRow = CandidateRow(previousSelectedIndex);
-            const RECT selectedRow = CandidateRow(selectedIndex_);
-            InvalidateRect(window_, &previousRow, FALSE);
-            InvalidateRect(window_, &selectedRow, FALSE);
+            // Color-font rendering requires one contiguous paint region; leave the footer marker untouched.
+            if (modeMarker_ == L"EMOJI") {
+                const RECT candidateRows = CandidateRows();
+                InvalidateRect(window_, &candidateRows, FALSE);
+            } else {
+                const RECT previousRow = CandidateRow(previousSelectedIndex);
+                const RECT selectedRow = CandidateRow(selectedIndex_);
+                InvalidateRect(window_, &previousRow, FALSE);
+                InvalidateRect(window_, &selectedRow, FALSE);
+            }
         } else {
             InvalidateRect(window_, nullptr, FALSE);
         }
@@ -640,6 +646,13 @@ private:
         if (previous) SelectObject(dc, previous);
         ReleaseDC(window_, dc);
         return { left, padding, right, padding + rowHeight };
+    }
+
+    RECT CandidateRows() const {
+        const int padding = configuration_.theme.padding;
+        const int rowHeight = configuration_.theme.rowHeight;
+        const int contentHeight = configuration_.horizontal ? rowHeight : rowHeight * static_cast<int>(candidates_.size());
+        return { 0, 0, size_.cx, padding * 2 + contentHeight };
     }
 
     bool EnsureWindow() {

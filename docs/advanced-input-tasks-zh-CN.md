@@ -88,3 +88,10 @@
 - Cause: duplicate detection added for phrase integration used a linear scan for every matching dictionary word, which made short prefixes grow quadratically against the large word list.
 - Correction: both regular and associated candidate paths use case-insensitive hash sets for duplicate detection.
 - Static verification: Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors.
+
+## Pending manual verification: full translation dictionary
+
+- Change: commit `5983741` adds an installer-managed ECDICT download and a file-backed lookup path for 770,000+ English-to-Chinese entries.
+- Source and license: ECDICT 1.0.28 under the MIT License; see `docs/dictionary-sources-zh-CN.md`.
+- Current status: the small installed JSON dictionary and window placement are verified. The first-install download, conversion, and non-demo word lookup remain pending manual verification.
+- Follow-up test: after installation completes with network access, enter a non-demo word such as `abandon`, open translation with `F3`, and verify English definition, Chinese meaning, and part of speech.

@@ -677,9 +677,13 @@ private:
         auto* self = reinterpret_cast<CandidateWindow*>(GetWindowLongPtrW(window, GWLP_USERDATA));
         if (message == WM_PAINT && self) {
             PAINTSTRUCT paint{};
-            HDC dc = BeginPaint(window, &paint);
+            HDC paintDc = BeginPaint(window, &paint);
             RECT client{};
             GetClientRect(window, &client);
+            HDC bufferDc = CreateCompatibleDC(paintDc);
+            HBITMAP buffer = bufferDc ? CreateCompatibleBitmap(paintDc, client.right, client.bottom) : nullptr;
+            HGDIOBJ previousBitmap = buffer ? SelectObject(bufferDc, buffer) : nullptr;
+            HDC dc = buffer ? bufferDc : paintDc;
             const int shadow = self->configuration_.theme.shadowSize;
             RECT surface{ 0, 0, client.right - shadow, client.bottom - shadow };
             HBRUSH shadowBrush = CreateSolidBrush(self->configuration_.theme.border);
@@ -754,6 +758,14 @@ private:
                 }
             }
             if (previousFont) SelectObject(dc, previousFont);
+            if (buffer) {
+                BitBlt(paintDc, paint.rcPaint.left, paint.rcPaint.top,
+                       paint.rcPaint.right - paint.rcPaint.left, paint.rcPaint.bottom - paint.rcPaint.top,
+                       bufferDc, paint.rcPaint.left, paint.rcPaint.top, SRCCOPY);
+                SelectObject(bufferDc, previousBitmap);
+                DeleteObject(buffer);
+            }
+            if (bufferDc) DeleteDC(bufferDc);
             EndPaint(window, &paint);
             return 0;
         }

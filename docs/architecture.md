@@ -19,7 +19,7 @@ Installation performs these operations:
 
 The installer explicitly loads the TSF DLL adjacent to its executable, copies it to a filename derived from its timestamp and size, then registers that installed path. The versioned deployment filename allows an update to complete when an earlier DLL remains mapped in a running application. Reinstalling the same DLL reuses an identical deployed file. The installer and uninstaller can therefore be kept or moved as complete output folders after installation. Use the uninstaller before manually deleting an installed DLL.
 
-The installer creates `%LOCALAPPDATA%\Enput Method\config.json`, `shortcut.json`, `dictionary.txt`, and four JSON themes from bundled defaults when those files are missing. `conf.json` from older releases is migrated without overwriting custom content. The native service parses the JSON configuration and shortcut action arrays, supports UTF-8 files with or without a BOM, and caches the dictionary until its timestamp or size changes. Existing user files are never overwritten by an update.
+The installer creates `%LOCALAPPDATA%\Enput Method\config.json`, `shortcut.json`, `dictionary.txt`, and four JSON themes from bundled defaults when those files are missing. `conf.json` from older releases is migrated without overwriting custom content. On theme updates it adds only fields absent from an existing valid bundled theme, preserving every user-supplied value. The native service parses the JSON configuration and shortcut action arrays, supports UTF-8 files with or without a BOM, and caches the dictionary until its timestamp or size changes.
 
 ## Suggestions
 
@@ -27,7 +27,7 @@ Suggestions are sourced from the ordered user dictionary. The bundled dictionary
 
 ## Appearance
 
-`config.json` controls vertical or horizontal layout, automatic trailing spaces after selection, font family, font size, opacity, and the active theme. `shortcut.json` maps actions to one or more key names. A theme controls background, foreground, selected-row colors and border, border color and width, corner radius, padding, row height, and shadow size. Bundled themes are `dark`, `light`, `eye-care`, and `paper`.
+`config.json` controls vertical or horizontal layout, automatic trailing spaces after selection, font family, font size, opacity, and the active theme. `shortcut.json` maps actions to one or more key names. A theme controls background, foreground, selected-row colors and border, border color and width, corner radius, padding, row height, and shadow size. Translation-window fields use the `translation` prefix and separately control width, maximum height, colors, border, padding, corner radius, and scrollbar colors. Bundled themes are `dark`, `light`, `eye-care`, and `paper`.
 
 ## Current Limits
 

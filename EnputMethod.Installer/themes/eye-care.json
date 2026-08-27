@@ -11,5 +11,16 @@
   "cornerRadius": 12,
   "padding": 12,
   "rowHeight": 30,
-  "shadowSize": 4
+  "shadowSize": 4,
+  "translationBackground": "#EAF3E4",
+  "translationForeground": "#25412B",
+  "translationTitleForeground": "#18311E",
+  "translationBorder": "#7C9A76",
+  "translationBorderWidth": 1,
+  "translationCornerRadius": 12,
+  "translationPadding": 12,
+  "translationWidth": 380,
+  "translationMaxHeight": 180,
+  "translationScrollbarTrack": "#CFE2C8",
+  "translationScrollbarThumb": "#4D8B65"
 }

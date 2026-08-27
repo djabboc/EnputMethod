@@ -59,3 +59,5 @@ there
 ## 主题
 
 主题目录为 `%LOCALAPPDATA%\Enput Method\themes`，包含四个默认文件：`dark.json`、`light.json`、`eye-care.json`、`paper.json`。主题文件可控制背景、前景、首选项颜色、边框、圆角、内边距、行高和阴影尺寸。主题修改会在下一次显示候选窗时读取。
+
+翻译窗使用独立的主题字段：`translationBackground`、`translationForeground`、`translationTitleForeground`、`translationBorder`、`translationBorderWidth`、`translationCornerRadius`、`translationPadding`、`translationWidth`、`translationMaxHeight`、`translationScrollbarTrack` 和 `translationScrollbarThumb`。`translationMaxHeight` 低于完整释义高度时会显示滚动条；默认深色主题设置为 `160`，便于验证长释义的滚动。安装更新只会补齐主题中缺失的新字段，已有值不会被覆盖。

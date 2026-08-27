@@ -233,7 +233,40 @@ public partial class MainWindow : Window
         foreach (string source in Directory.EnumerateFiles(sourceDirectory, "*.json"))
         {
             string destination = Path.Combine(targetDirectory, Path.GetFileName(source));
-            if (!File.Exists(destination)) File.Copy(source, destination);
+            if (!File.Exists(destination))
+            {
+                File.Copy(source, destination);
+                continue;
+            }
+
+            MergeMissingThemeFields(source, destination);
+        }
+    }
+
+    private static void MergeMissingThemeFields(string source, string destination)
+    {
+        try
+        {
+            JsonObject? bundled = JsonNode.Parse(File.ReadAllText(source)) as JsonObject;
+            JsonObject? installed = JsonNode.Parse(File.ReadAllText(destination)) as JsonObject;
+            if (bundled is null || installed is null) return;
+
+            bool changed = false;
+            foreach ((string key, JsonNode? value) in bundled)
+            {
+                if (installed.ContainsKey(key)) continue;
+                installed[key] = value?.DeepClone();
+                changed = true;
+            }
+            if (changed) File.WriteAllText(destination, installed.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (JsonException)
+        {
+            // Leave a user's malformed theme untouched.
+        }
+        catch (IOException)
+        {
+            // The input method can hold a theme briefly while it starts.
         }
     }
 }

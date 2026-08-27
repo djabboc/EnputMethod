@@ -67,6 +67,17 @@ struct ThemeStyle {
     int shadowSize = 8;
     int selectedBorderWidth = 1;
     int selectedCornerRadius = 5;
+    COLORREF translationBackground = RGB(31, 41, 55);
+    COLORREF translationForeground = RGB(243, 244, 246);
+    COLORREF translationTitleForeground = RGB(255, 255, 255);
+    COLORREF translationBorder = RGB(75, 85, 99);
+    COLORREF translationScrollbarTrack = RGB(75, 85, 99);
+    COLORREF translationScrollbarThumb = RGB(96, 165, 250);
+    int translationBorderWidth = 1;
+    int translationCornerRadius = 8;
+    int translationPadding = 10;
+    int translationWidth = 380;
+    int translationMaxHeight = 420;
 };
 
 struct ShortcutConfiguration {
@@ -197,6 +208,17 @@ ThemeStyle LoadTheme(const std::string& name) {
     theme.shadowSize = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "shadowSize", theme.shadowSize))), 0, 24);
     theme.selectedBorderWidth = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "selectedBorderWidth", theme.selectedBorderWidth))), 0, 6);
     theme.selectedCornerRadius = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "selectedCornerRadius", theme.selectedCornerRadius))), 0, 32);
+    theme.translationBackground = ColorOr(object, "translationBackground", theme.background);
+    theme.translationForeground = ColorOr(object, "translationForeground", theme.foreground);
+    theme.translationTitleForeground = ColorOr(object, "translationTitleForeground", theme.selectedForeground);
+    theme.translationBorder = ColorOr(object, "translationBorder", theme.border);
+    theme.translationScrollbarTrack = ColorOr(object, "translationScrollbarTrack", theme.border);
+    theme.translationScrollbarThumb = ColorOr(object, "translationScrollbarThumb", theme.selectedBorder);
+    theme.translationBorderWidth = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "translationBorderWidth", theme.borderWidth))), 0, 6);
+    theme.translationCornerRadius = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "translationCornerRadius", theme.cornerRadius))), 0, 32);
+    theme.translationPadding = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "translationPadding", theme.padding))), 4, 32);
+    theme.translationWidth = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "translationWidth", theme.translationWidth))), 220, 720);
+    theme.translationMaxHeight = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "translationMaxHeight", theme.translationMaxHeight))), 100, 720);
     return theme;
 }
 
@@ -1023,9 +1045,9 @@ public:
         const HRESULT hr = view->GetTextExt(cookie, range, &textRect, &clipped);
         view->Release();
         if (FAILED(hr)) return;
-        constexpr int width = 380;
-        constexpr int maximumHeight = 420;
-        const int padding = configuration_.theme.padding;
+        const int width = configuration_.theme.translationWidth;
+        const int maximumHeight = configuration_.theme.translationMaxHeight;
+        const int padding = configuration_.theme.translationPadding;
         const int unscrolledContentHeight = MeasureContentHeight(width - padding * 2);
         hasScrollbar_ = padding * 2 + unscrolledContentHeight > maximumHeight;
         contentWidth_ = width - padding * 2 - (hasScrollbar_ ? kScrollbarWidth + padding : 0);
@@ -1086,13 +1108,13 @@ private:
     int ScrollbarThumbTop() const {
         const int travel = viewportHeight_ - ScrollbarThumbHeight();
         const int maximum = MaximumScrollOffset();
-        return configuration_.theme.padding + (maximum > 0 ? scrollOffset_ * travel / maximum : 0);
+        return configuration_.theme.translationPadding + (maximum > 0 ? scrollOffset_ * travel / maximum : 0);
     }
 
     bool IsOverScrollbar(POINT point) const {
-        return hasScrollbar_ && point.x >= size_.cx - configuration_.theme.padding - kScrollbarWidth &&
-            point.x < size_.cx - configuration_.theme.padding && point.y >= configuration_.theme.padding &&
-            point.y < configuration_.theme.padding + viewportHeight_;
+        return hasScrollbar_ && point.x >= size_.cx - configuration_.theme.translationPadding - kScrollbarWidth &&
+            point.x < size_.cx - configuration_.theme.translationPadding && point.y >= configuration_.theme.translationPadding &&
+            point.y < configuration_.theme.translationPadding + viewportHeight_;
     }
 
     void SetScrollOffset(int offset) {
@@ -1107,7 +1129,7 @@ private:
         const int travel = viewportHeight_ - thumbHeight;
         const int maximum = MaximumScrollOffset();
         if (travel <= 0 || maximum <= 0) return;
-        SetScrollOffset((y - configuration_.theme.padding - dragOffset_) * maximum / travel);
+        SetScrollOffset((y - configuration_.theme.translationPadding - dragOffset_) * maximum / travel);
     }
 
     bool EnsureWindow() {
@@ -1123,18 +1145,18 @@ private:
         auto* self = reinterpret_cast<TranslationWindow*>(GetWindowLongPtrW(window, GWLP_USERDATA));
         if (message == WM_PAINT && self) {
             PAINTSTRUCT paint{}; HDC dc = BeginPaint(window, &paint); RECT client{}; GetClientRect(window, &client);
-            HBRUSH background = CreateSolidBrush(self->configuration_.theme.background); HPEN border = CreatePen(PS_SOLID, self->configuration_.theme.borderWidth, self->configuration_.theme.border);
+            HBRUSH background = CreateSolidBrush(self->configuration_.theme.translationBackground); HPEN border = CreatePen(PS_SOLID, self->configuration_.theme.translationBorderWidth, self->configuration_.theme.translationBorder);
             HGDIOBJ oldBrush = SelectObject(dc, background); HGDIOBJ oldPen = SelectObject(dc, border);
-            RoundRect(dc, 0, 0, client.right, client.bottom, self->configuration_.theme.cornerRadius * 2, self->configuration_.theme.cornerRadius * 2);
+            RoundRect(dc, 0, 0, client.right, client.bottom, self->configuration_.theme.translationCornerRadius * 2, self->configuration_.theme.translationCornerRadius * 2);
             SelectObject(dc, oldBrush); SelectObject(dc, oldPen); DeleteObject(background); DeleteObject(border);
             SetBkMode(dc, TRANSPARENT); HGDIOBJ oldFont = self->font_ ? SelectObject(dc, self->font_) : nullptr;
-            const int padding = self->configuration_.theme.padding;
+            const int padding = self->configuration_.theme.translationPadding;
             RECT viewport{ padding, padding, client.right - padding - (self->hasScrollbar_ ? kScrollbarWidth + padding : 0), client.bottom - padding };
             const int saved = SaveDC(dc);
             IntersectClipRect(dc, viewport.left, viewport.top, viewport.right, viewport.bottom);
             int lineTop = viewport.top - self->scrollOffset_;
             for (size_t index = 0; index < self->lines_.size(); ++index) {
-                SetTextColor(dc, index == 0 ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground);
+                SetTextColor(dc, index == 0 ? self->configuration_.theme.translationTitleForeground : self->configuration_.theme.translationForeground);
                 RECT measured{ viewport.left, lineTop, viewport.right, lineTop };
                 DrawTextW(dc, self->lines_[index].c_str(), static_cast<int>(self->lines_[index].size()), &measured, DT_LEFT | DT_WORDBREAK | DT_CALCRECT);
                 const int lineHeight = (std::max)(self->configuration_.theme.rowHeight, static_cast<int>(measured.bottom - measured.top));
@@ -1147,12 +1169,12 @@ private:
             RestoreDC(dc, saved);
             if (self->hasScrollbar_) {
                 RECT track{ client.right - padding - kScrollbarWidth, padding, client.right - padding, client.bottom - padding };
-                HBRUSH trackBrush = CreateSolidBrush(self->configuration_.theme.border);
+                HBRUSH trackBrush = CreateSolidBrush(self->configuration_.theme.translationScrollbarTrack);
                 FillRect(dc, &track, trackBrush);
                 DeleteObject(trackBrush);
                 const int thumbTop = self->ScrollbarThumbTop();
                 RECT thumb{ track.left, thumbTop, track.right, thumbTop + self->ScrollbarThumbHeight() };
-                HBRUSH thumbBrush = CreateSolidBrush(self->configuration_.theme.selectedBorder);
+                HBRUSH thumbBrush = CreateSolidBrush(self->configuration_.theme.translationScrollbarThumb);
                 FillRect(dc, &thumb, thumbBrush);
                 DeleteObject(thumbBrush);
             }

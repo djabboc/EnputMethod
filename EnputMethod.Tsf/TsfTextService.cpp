@@ -624,6 +624,24 @@ private:
             for (size_t index = 0; index < candidates_.size(); ++index) widest = (std::max)(widest, static_cast<int>(LabelSize(dc, index).cx));
             width = (std::max)(220, widest + padding * 2);
         }
+        if (pageCount_ > 1 || capsLock_ || !modeMarker_.empty()) {
+            int footerWidth = padding * 2;
+            if (capsLock_ || !modeMarker_.empty()) {
+                std::wstring marker = capsLock_ ? L"CAPS" : L"";
+                if (!marker.empty() && !modeMarker_.empty()) marker += L" ";
+                marker += modeMarker_;
+                SIZE markerSize{};
+                GetTextExtentPoint32W(dc, marker.c_str(), static_cast<int>(marker.size()), &markerSize);
+                footerWidth += markerSize.cx + padding;
+            }
+            if (pageCount_ > 1) {
+                const std::wstring pageText = L"Page " + std::to_wstring(page_ + 1) + L"/" + std::to_wstring(pageCount_);
+                SIZE pageSize{};
+                GetTextExtentPoint32W(dc, pageText.c_str(), static_cast<int>(pageText.size()), &pageSize);
+                footerWidth += pageSize.cx + rowHeight * 2;
+            }
+            width = (std::max)(width, footerWidth);
+        }
         if (previous) SelectObject(dc, previous);
         ReleaseDC(window_, dc);
         const int footerHeight = (pageCount_ > 1 || capsLock_ || !modeMarker_.empty()) ? rowHeight : 0;

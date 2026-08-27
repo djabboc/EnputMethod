@@ -809,20 +809,25 @@ private:
             if (self->pageCount_ > 1 || self->capsLock_ || !self->modeMarker_.empty()) {
                 const std::wstring pageText = L"Page " + std::to_wstring(self->page_ + 1) + L"/" + std::to_wstring(self->pageCount_);
                 RECT pageRow{ padding, surface.bottom - rowHeight - padding, surface.right - padding, surface.bottom - padding };
+                int navigationLeft = pageRow.left;
                 if (self->capsLock_ || !self->modeMarker_.empty()) {
                     std::wstring capsText = self->capsLock_ ? L"CAPS" : L"";
                     if (!capsText.empty() && !self->modeMarker_.empty()) capsText += L" ";
                     capsText += self->modeMarker_;
                     SetTextColor(dc, self->configuration_.theme.selectedForeground);
                     DrawTextW(dc, capsText.c_str(), static_cast<int>(capsText.size()), &pageRow, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                    RECT markerSize{ 0, 0, 0, 0 };
+                    DrawTextW(dc, capsText.c_str(), static_cast<int>(capsText.size()), &markerSize, DT_CALCRECT | DT_SINGLELINE);
+                    navigationLeft = (std::min)(pageRow.right, pageRow.left + markerSize.right + padding);
                 }
                 if (self->pageCount_ > 1) {
                     const std::wstring previousText = L"<";
                     const std::wstring nextText = L">";
+                    RECT navigationRow{ navigationLeft, pageRow.top, pageRow.right, pageRow.bottom };
                     SetTextColor(dc, self->configuration_.theme.foreground);
-                    DrawTextW(dc, previousText.c_str(), static_cast<int>(previousText.size()), &pageRow, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-                    DrawTextW(dc, nextText.c_str(), static_cast<int>(nextText.size()), &pageRow, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-                    RECT pageNumber{ pageRow.left + rowHeight, pageRow.top, pageRow.right - rowHeight, pageRow.bottom };
+                    DrawTextW(dc, previousText.c_str(), static_cast<int>(previousText.size()), &navigationRow, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                    DrawTextW(dc, nextText.c_str(), static_cast<int>(nextText.size()), &navigationRow, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+                    RECT pageNumber{ navigationRow.left + rowHeight, navigationRow.top, navigationRow.right - rowHeight, navigationRow.bottom };
                     DrawTextW(dc, pageText.c_str(), static_cast<int>(pageText.size()), &pageNumber, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
                 }
             }

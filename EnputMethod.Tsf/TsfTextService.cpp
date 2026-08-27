@@ -1024,7 +1024,15 @@ public:
         view->Release();
         if (FAILED(hr)) return;
         constexpr int width = 380;
-        const int height = (std::min)(420, configuration_.theme.padding * 2 + configuration_.theme.rowHeight * static_cast<int>(lines_.size()) * 2);
+        constexpr int maximumHeight = 420;
+        const int padding = configuration_.theme.padding;
+        const int unscrolledContentHeight = MeasureContentHeight(width - padding * 2);
+        hasScrollbar_ = padding * 2 + unscrolledContentHeight > maximumHeight;
+        contentWidth_ = width - padding * 2 - (hasScrollbar_ ? kScrollbarWidth + padding : 0);
+        contentHeight_ = MeasureContentHeight(contentWidth_);
+        const int height = (std::min)(maximumHeight, padding * 2 + contentHeight_);
+        viewportHeight_ = height - padding * 2;
+        scrollOffset_ = 0;
         const RECT anchor = candidateBounds ? *candidateBounds : textRect;
         int left = candidateBounds ? candidateBounds->right + 12 : textRect.right + 12;
         int top = candidateBounds ? candidateBounds->top : textRect.bottom + 2;
@@ -1037,6 +1045,7 @@ public:
                 top = std::clamp(top, static_cast<int>(info.rcWork.top), static_cast<int>(info.rcWork.bottom) - height);
             }
         }
+        size_ = { width, height };
         SetWindowPos(window_, HWND_TOPMOST, left, top, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
         InvalidateRect(window_, nullptr, FALSE);
     }
@@ -1051,6 +1060,54 @@ private:
         HDC dc = GetDC(window_); const int dpi = GetDeviceCaps(dc, LOGPIXELSY); ReleaseDC(window_, dc);
         font_ = CreateFontW(-MulDiv(configuration_.fontSize, dpi, 72), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, configuration_.fontFamily.c_str());
         SetLayeredWindowAttributes(window_, 0, configuration_.opacity, LWA_ALPHA);
+    }
+
+    int MeasureContentHeight(int width) const {
+        HDC dc = GetDC(window_);
+        HGDIOBJ previous = font_ ? SelectObject(dc, font_) : nullptr;
+        int height = 0;
+        for (const std::wstring& value : lines_) {
+            RECT line{ 0, 0, width, 0 };
+            DrawTextW(dc, value.c_str(), static_cast<int>(value.size()), &line, DT_LEFT | DT_WORDBREAK | DT_CALCRECT);
+            height += (std::max)(configuration_.theme.rowHeight, static_cast<int>(line.bottom - line.top)) + 2;
+        }
+        if (previous) SelectObject(dc, previous);
+        ReleaseDC(window_, dc);
+        return (std::max)(0, height - 2);
+    }
+
+    int MaximumScrollOffset() const { return (std::max)(0, contentHeight_ - viewportHeight_); }
+
+    int ScrollbarThumbHeight() const {
+        if (!hasScrollbar_ || contentHeight_ <= 0) return 0;
+        return (std::max)(20, viewportHeight_ * viewportHeight_ / contentHeight_);
+    }
+
+    int ScrollbarThumbTop() const {
+        const int travel = viewportHeight_ - ScrollbarThumbHeight();
+        const int maximum = MaximumScrollOffset();
+        return configuration_.theme.padding + (maximum > 0 ? scrollOffset_ * travel / maximum : 0);
+    }
+
+    bool IsOverScrollbar(POINT point) const {
+        return hasScrollbar_ && point.x >= size_.cx - configuration_.theme.padding - kScrollbarWidth &&
+            point.x < size_.cx - configuration_.theme.padding && point.y >= configuration_.theme.padding &&
+            point.y < configuration_.theme.padding + viewportHeight_;
+    }
+
+    void SetScrollOffset(int offset) {
+        const int clamped = std::clamp(offset, 0, MaximumScrollOffset());
+        if (clamped == scrollOffset_) return;
+        scrollOffset_ = clamped;
+        InvalidateRect(window_, nullptr, FALSE);
+    }
+
+    void DragScrollbarTo(int y) {
+        const int thumbHeight = ScrollbarThumbHeight();
+        const int travel = viewportHeight_ - thumbHeight;
+        const int maximum = MaximumScrollOffset();
+        if (travel <= 0 || maximum <= 0) return;
+        SetScrollOffset((y - configuration_.theme.padding - dragOffset_) * maximum / travel);
     }
 
     bool EnsureWindow() {
@@ -1071,20 +1128,76 @@ private:
             RoundRect(dc, 0, 0, client.right, client.bottom, self->configuration_.theme.cornerRadius * 2, self->configuration_.theme.cornerRadius * 2);
             SelectObject(dc, oldBrush); SelectObject(dc, oldPen); DeleteObject(background); DeleteObject(border);
             SetBkMode(dc, TRANSPARENT); HGDIOBJ oldFont = self->font_ ? SelectObject(dc, self->font_) : nullptr;
-            RECT text{ self->configuration_.theme.padding, self->configuration_.theme.padding, client.right - self->configuration_.theme.padding, client.bottom - self->configuration_.theme.padding };
-            for (size_t index = 0; index < self->lines_.size() && text.top < text.bottom; ++index) {
+            const int padding = self->configuration_.theme.padding;
+            RECT viewport{ padding, padding, client.right - padding - (self->hasScrollbar_ ? kScrollbarWidth + padding : 0), client.bottom - padding };
+            const int saved = SaveDC(dc);
+            IntersectClipRect(dc, viewport.left, viewport.top, viewport.right, viewport.bottom);
+            int lineTop = viewport.top - self->scrollOffset_;
+            for (size_t index = 0; index < self->lines_.size(); ++index) {
                 SetTextColor(dc, index == 0 ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground);
-                RECT line = text; DrawTextW(dc, self->lines_[index].c_str(), static_cast<int>(self->lines_[index].size()), &line, DT_LEFT | DT_WORDBREAK | DT_CALCRECT);
-                DrawTextW(dc, self->lines_[index].c_str(), static_cast<int>(self->lines_[index].size()), &text, DT_LEFT | DT_WORDBREAK);
-                text.top += (std::max)(self->configuration_.theme.rowHeight, static_cast<int>(line.bottom - line.top)) + 2;
+                RECT measured{ viewport.left, lineTop, viewport.right, lineTop };
+                DrawTextW(dc, self->lines_[index].c_str(), static_cast<int>(self->lines_[index].size()), &measured, DT_LEFT | DT_WORDBREAK | DT_CALCRECT);
+                const int lineHeight = (std::max)(self->configuration_.theme.rowHeight, static_cast<int>(measured.bottom - measured.top));
+                if (lineTop + lineHeight >= viewport.top && lineTop < viewport.bottom) {
+                    RECT line{ viewport.left, lineTop, viewport.right, lineTop + lineHeight };
+                    DrawTextW(dc, self->lines_[index].c_str(), static_cast<int>(self->lines_[index].size()), &line, DT_LEFT | DT_WORDBREAK);
+                }
+                lineTop += lineHeight + 2;
+            }
+            RestoreDC(dc, saved);
+            if (self->hasScrollbar_) {
+                RECT track{ client.right - padding - kScrollbarWidth, padding, client.right - padding, client.bottom - padding };
+                HBRUSH trackBrush = CreateSolidBrush(self->configuration_.theme.border);
+                FillRect(dc, &track, trackBrush);
+                DeleteObject(trackBrush);
+                const int thumbTop = self->ScrollbarThumbTop();
+                RECT thumb{ track.left, thumbTop, track.right, thumbTop + self->ScrollbarThumbHeight() };
+                HBRUSH thumbBrush = CreateSolidBrush(self->configuration_.theme.selectedBorder);
+                FillRect(dc, &thumb, thumbBrush);
+                DeleteObject(thumbBrush);
             }
             if (oldFont) SelectObject(dc, oldFont); EndPaint(window, &paint); return 0;
         }
+        if (message == WM_NCHITTEST) return HTCLIENT;
         if (message == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+        if (message == WM_MOUSEWHEEL && self) {
+            const int direction = GET_WHEEL_DELTA_WPARAM(parameter) > 0 ? -1 : 1;
+            self->SetScrollOffset(self->scrollOffset_ + direction * self->configuration_.theme.rowHeight * 3);
+            return 0;
+        }
+        if (message == WM_LBUTTONDOWN && self) {
+            const POINT point{ static_cast<short>(LOWORD(parameter)), static_cast<short>(HIWORD(parameter)) };
+            if (!self->IsOverScrollbar(point)) return 0;
+            const int thumbTop = self->ScrollbarThumbTop();
+            self->dragOffset_ = point.y >= thumbTop && point.y < thumbTop + self->ScrollbarThumbHeight() ? point.y - thumbTop : self->ScrollbarThumbHeight() / 2;
+            self->draggingScrollbar_ = true;
+            SetCapture(window);
+            self->DragScrollbarTo(point.y);
+            return 0;
+        }
+        if (message == WM_MOUSEMOVE && self && self->draggingScrollbar_) {
+            const POINT point{ static_cast<short>(LOWORD(parameter)), static_cast<short>(HIWORD(parameter)) };
+            self->DragScrollbarTo(point.y);
+            return 0;
+        }
+        if (message == WM_LBUTTONUP && self && self->draggingScrollbar_) {
+            self->draggingScrollbar_ = false;
+            if (GetCapture() == window) ReleaseCapture();
+            return 0;
+        }
         return DefWindowProcW(window, message, 0, parameter);
     }
 
+    static constexpr int kScrollbarWidth = 10;
     HWND window_ = nullptr; HFONT font_ = nullptr; RuntimeConfiguration configuration_{}; std::vector<std::wstring> lines_;
+    SIZE size_{};
+    int contentWidth_ = 0;
+    int contentHeight_ = 0;
+    int viewportHeight_ = 0;
+    int scrollOffset_ = 0;
+    int dragOffset_ = 0;
+    bool hasScrollbar_ = false;
+    bool draggingScrollbar_ = false;
 };
 
 class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink, public ITfCompositionSink {

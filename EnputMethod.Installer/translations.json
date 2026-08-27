@@ -1,0 +1,24 @@
+{
+  "entries": [
+    {
+      "text": "hello",
+      "partOfSpeech": ["interjection", "noun"],
+      "translations": {
+        "zh-CN": ["你好", "您好"],
+        "ja-JP": ["こんにちは"]
+      },
+      "examples": [{ "text": "Hello, world." }],
+      "source": "Bundled demonstration data; replace with licensed dictionary content."
+    },
+    {
+      "text": "world",
+      "partOfSpeech": ["noun"],
+      "translations": {
+        "zh-CN": ["世界"],
+        "ja-JP": ["世界"]
+      },
+      "examples": [{ "text": "The world is changing." }],
+      "source": "Bundled demonstration data; replace with licensed dictionary content."
+    }
+  ]
+}

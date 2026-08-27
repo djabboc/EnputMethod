@@ -68,6 +68,7 @@ struct ShortcutConfiguration {
     std::vector<WPARAM> selectPrevious{ VK_UP };
     std::vector<WPARAM> selectNext{ VK_DOWN };
     std::vector<WPARAM> toggleEmojiMode{ VK_F2 };
+    std::vector<WPARAM> toggleTranslationWindow{ VK_F3 };
 };
 
 struct RuntimeConfiguration {
@@ -101,7 +102,7 @@ WPARAM ShortcutKey(const std::string& name) {
         { "Tab", VK_TAB }, { "Minus", VK_OEM_MINUS }, { "Plus", VK_OEM_PLUS },
         { "NumpadSubtract", VK_SUBTRACT }, { "NumpadAdd", VK_ADD },
         { "Up", VK_UP }, { "Down", VK_DOWN }, { "Space", VK_SPACE },
-        { "Enter", VK_RETURN }, { "Escape", VK_ESCAPE }, { "F2", VK_F2 }
+        { "Enter", VK_RETURN }, { "Escape", VK_ESCAPE }, { "F2", VK_F2 }, { "F3", VK_F3 }
     };
     const auto named = keys.find(name);
     if (named != keys.end()) return named->second;
@@ -133,6 +134,7 @@ ShortcutConfiguration LoadShortcutConfiguration() {
     shortcuts.selectPrevious = ShortcutKeys(object, "selectPrevious", shortcuts.selectPrevious);
     shortcuts.selectNext = ShortcutKeys(object, "selectNext", shortcuts.selectNext);
     shortcuts.toggleEmojiMode = ShortcutKeys(object, "toggleEmojiMode", shortcuts.toggleEmojiMode);
+    shortcuts.toggleTranslationWindow = ShortcutKeys(object, "toggleTranslationWindow", shortcuts.toggleTranslationWindow);
     return shortcuts;
 }
 
@@ -369,6 +371,55 @@ const std::vector<EmojiEntry>& LoadEmojiDictionary() {
     cache.available = available;
     cache.entries = std::move(entries);
     return cache.entries;
+}
+
+struct TranslationEntry {
+    std::wstring text;
+    std::vector<std::wstring> partsOfSpeech;
+    std::vector<std::pair<std::wstring, std::vector<std::wstring>>> translations;
+    std::wstring example;
+    std::wstring source;
+};
+
+std::wstring TranslationDictionaryPath() {
+    const std::wstring directory = UserDataDirectory();
+    return directory.empty() ? std::wstring{} : directory + L"\\translations.json";
+}
+
+const std::vector<TranslationEntry>& LoadTranslationDictionary() {
+    static std::vector<TranslationEntry> entries;
+    static bool loaded = false;
+    if (loaded) return entries;
+    loaded = true;
+    enput::json::Value document;
+    const enput::json::Value* values = enput::json::ReadDocument(ReadUtf8File(TranslationDictionaryPath()), &document) ? enput::json::ObjectValue(document, "entries") : nullptr;
+    if (!values || values->type != enput::json::Value::Type::Array) return entries;
+    for (const enput::json::Value& value : values->array) {
+        const enput::json::Value* text = enput::json::ObjectValue(value, "text");
+        if (!text || text->type != enput::json::Value::Type::String) continue;
+        TranslationEntry entry;
+        entry.text = Utf8ToWide(text->string);
+        entry.partsOfSpeech = JsonStrings(enput::json::ObjectValue(value, "partOfSpeech"));
+        entry.source = Utf8ToWide(enput::json::ObjectValue(value, "source") && enput::json::ObjectValue(value, "source")->type == enput::json::Value::Type::String ? enput::json::ObjectValue(value, "source")->string : "");
+        const enput::json::Value* translations = enput::json::ObjectValue(value, "translations");
+        if (translations && translations->type == enput::json::Value::Type::Object) {
+            for (const auto& [language, meanings] : translations->object) entry.translations.emplace_back(Utf8ToWide(language), JsonStrings(&meanings));
+        }
+        const enput::json::Value* examples = enput::json::ObjectValue(value, "examples");
+        if (examples && examples->type == enput::json::Value::Type::Array && !examples->array.empty()) {
+            const enput::json::Value* example = enput::json::ObjectValue(examples->array.front(), "text");
+            if (example && example->type == enput::json::Value::Type::String) entry.example = Utf8ToWide(example->string);
+        }
+        if (!entry.text.empty()) entries.push_back(std::move(entry));
+    }
+    return entries;
+}
+
+const TranslationEntry* FindTranslation(const std::wstring& text) {
+    const std::wstring lower = Lowercase(text);
+    const std::vector<TranslationEntry>& entries = LoadTranslationDictionary();
+    const auto entry = std::find_if(entries.begin(), entries.end(), [&lower](const TranslationEntry& value) { return Lowercase(value.text) == lower; });
+    return entry == entries.end() ? nullptr : &*entry;
 }
 
 class KeyEditSession;
@@ -638,6 +689,96 @@ private:
     int positionY_ = 0;
 };
 
+class TranslationWindow final {
+public:
+    ~TranslationWindow() { if (font_) DeleteObject(font_); if (window_) DestroyWindow(window_); }
+
+    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const TranslationEntry* entry, const RuntimeConfiguration& configuration) {
+        if (!entry) { Hide(); return; }
+        configuration_ = configuration;
+        lines_.clear();
+        lines_.push_back(entry->text);
+        if (!entry->partsOfSpeech.empty()) {
+            std::wstring parts;
+            for (size_t index = 0; index < entry->partsOfSpeech.size(); ++index) { if (index) parts += L", "; parts += entry->partsOfSpeech[index]; }
+            lines_.push_back(parts);
+        }
+        for (const auto& [language, meanings] : entry->translations) {
+            std::wstring line = language + L": ";
+            for (size_t index = 0; index < meanings.size(); ++index) { if (index) line += L"; "; line += meanings[index]; }
+            lines_.push_back(line);
+        }
+        if (!entry->example.empty()) lines_.push_back(L"Example: " + entry->example);
+        if (!entry->source.empty()) lines_.push_back(L"Source: " + entry->source);
+        if (!EnsureWindow()) return;
+        ConfigureWindow();
+        ITfContextView* view{}; RECT textRect{}; BOOL clipped{};
+        if (FAILED(context->GetActiveView(&view))) return;
+        const HRESULT hr = view->GetTextExt(cookie, range, &textRect, &clipped);
+        view->Release();
+        if (FAILED(hr)) return;
+        constexpr int width = 380;
+        const int height = (std::min)(420, configuration_.theme.padding * 2 + configuration_.theme.rowHeight * static_cast<int>(lines_.size()) * 2);
+        int left = textRect.right + 12;
+        int top = textRect.bottom + 2;
+        if (configuration_.avoidScreenEdges) {
+            MONITORINFO info{ sizeof(info) };
+            const HMONITOR monitor = MonitorFromRect(&textRect, MONITOR_DEFAULTTONEAREST);
+            if (monitor && GetMonitorInfoW(monitor, &info)) {
+                left = std::clamp(left, static_cast<int>(info.rcWork.left), static_cast<int>(info.rcWork.right) - width);
+                top = std::clamp(top, static_cast<int>(info.rcWork.top), static_cast<int>(info.rcWork.bottom) - height);
+            }
+        }
+        SetWindowPos(window_, HWND_TOPMOST, left, top, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        InvalidateRect(window_, nullptr, FALSE);
+    }
+
+    void Hide() { if (window_) ShowWindow(window_, SW_HIDE); }
+
+private:
+    static constexpr wchar_t kClassName[] = L"EnputMethodTranslationWindow";
+
+    void ConfigureWindow() {
+        if (font_) DeleteObject(font_);
+        HDC dc = GetDC(window_); const int dpi = GetDeviceCaps(dc, LOGPIXELSY); ReleaseDC(window_, dc);
+        font_ = CreateFontW(-MulDiv(configuration_.fontSize, dpi, 72), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, configuration_.fontFamily.c_str());
+        SetLayeredWindowAttributes(window_, 0, configuration_.opacity, LWA_ALPHA);
+    }
+
+    bool EnsureWindow() {
+        if (window_) return true;
+        WNDCLASSEXW windowClass{ sizeof(windowClass) }; windowClass.lpfnWndProc = WindowProc; windowClass.hInstance = g_module; windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW); windowClass.lpszClassName = kClassName;
+        RegisterClassExW(&windowClass);
+        window_ = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED, kClassName, L"", WS_POPUP, 0, 0, 0, 0, nullptr, nullptr, g_module, this);
+        return window_ != nullptr;
+    }
+
+    static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM, LPARAM parameter) {
+        if (message == WM_NCCREATE) SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(reinterpret_cast<const CREATESTRUCTW*>(parameter)->lpCreateParams));
+        auto* self = reinterpret_cast<TranslationWindow*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        if (message == WM_PAINT && self) {
+            PAINTSTRUCT paint{}; HDC dc = BeginPaint(window, &paint); RECT client{}; GetClientRect(window, &client);
+            HBRUSH background = CreateSolidBrush(self->configuration_.theme.background); HPEN border = CreatePen(PS_SOLID, self->configuration_.theme.borderWidth, self->configuration_.theme.border);
+            HGDIOBJ oldBrush = SelectObject(dc, background); HGDIOBJ oldPen = SelectObject(dc, border);
+            RoundRect(dc, 0, 0, client.right, client.bottom, self->configuration_.theme.cornerRadius * 2, self->configuration_.theme.cornerRadius * 2);
+            SelectObject(dc, oldBrush); SelectObject(dc, oldPen); DeleteObject(background); DeleteObject(border);
+            SetBkMode(dc, TRANSPARENT); HGDIOBJ oldFont = self->font_ ? SelectObject(dc, self->font_) : nullptr;
+            RECT text{ self->configuration_.theme.padding, self->configuration_.theme.padding, client.right - self->configuration_.theme.padding, client.bottom - self->configuration_.theme.padding };
+            for (size_t index = 0; index < self->lines_.size() && text.top < text.bottom; ++index) {
+                SetTextColor(dc, index == 0 ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground);
+                RECT line = text; DrawTextW(dc, self->lines_[index].c_str(), static_cast<int>(self->lines_[index].size()), &line, DT_LEFT | DT_WORDBREAK | DT_CALCRECT);
+                DrawTextW(dc, self->lines_[index].c_str(), static_cast<int>(self->lines_[index].size()), &text, DT_LEFT | DT_WORDBREAK);
+                text.top += (std::max)(self->configuration_.theme.rowHeight, static_cast<int>(line.bottom - line.top)) + 2;
+            }
+            if (oldFont) SelectObject(dc, oldFont); EndPaint(window, &paint); return 0;
+        }
+        if (message == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+        return DefWindowProcW(window, message, 0, parameter);
+    }
+
+    HWND window_ = nullptr; HFONT font_ = nullptr; RuntimeConfiguration configuration_{}; std::vector<std::wstring> lines_;
+};
+
 class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink, public ITfCompositionSink {
 public:
     TextService() { InterlockedIncrement(&g_objectCount); }
@@ -670,6 +811,7 @@ public:
     STDMETHODIMP ActivateEx(ITfThreadMgr* threadManager, TfClientId clientId, DWORD) override { return Activate(threadManager, clientId); }
     STDMETHODIMP Deactivate() override {
         candidateWindow_.Hide();
+        translationWindow_.Hide();
         if (threadManager_) {
             ITfKeystrokeMgr* keystrokeManager = nullptr;
             if (SUCCEEDED(threadManager_->QueryInterface(IID_PPV_ARGS(&keystrokeManager)))) {
@@ -693,6 +835,13 @@ public:
     }
 
     HRESULT ApplyKey(ITfContext* context, TfEditCookie cookie, WPARAM key) {
+        if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key)) {
+            configuration_ = LoadRuntimeConfiguration();
+            translationEnabled_ = !translationEnabled_;
+            if (composition_) return UpdateComposition(context, cookie);
+            translationWindow_.Hide();
+            return S_OK;
+        }
         if (HasShortcut(configuration_.shortcuts.toggleEmojiMode, key)) {
             configuration_ = LoadRuntimeConfiguration();
             emojiMode_ = !emojiMode_;
@@ -767,6 +916,7 @@ private:
     }
 
     bool ShouldHandleKey(WPARAM key) const {
+        if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key)) return true;
         if (HasShortcut(configuration_.shortcuts.toggleEmojiMode, key)) return true;
         if (emojiMode_ && key == VK_ESCAPE && typed_.empty()) return true;
         if (IsSuggestionActive()) return !IsModifierKey(key);
@@ -780,12 +930,13 @@ private:
             if (!IsSuggestionActive()) return false;
             const bool hasModifier = GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0;
             if (!hasModifier && key >= 'A' && key <= 'Z') return false;
-            if (key == VK_SPACE || HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key)) return false;
+            if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key) || key == VK_SPACE || HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key)) return false;
             if (HasShortcut(configuration_.shortcuts.selectPrevious, key) || HasShortcut(configuration_.shortcuts.selectNext, key)) return false;
             if (CandidateIndex(key) >= 0 && CandidateIndex(key) < static_cast<int>(candidates_.size())) return false;
             return !(HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size());
         }
         const bool hasModifier = GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0;
+        if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key)) return false;
         if (HasShortcut(configuration_.shortcuts.toggleEmojiMode, key)) return false;
         if (!hasModifier && key >= 'A' && key <= 'Z') return false;
         if (key == VK_BACK) return cursor_ == 0;
@@ -995,7 +1146,10 @@ private:
                 caret->Release();
             }
         }
-        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
+        if (SUCCEEDED(hr)) {
+            candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
+            translationWindow_.Show(context, cookie, range, translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr, configuration_);
+        }
         range->Release();
         return hr;
     }
@@ -1007,7 +1161,7 @@ private:
         if (trailing) finalText += trailing;
         if (SUCCEEDED(hr)) { hr = range->SetText(cookie, 0, finalText.data(), static_cast<LONG>(finalText.size())); range->Release(); }
         ITfComposition* composition = composition_; composition_ = nullptr;
-        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidateWindow_.Hide();
+        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidateWindow_.Hide(); translationWindow_.Hide();
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
         if (SUCCEEDED(hr)) hr = composition->EndComposition(cookie);
         composition->Release();
@@ -1035,7 +1189,7 @@ private:
     void ClearComposition() {
         if (composition_) { composition_->Release(); composition_ = nullptr; }
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
-        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidateWindow_.Hide();
+        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidateWindow_.Hide(); translationWindow_.Hide();
     }
 
     long refs_ = 1;
@@ -1051,8 +1205,10 @@ private:
     size_t selectedIndex_ = 0;
     std::wstring lastCommittedText_;
     bool emojiMode_ = false;
+    bool translationEnabled_ = false;
     RuntimeConfiguration configuration_{};
     CandidateWindow candidateWindow_;
+    TranslationWindow translationWindow_;
 };
 
 class KeyEditSession final : public ITfEditSession {

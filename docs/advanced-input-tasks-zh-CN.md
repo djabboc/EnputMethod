@@ -65,6 +65,12 @@
 - JSON 词典支持每个词条的多语言映射、词性、例句与来源。
 - 验收：高亮候选变化时翻译窗口同步更新；窗口可由快捷键开关。
 
+## Task 13 verification record
+
+- Completed: `toggleTranslationWindow` is configurable with the default `F3`; a separate non-activating window tracks the highlighted candidate.
+- Completed: `translations.json` supports part of speech, multiple language mappings, example text, and a source field. Bundled entries are explicitly demonstration data, not an authoritative corpus.
+- Static verification: Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors.
+
 ## 任务 14：发布准备
 
 - 更新 README、架构、配置说明和安装验证矩阵。

@@ -4,5 +4,6 @@
   "nextPage": ["Plus", "NumpadAdd"],
   "selectPrevious": ["Up"],
   "selectNext": ["Down"],
-  "toggleEmojiMode": ["F2"]
+  "toggleEmojiMode": ["F2"],
+  "toggleTranslationWindow": ["F3"]
 }

@@ -55,6 +55,7 @@ public partial class MainWindow : Window
         CopyDefaultFile("dictionary.txt", destinationDirectory);
         CopyDefaultFile("suggestions.json", destinationDirectory);
         CopyDefaultFile("emoji.json", destinationDirectory);
+        CopyDefaultFile("translations.json", destinationDirectory);
         CopyDefaultThemes(destinationDirectory);
     }
 

@@ -534,6 +534,10 @@ public:
         if (window_) ShowWindow(window_, SW_HIDE);
     }
 
+    bool GetScreenBounds(RECT* bounds) const {
+        return bounds && window_ && IsWindowVisible(window_) && GetWindowRect(window_, bounds);
+    }
+
 private:
     static constexpr wchar_t kClassName[] = L"EnputMethodCandidateWindow";
 
@@ -817,7 +821,7 @@ class TranslationWindow final {
 public:
     ~TranslationWindow() { if (font_) DeleteObject(font_); if (window_) DestroyWindow(window_); }
 
-    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const TranslationEntry* entry, const RuntimeConfiguration& configuration) {
+    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const TranslationEntry* entry, const RuntimeConfiguration& configuration, const RECT* candidateBounds) {
         if (!entry) { Hide(); return; }
         configuration_ = configuration;
         lines_.clear();
@@ -843,12 +847,14 @@ public:
         if (FAILED(hr)) return;
         constexpr int width = 380;
         const int height = (std::min)(420, configuration_.theme.padding * 2 + configuration_.theme.rowHeight * static_cast<int>(lines_.size()) * 2);
-        int left = textRect.right + 12;
-        int top = textRect.bottom + 2;
+        const RECT anchor = candidateBounds ? *candidateBounds : textRect;
+        int left = candidateBounds ? candidateBounds->right + 12 : textRect.right + 12;
+        int top = candidateBounds ? candidateBounds->top : textRect.bottom + 2;
         if (configuration_.avoidScreenEdges) {
             MONITORINFO info{ sizeof(info) };
-            const HMONITOR monitor = MonitorFromRect(&textRect, MONITOR_DEFAULTTONEAREST);
+            const HMONITOR monitor = MonitorFromRect(&anchor, MONITOR_DEFAULTTONEAREST);
             if (monitor && GetMonitorInfoW(monitor, &info)) {
+                if (candidateBounds && left + width > info.rcWork.right && candidateBounds->left - 12 - width >= info.rcWork.left) left = candidateBounds->left - 12 - width;
                 left = std::clamp(left, static_cast<int>(info.rcWork.left), static_cast<int>(info.rcWork.right) - width);
                 top = std::clamp(top, static_cast<int>(info.rcWork.top), static_cast<int>(info.rcWork.bottom) - height);
             }
@@ -1290,7 +1296,8 @@ private:
         }
         if (SUCCEEDED(hr)) {
             candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
-            translationWindow_.Show(context, cookie, range, translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr, configuration_);
+            RECT candidateBounds{};
+            translationWindow_.Show(context, cookie, range, translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr, configuration_, candidateWindow_.GetScreenBounds(&candidateBounds) ? &candidateBounds : nullptr);
         }
         range->Release();
         return hr;
@@ -1342,7 +1349,8 @@ private:
         HRESULT hr = context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched);
         if (FAILED(hr) || fetched != 1) return FAILED(hr) ? hr : E_FAIL;
         candidateWindow_.Show(context, cookie, selection.range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
-        translationWindow_.Show(context, cookie, selection.range, translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr, configuration_);
+        RECT candidateBounds{};
+        translationWindow_.Show(context, cookie, selection.range, translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr, configuration_, candidateWindow_.GetScreenBounds(&candidateBounds) ? &candidateBounds : nullptr);
         selection.range->Release();
         return S_OK;
     }

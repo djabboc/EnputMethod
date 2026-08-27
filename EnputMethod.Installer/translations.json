@@ -11,6 +11,16 @@
       "source": "Bundled demonstration data; replace with licensed dictionary content."
     },
     {
+      "text": "hell",
+      "partOfSpeech": ["noun"],
+      "translations": {
+        "zh-CN": ["地狱", "苦难的境地"],
+        "ja-JP": ["地獄", "苦しみの場所"]
+      },
+      "examples": [{ "text": "The road to hell is paved with good intentions." }],
+      "source": "Bundled demonstration data; replace with licensed dictionary content."
+    },
+    {
       "text": "world",
       "partOfSpeech": ["noun"],
       "translations": {

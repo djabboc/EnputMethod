@@ -7,9 +7,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cwctype>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <new>
 #include <string>
 #include <unordered_map>
@@ -392,6 +394,33 @@ std::wstring TranslationDictionaryPath() {
     return directory.empty() ? std::wstring{} : directory + L"\\translations.json";
 }
 
+std::wstring FullTranslationDictionaryPath() {
+    const std::wstring directory = UserDataDirectory();
+    return directory.empty() ? std::wstring{} : directory + L"\\translations.ecdict.jsonl";
+}
+
+bool ParseTranslationEntry(const enput::json::Value& value, TranslationEntry* entry) {
+    if (!entry) return false;
+    const enput::json::Value* text = enput::json::ObjectValue(value, "text");
+    if (!text || text->type != enput::json::Value::Type::String) return false;
+    TranslationEntry parsed;
+    parsed.text = Utf8ToWide(text->string);
+    parsed.partsOfSpeech = JsonStrings(enput::json::ObjectValue(value, "partOfSpeech"));
+    parsed.source = Utf8ToWide(enput::json::ObjectValue(value, "source") && enput::json::ObjectValue(value, "source")->type == enput::json::Value::Type::String ? enput::json::ObjectValue(value, "source")->string : "");
+    const enput::json::Value* translations = enput::json::ObjectValue(value, "translations");
+    if (translations && translations->type == enput::json::Value::Type::Object) {
+        for (const auto& [language, meanings] : translations->object) parsed.translations.emplace_back(Utf8ToWide(language), JsonStrings(&meanings));
+    }
+    const enput::json::Value* examples = enput::json::ObjectValue(value, "examples");
+    if (examples && examples->type == enput::json::Value::Type::Array && !examples->array.empty()) {
+        const enput::json::Value* example = enput::json::ObjectValue(examples->array.front(), "text");
+        if (example && example->type == enput::json::Value::Type::String) parsed.example = Utf8ToWide(example->string);
+    }
+    if (parsed.text.empty()) return false;
+    *entry = std::move(parsed);
+    return true;
+}
+
 const std::vector<TranslationEntry>& LoadTranslationDictionary() {
     static std::vector<TranslationEntry> entries;
     static bool loaded = false;
@@ -401,31 +430,53 @@ const std::vector<TranslationEntry>& LoadTranslationDictionary() {
     const enput::json::Value* values = enput::json::ReadDocument(ReadUtf8File(TranslationDictionaryPath()), &document) ? enput::json::ObjectValue(document, "entries") : nullptr;
     if (!values || values->type != enput::json::Value::Type::Array) return entries;
     for (const enput::json::Value& value : values->array) {
-        const enput::json::Value* text = enput::json::ObjectValue(value, "text");
-        if (!text || text->type != enput::json::Value::Type::String) continue;
         TranslationEntry entry;
-        entry.text = Utf8ToWide(text->string);
-        entry.partsOfSpeech = JsonStrings(enput::json::ObjectValue(value, "partOfSpeech"));
-        entry.source = Utf8ToWide(enput::json::ObjectValue(value, "source") && enput::json::ObjectValue(value, "source")->type == enput::json::Value::Type::String ? enput::json::ObjectValue(value, "source")->string : "");
-        const enput::json::Value* translations = enput::json::ObjectValue(value, "translations");
-        if (translations && translations->type == enput::json::Value::Type::Object) {
-            for (const auto& [language, meanings] : translations->object) entry.translations.emplace_back(Utf8ToWide(language), JsonStrings(&meanings));
-        }
-        const enput::json::Value* examples = enput::json::ObjectValue(value, "examples");
-        if (examples && examples->type == enput::json::Value::Type::Array && !examples->array.empty()) {
-            const enput::json::Value* example = enput::json::ObjectValue(examples->array.front(), "text");
-            if (example && example->type == enput::json::Value::Type::String) entry.example = Utf8ToWide(example->string);
-        }
-        if (!entry.text.empty()) entries.push_back(std::move(entry));
+        if (ParseTranslationEntry(value, &entry)) entries.push_back(std::move(entry));
     }
     return entries;
+}
+
+const TranslationEntry* FindFullTranslation(const std::wstring& lower) {
+    const std::wstring path = FullTranslationDictionaryPath();
+    std::error_code error;
+    const uintmax_t fileSize = std::filesystem::file_size(path, error);
+    if (error || fileSize == 0) return nullptr;
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return nullptr;
+    uintmax_t first = 0;
+    uintmax_t last = fileSize;
+    static TranslationEntry result;
+    for (int attempt = 0; attempt < 48 && first < last; ++attempt) {
+        const uintmax_t middle = first + (last - first) / 2;
+        input.clear();
+        input.seekg(static_cast<std::streamoff>(middle));
+        if (!input) return nullptr;
+        if (middle > 0) input.ignore((std::numeric_limits<std::streamsize>::max)(), '\n');
+        const std::streampos lineStart = input.tellg();
+        std::string line;
+        if (!std::getline(input, line) || line.empty()) return nullptr;
+        enput::json::Value document;
+        const enput::json::Value* key = enput::json::ReadDocument(line, &document) ? enput::json::ObjectValue(document, "key") : nullptr;
+        if (!key || key->type != enput::json::Value::Type::String) return nullptr;
+        const std::wstring candidate = Utf8ToWide(key->string);
+        if (candidate == lower) return ParseTranslationEntry(document, &result) ? &result : nullptr;
+        const std::streampos nextLine = input.tellg();
+        if (candidate < lower) {
+            if (nextLine < 0 || static_cast<uintmax_t>(nextLine) <= first) return nullptr;
+            first = static_cast<uintmax_t>(nextLine);
+        } else {
+            if (lineStart < 0 || static_cast<uintmax_t>(lineStart) >= last) return nullptr;
+            last = static_cast<uintmax_t>(lineStart);
+        }
+    }
+    return nullptr;
 }
 
 const TranslationEntry* FindTranslation(const std::wstring& text) {
     const std::wstring lower = Lowercase(text);
     const std::vector<TranslationEntry>& entries = LoadTranslationDictionary();
     const auto entry = std::find_if(entries.begin(), entries.end(), [&lower](const TranslationEntry& value) { return Lowercase(value.text) == lower; });
-    return entry == entries.end() ? nullptr : &*entry;
+    return entry == entries.end() ? FindFullTranslation(lower) : &*entry;
 }
 
 class KeyEditSession;

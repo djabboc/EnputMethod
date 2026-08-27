@@ -1,13 +1,18 @@
 using System.IO;
+using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows;
+using Microsoft.VisualBasic.FileIO;
 
 namespace EnputMethod.Installer;
 
 public partial class MainWindow : Window
 {
+    private const string EcdictUrl = "https://raw.githubusercontent.com/skywind3000/ECDICT/master/ecdict.csv";
+
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate int InstallInputMethodDelegate();
 
@@ -57,6 +62,7 @@ public partial class MainWindow : Window
         CopyDefaultFile("suggestions.json", destinationDirectory);
         CopyDefaultFile("emoji.json", destinationDirectory);
         MergeDefaultTranslations(destinationDirectory);
+        EnsureFullTranslationDictionary(destinationDirectory);
         CopyDefaultThemes(destinationDirectory);
     }
 
@@ -136,6 +142,87 @@ public partial class MainWindow : Window
         {
             // The input method can hold the file briefly while it starts.
         }
+    }
+
+    private static void EnsureFullTranslationDictionary(string destinationDirectory)
+    {
+        string destination = Path.Combine(destinationDirectory, "translations.ecdict.jsonl");
+        if (File.Exists(destination) && new FileInfo(destination).Length > 1024) return;
+
+        string downloadedCsv = destination + ".download";
+        string pendingDictionary = destination + ".pending";
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+            using Stream source = client.GetStreamAsync(EcdictUrl).GetAwaiter().GetResult();
+            using (var target = new FileStream(downloadedCsv, FileMode.Create, FileAccess.Write, FileShare.None)) source.CopyTo(target);
+            ConvertEcdictToJsonLines(downloadedCsv, pendingDictionary);
+            File.Move(pendingDictionary, destination, true);
+        }
+        catch (HttpRequestException)
+        {
+            // The compact bundled dictionary remains available when the network is unavailable.
+        }
+        catch (IOException)
+        {
+            // Keep any existing dictionary intact when another input-method process holds a file.
+        }
+        finally
+        {
+            if (File.Exists(downloadedCsv)) File.Delete(downloadedCsv);
+            if (File.Exists(pendingDictionary)) File.Delete(pendingDictionary);
+        }
+    }
+
+    private static void ConvertEcdictToJsonLines(string sourcePath, string destinationPath)
+    {
+        using var parser = new TextFieldParser(sourcePath, Encoding.UTF8, true) { TextFieldType = FieldType.Delimited, HasFieldsEnclosedInQuotes = true, TrimWhiteSpace = false };
+        parser.SetDelimiters(",");
+        _ = parser.ReadFields(); // CSV column names.
+        using var output = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var writer = new Utf8JsonWriter(output, new JsonWriterOptions { Indented = false });
+        while (!parser.EndOfData)
+        {
+            string[]? fields = parser.ReadFields();
+            if (fields is null || fields.Length < 5 || string.IsNullOrWhiteSpace(fields[0])) continue;
+            string word = fields[0].Trim();
+            writer.WriteStartObject();
+            writer.WriteString("key", word.ToLowerInvariant());
+            writer.WriteString("text", word);
+            WritePartOfSpeech(writer, fields[4]);
+            writer.WritePropertyName("translations");
+            writer.WriteStartObject();
+            WriteMeanings(writer, "en", fields[2]);
+            WriteMeanings(writer, "zh-CN", fields[3]);
+            writer.WriteEndObject();
+            writer.WriteString("source", "ECDICT 1.0.28 (MIT License)");
+            writer.WriteEndObject();
+            writer.Flush();
+            output.WriteByte((byte)'\n');
+            writer.Reset();
+        }
+    }
+
+    private static void WritePartOfSpeech(Utf8JsonWriter writer, string value)
+    {
+        writer.WriteStartArray("partOfSpeech");
+        foreach (string part in value.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string label = part.Split(':', 2)[0].Trim();
+            if (!string.IsNullOrEmpty(label)) writer.WriteStringValue(label);
+        }
+        writer.WriteEndArray();
+    }
+
+    private static void WriteMeanings(Utf8JsonWriter writer, string language, string value)
+    {
+        writer.WriteStartArray(language);
+        foreach (string line in value.Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string meaning = line.Trim();
+            if (!string.IsNullOrEmpty(meaning)) writer.WriteStringValue(meaning);
+        }
+        writer.WriteEndArray();
     }
 
     private static void CopyDefaultThemes(string destinationDirectory)

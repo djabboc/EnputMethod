@@ -1,6 +1,7 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
 
 namespace EnputMethod.Installer;
@@ -55,7 +56,7 @@ public partial class MainWindow : Window
         CopyDefaultFile("dictionary.txt", destinationDirectory);
         CopyDefaultFile("suggestions.json", destinationDirectory);
         CopyDefaultFile("emoji.json", destinationDirectory);
-        CopyDefaultFile("translations.json", destinationDirectory);
+        MergeDefaultTranslations(destinationDirectory);
         CopyDefaultThemes(destinationDirectory);
     }
 
@@ -93,6 +94,47 @@ public partial class MainWindow : Window
         if (!File.Exists(destination))
         {
             File.Copy(Path.Combine(AppContext.BaseDirectory, fileName), destination);
+        }
+    }
+
+    private static void MergeDefaultTranslations(string destinationDirectory)
+    {
+        string source = Path.Combine(AppContext.BaseDirectory, "translations.json");
+        string destination = Path.Combine(destinationDirectory, "translations.json");
+        if (!File.Exists(destination))
+        {
+            File.Copy(source, destination);
+            return;
+        }
+
+        try
+        {
+            JsonObject? bundled = JsonNode.Parse(File.ReadAllText(source)) as JsonObject;
+            JsonObject? installed = JsonNode.Parse(File.ReadAllText(destination)) as JsonObject;
+            if (bundled?["entries"] is not JsonArray bundledEntries || installed?["entries"] is not JsonArray installedEntries) return;
+
+            var existingWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (JsonNode? entry in installedEntries)
+            {
+                if (entry is JsonObject objectEntry && objectEntry["text"]?.GetValue<string>() is string text) existingWords.Add(text);
+            }
+
+            bool changed = false;
+            foreach (JsonNode? entry in bundledEntries)
+            {
+                if (entry is not JsonObject objectEntry || objectEntry["text"]?.GetValue<string>() is not string text || !existingWords.Add(text)) continue;
+                installedEntries.Add(objectEntry.DeepClone());
+                changed = true;
+            }
+            if (changed) File.WriteAllText(destination, installed.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (JsonException)
+        {
+            // Leave a user's malformed custom dictionary untouched.
+        }
+        catch (IOException)
+        {
+            // The input method can hold the file briefly while it starts.
         }
     }
 

@@ -1254,6 +1254,7 @@ private:
 
     static std::vector<std::wstring> FindAssociatedCandidates(const std::wstring& committedText) {
         const std::wstring lower = Lowercase(committedText);
+        const std::wstring phrasePrefix = lower + L" ";
         std::vector<std::wstring> matches;
         std::unordered_set<std::wstring> keys;
         const auto appendUnique = [&matches, &keys](const std::wstring& candidate) {
@@ -1263,7 +1264,10 @@ private:
         for (const SuggestionEntry& entry : LoadSuggestionDictionary()) {
             if (Lowercase(entry.text) != lower) continue;
             for (const std::wstring& candidate : entry.next) appendUnique(candidate);
-            for (const std::wstring& candidate : entry.phrases) appendUnique(candidate);
+            for (const std::wstring& candidate : entry.phrases) {
+                const std::wstring lowerCandidate = Lowercase(candidate);
+                if (lowerCandidate.starts_with(phrasePrefix)) appendUnique(candidate.substr(committedText.size() + 1));
+            }
         }
         if (matches.empty()) {
             static const std::vector<std::wstring> fallback{ L"the", L"to", L"and", L"a", L"is", L"of", L"for", L"in", L"that" };

@@ -1205,8 +1205,7 @@ private:
     static std::wstring DisplayCandidate(const std::wstring& candidate, const std::wstring& typed, const RuntimeConfiguration& configuration) {
         if (candidate.find(static_cast<wchar_t>(0x1F)) != std::wstring::npos) return candidate;
         std::wstring display = candidate;
-        const bool capsLock = (GetKeyState(VK_CAPITAL) & 1) != 0;
-        if (capsLock || (configuration.preserveCase && IsAllUpper(typed))) {
+        if (configuration.preserveCase && IsAllUpper(typed)) {
             ToUpperInPlace(&display);
         } else if (configuration.preserveCase && IsTitleCase(typed)) {
             ToLowerInPlace(&display);

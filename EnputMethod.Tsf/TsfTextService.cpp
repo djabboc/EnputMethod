@@ -482,6 +482,14 @@ public:
                 positionY = maximumY < top ? top : std::clamp(positionY, top, maximumY);
             }
         }
+        const bool candidateSelectionChanged = IsWindowVisible(window_) && previousCandidates == candidates_ &&
+            previousPage == page_ && previousPageCount == pageCount_ && previousCapsLock == capsLock_ &&
+            previousModeMarker == modeMarker_ && previousSelectedIndex != selectedIndex_;
+        // A selection key must not move the candidate window when the application's composition bounds settle.
+        if (candidateSelectionChanged) {
+            positionX = positionX_;
+            positionY = positionY_;
+        }
         const bool sizeChanged = size.cx != size_.cx || size.cy != size_.cy;
         const bool positionChanged = positionX != positionX_ || positionY != positionY_;
         if (sizeChanged) {
@@ -495,9 +503,7 @@ public:
             positionX_ = positionX;
             positionY_ = positionY;
         }
-        const bool selectionOnly = !sizeChanged && !positionChanged && previousCandidates == candidates_ &&
-            previousPage == page_ && previousPageCount == pageCount_ && previousCapsLock == capsLock_ &&
-            previousModeMarker == modeMarker_ && previousSelectedIndex != selectedIndex_;
+        const bool selectionOnly = !sizeChanged && !positionChanged && candidateSelectionChanged;
         if (selectionOnly) {
             // Color-font rendering requires one contiguous paint region; leave the footer marker untouched.
             if (modeMarker_ == L"EMOJI") {

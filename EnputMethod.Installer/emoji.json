@@ -1,0 +1,9 @@
+{
+  "entries": [
+    { "emoji": "😀", "keywords": ["smile", "grin", "happy"] },
+    { "emoji": "😢", "keywords": ["sad", "cry", "tear"] },
+    { "emoji": "❤️", "keywords": ["heart", "love"] },
+    { "emoji": "👍", "keywords": ["thumb", "like", "ok"] },
+    { "emoji": "🎉", "keywords": ["party", "celebrate", "congratulations"] }
+  ]
+}

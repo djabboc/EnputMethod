@@ -52,6 +52,12 @@
 - emoji 模式将关键词映射为 emoji 候选，例如 `smile` 显示笑脸。
 - 验收：模式切换、关键词候选、选择提交和退出行为正确。
 
+## Task 12 verification record
+
+- Completed: `toggleEmojiMode` is a configurable shortcut with the default `F2`; the candidate window shows an `EMOJI` mode marker.
+- Completed: `emoji.json` maps editable keyword arrays to Unicode emoji candidates; the default `smile` keyword returns a grinning face.
+- Static verification: Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors.
+
 ## 任务 13：翻译模式
 
 - 在 `shortcut.json` 中新增翻译窗口切换动作。

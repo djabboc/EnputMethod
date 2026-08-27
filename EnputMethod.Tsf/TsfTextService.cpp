@@ -67,6 +67,7 @@ struct ShortcutConfiguration {
     std::vector<WPARAM> nextPage{ VK_OEM_PLUS, VK_ADD };
     std::vector<WPARAM> selectPrevious{ VK_UP };
     std::vector<WPARAM> selectNext{ VK_DOWN };
+    std::vector<WPARAM> toggleEmojiMode{ VK_F2 };
 };
 
 struct RuntimeConfiguration {
@@ -100,7 +101,7 @@ WPARAM ShortcutKey(const std::string& name) {
         { "Tab", VK_TAB }, { "Minus", VK_OEM_MINUS }, { "Plus", VK_OEM_PLUS },
         { "NumpadSubtract", VK_SUBTRACT }, { "NumpadAdd", VK_ADD },
         { "Up", VK_UP }, { "Down", VK_DOWN }, { "Space", VK_SPACE },
-        { "Enter", VK_RETURN }, { "Escape", VK_ESCAPE }
+        { "Enter", VK_RETURN }, { "Escape", VK_ESCAPE }, { "F2", VK_F2 }
     };
     const auto named = keys.find(name);
     if (named != keys.end()) return named->second;
@@ -131,6 +132,7 @@ ShortcutConfiguration LoadShortcutConfiguration() {
     shortcuts.nextPage = ShortcutKeys(object, "nextPage", shortcuts.nextPage);
     shortcuts.selectPrevious = ShortcutKeys(object, "selectPrevious", shortcuts.selectPrevious);
     shortcuts.selectNext = ShortcutKeys(object, "selectNext", shortcuts.selectNext);
+    shortcuts.toggleEmojiMode = ShortcutKeys(object, "toggleEmojiMode", shortcuts.toggleEmojiMode);
     return shortcuts;
 }
 
@@ -326,6 +328,49 @@ const std::vector<SuggestionEntry>& LoadSuggestionDictionary() {
     return cache.entries;
 }
 
+struct EmojiEntry {
+    std::wstring emoji;
+    std::vector<std::wstring> keywords;
+};
+
+std::wstring EmojiDictionaryPath() {
+    const std::wstring directory = UserDataDirectory();
+    return directory.empty() ? std::wstring{} : directory + L"\\emoji.json";
+}
+
+const std::vector<EmojiEntry>& LoadEmojiDictionary() {
+    struct Cache {
+        WIN32_FILE_ATTRIBUTE_DATA attributes{};
+        bool available = false;
+        std::vector<EmojiEntry> entries;
+    };
+    static Cache cache;
+    const std::wstring path = EmojiDictionaryPath();
+    WIN32_FILE_ATTRIBUTE_DATA attributes{};
+    const bool available = !path.empty() && GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attributes);
+    if (cache.available == available && (!available || (CompareFileTime(&cache.attributes.ftLastWriteTime, &attributes.ftLastWriteTime) == 0 &&
+        cache.attributes.nFileSizeHigh == attributes.nFileSizeHigh && cache.attributes.nFileSizeLow == attributes.nFileSizeLow))) return cache.entries;
+
+    std::vector<EmojiEntry> entries;
+    enput::json::Value document;
+    const std::string contents = available ? ReadUtf8File(path) : std::string{};
+    const enput::json::Value* values = enput::json::ReadDocument(contents, &document) ? enput::json::ObjectValue(document, "entries") : nullptr;
+    if (values && values->type == enput::json::Value::Type::Array) {
+        for (const enput::json::Value& value : values->array) {
+            const enput::json::Value* emoji = enput::json::ObjectValue(value, "emoji");
+            if (!emoji || emoji->type != enput::json::Value::Type::String) continue;
+            EmojiEntry entry;
+            entry.emoji = Utf8ToWide(emoji->string);
+            entry.keywords = JsonStrings(enput::json::ObjectValue(value, "keywords"));
+            if (!entry.emoji.empty() && !entry.keywords.empty()) entries.push_back(std::move(entry));
+        }
+    }
+    cache.attributes = attributes;
+    cache.available = available;
+    cache.entries = std::move(entries);
+    return cache.entries;
+}
+
 class KeyEditSession;
 class CandidateClickEditSession;
 
@@ -336,13 +381,14 @@ public:
         if (window_) DestroyWindow(window_);
     }
 
-    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration, size_t page, size_t pageCount, size_t selectedIndex, bool capsLock, std::function<void(int)> actionCallback) {
+    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration, size_t page, size_t pageCount, size_t selectedIndex, bool capsLock, std::wstring modeMarker, std::function<void(int)> actionCallback) {
         candidates_ = candidates;
         configuration_ = configuration;
         page_ = page;
         pageCount_ = pageCount;
         selectedIndex_ = selectedIndex;
         capsLock_ = capsLock;
+        modeMarker_ = std::move(modeMarker);
         actionCallback_ = std::move(actionCallback);
         if (candidates_.empty()) { Hide(); return; }
         if (!EnsureWindow()) return;
@@ -424,7 +470,7 @@ private:
         }
         if (previous) SelectObject(dc, previous);
         ReleaseDC(window_, dc);
-        const int footerHeight = (pageCount_ > 1 || capsLock_) ? rowHeight : 0;
+        const int footerHeight = (pageCount_ > 1 || capsLock_ || !modeMarker_.empty()) ? rowHeight : 0;
         const int height = (configuration_.horizontal ? rowHeight + padding * 2 : rowHeight * static_cast<int>(candidates_.size()) + padding * 2) + footerHeight;
         return { width + configuration_.theme.shadowSize, height + configuration_.theme.shadowSize };
     }
@@ -441,7 +487,7 @@ private:
         const int rowHeight = configuration_.theme.rowHeight;
         const int surfaceRight = size_.cx - configuration_.theme.shadowSize;
         const int surfaceBottom = size_.cy - configuration_.theme.shadowSize;
-        const bool hasFooter = pageCount_ > 1 || capsLock_;
+        const bool hasFooter = pageCount_ > 1 || capsLock_ || !modeMarker_.empty();
         const int rowsBottom = surfaceBottom - padding - (hasFooter ? rowHeight : 0);
         if (point.y >= padding && point.y < rowsBottom) {
             if (!configuration_.horizontal) {
@@ -544,11 +590,13 @@ private:
                 const std::wstring label = std::to_wstring(index + 1) + L".  " + self->candidates_[index];
                 DrawTextW(dc, label.c_str(), static_cast<int>(label.size()), &row, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             }
-            if (self->pageCount_ > 1 || self->capsLock_) {
+            if (self->pageCount_ > 1 || self->capsLock_ || !self->modeMarker_.empty()) {
                 const std::wstring pageText = L"Page " + std::to_wstring(self->page_ + 1) + L"/" + std::to_wstring(self->pageCount_);
                 RECT pageRow{ padding, surface.bottom - rowHeight - padding, surface.right - padding, surface.bottom - padding };
-                if (self->capsLock_) {
-                    const std::wstring capsText = L"CAPS";
+                if (self->capsLock_ || !self->modeMarker_.empty()) {
+                    std::wstring capsText = self->capsLock_ ? L"CAPS" : L"";
+                    if (!capsText.empty() && !self->modeMarker_.empty()) capsText += L" ";
+                    capsText += self->modeMarker_;
                     SetTextColor(dc, self->configuration_.theme.selectedForeground);
                     DrawTextW(dc, capsText.c_str(), static_cast<int>(capsText.size()), &pageRow, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
                 }
@@ -583,6 +631,7 @@ private:
     size_t pageCount_ = 0;
     size_t selectedIndex_ = 0;
     bool capsLock_ = false;
+    std::wstring modeMarker_;
     std::function<void(int)> actionCallback_;
     SIZE size_{};
     int positionX_ = 0;
@@ -644,12 +693,23 @@ public:
     }
 
     HRESULT ApplyKey(ITfContext* context, TfEditCookie cookie, WPARAM key) {
+        if (HasShortcut(configuration_.shortcuts.toggleEmojiMode, key)) {
+            configuration_ = LoadRuntimeConfiguration();
+            emojiMode_ = !emojiMode_;
+            if (typed_.empty()) return S_OK;
+            allCandidates_ = emojiMode_ ? FindEmojiCandidates(typed_) : FindCandidates(typed_);
+            currentPage_ = 0;
+            selectedIndex_ = 0;
+            UpdateCurrentPage();
+            return UpdateComposition(context, cookie);
+        }
+        if (emojiMode_ && key == VK_ESCAPE && typed_.empty()) { emojiMode_ = false; return S_OK; }
         if (key >= 'A' && key <= 'Z') {
             const bool uppercase = (GetKeyState(VK_SHIFT) < 0) ^ ((GetKeyState(VK_CAPITAL) & 1) != 0);
             typed_.insert(cursor_, 1, static_cast<wchar_t>(uppercase ? key : key + (L'a' - L'A')));
             ++cursor_;
             configuration_ = LoadRuntimeConfiguration();
-            allCandidates_ = FindCandidates(typed_);
+            allCandidates_ = emojiMode_ ? FindEmojiCandidates(typed_) : FindCandidates(typed_);
             currentPage_ = 0;
             UpdateCurrentPage();
             selectedIndex_ = 0;
@@ -659,7 +719,7 @@ public:
             typed_.erase(cursor_ - 1, 1);
             --cursor_;
             configuration_ = LoadRuntimeConfiguration();
-            allCandidates_ = FindCandidates(typed_);
+            allCandidates_ = emojiMode_ ? FindEmojiCandidates(typed_) : FindCandidates(typed_);
             currentPage_ = 0;
             UpdateCurrentPage();
             selectedIndex_ = 0;
@@ -707,6 +767,8 @@ private:
     }
 
     bool ShouldHandleKey(WPARAM key) const {
+        if (HasShortcut(configuration_.shortcuts.toggleEmojiMode, key)) return true;
+        if (emojiMode_ && key == VK_ESCAPE && typed_.empty()) return true;
         if (IsSuggestionActive()) return !IsModifierKey(key);
         if (!typed_.empty()) return !IsModifierKey(key);
         if (GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0) return false;
@@ -724,6 +786,7 @@ private:
             return !(HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size());
         }
         const bool hasModifier = GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0;
+        if (HasShortcut(configuration_.shortcuts.toggleEmojiMode, key)) return false;
         if (!hasModifier && key >= 'A' && key <= 'Z') return false;
         if (key == VK_BACK) return cursor_ == 0;
         if (key == VK_SPACE || key == VK_RETURN || key == VK_ESCAPE) return false;
@@ -843,6 +906,17 @@ private:
         return matches;
     }
 
+    static std::vector<std::wstring> FindEmojiCandidates(const std::wstring& typed) {
+        const std::wstring lower = Lowercase(typed);
+        std::vector<std::wstring> matches;
+        for (const EmojiEntry& entry : LoadEmojiDictionary()) {
+            const bool matchesKeyword = std::any_of(entry.keywords.begin(), entry.keywords.end(), [&lower](const std::wstring& keyword) { return Lowercase(keyword).starts_with(lower); });
+            if (!matchesKeyword || std::find(matches.begin(), matches.end(), entry.emoji) != matches.end()) continue;
+            matches.push_back(entry.emoji);
+        }
+        return matches;
+    }
+
     size_t PageCount() const {
         const size_t pageSize = static_cast<size_t>(configuration_.candidateCount);
         return pageSize ? (allCandidates_.size() + pageSize - 1) / pageSize : 0;
@@ -921,7 +995,7 @@ private:
                 caret->Release();
             }
         }
-        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, [this](int action) { HandleCandidateWindowAction(action); });
+        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
         range->Release();
         return hr;
     }
@@ -942,7 +1016,7 @@ private:
 
     HRESULT FinishWithSuggestions(ITfContext* context, TfEditCookie cookie, const std::wstring& committedText, wchar_t trailing) {
         const HRESULT hr = FinishComposition(cookie, committedText, trailing);
-        if (FAILED(hr)) return hr;
+        if (FAILED(hr) || emojiMode_) return hr;
         lastCommittedText_ = committedText;
         allCandidates_ = FindAssociatedCandidates(committedText);
         if (allCandidates_.empty()) return hr;
@@ -976,6 +1050,7 @@ private:
     size_t currentPage_ = 0;
     size_t selectedIndex_ = 0;
     std::wstring lastCommittedText_;
+    bool emojiMode_ = false;
     RuntimeConfiguration configuration_{};
     CandidateWindow candidateWindow_;
 };

@@ -3,5 +3,6 @@
   "previousPage": ["Minus", "NumpadSubtract"],
   "nextPage": ["Plus", "NumpadAdd"],
   "selectPrevious": ["Up"],
-  "selectNext": ["Down"]
+  "selectNext": ["Down"],
+  "toggleEmojiMode": ["F2"]
 }

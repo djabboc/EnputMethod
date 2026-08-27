@@ -502,15 +502,22 @@ private:
     static constexpr wchar_t kClassName[] = L"EnputMethodCandidateWindow";
 
     void ConfigureWindow() {
+        const bool emojiFont = modeMarker_ == L"EMOJI";
+        if (font_ && fontFamily_ == configuration_.fontFamily && fontSize_ == configuration_.fontSize &&
+            opacity_ == configuration_.opacity && usesEmojiFont_ == emojiFont) return;
         if (font_) DeleteObject(font_);
         HDC dc = GetDC(window_);
         const int dpi = GetDeviceCaps(dc, LOGPIXELSY);
         ReleaseDC(window_, dc);
-        const wchar_t* fontFamily = modeMarker_ == L"EMOJI" ? L"Segoe UI Emoji" : configuration_.fontFamily.c_str();
+        const wchar_t* fontFamily = emojiFont ? L"Segoe UI Emoji" : configuration_.fontFamily.c_str();
         font_ = CreateFontW(-MulDiv(configuration_.fontSize, dpi, 72), 0, 0, 0,
                             FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, fontFamily);
         SetLayeredWindowAttributes(window_, 0, configuration_.opacity, LWA_ALPHA);
+        fontFamily_ = configuration_.fontFamily;
+        fontSize_ = configuration_.fontSize;
+        opacity_ = configuration_.opacity;
+        usesEmojiFont_ = emojiFont;
     }
 
     SIZE MeasureWindow() const {
@@ -707,6 +714,7 @@ private:
             return 0;
         }
         if (message == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+        if (message == WM_ERASEBKGND) return 1;
         if (message == WM_LBUTTONUP && self && self->actionCallback_) {
             const POINT point{ static_cast<short>(LOWORD(parameter)), static_cast<short>(HIWORD(parameter)) };
             const int action = self->HitTestAction(point);
@@ -718,6 +726,10 @@ private:
 
     HWND window_ = nullptr;
     HFONT font_ = nullptr;
+    std::wstring fontFamily_;
+    int fontSize_ = 0;
+    BYTE opacity_ = 0;
+    bool usesEmojiFont_ = false;
     RuntimeConfiguration configuration_{};
     std::vector<std::wstring> candidates_;
     size_t page_ = 0;

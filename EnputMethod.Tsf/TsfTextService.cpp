@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cwctype>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <new>
 #include <string>
@@ -73,6 +74,7 @@ struct RuntimeConfiguration {
     bool horizontal = false;
     bool appendSpaceAfterSelection = true;
     bool preserveCase = true;
+    bool avoidScreenEdges = true;
     std::wstring fontFamily = L"Segoe UI";
     int fontSize = 16;
     BYTE opacity = 255;
@@ -194,6 +196,7 @@ RuntimeConfiguration LoadRuntimeConfiguration() {
         configuration.horizontal = enput::json::StringOr(object, "layout", "vertical") == "horizontal";
         configuration.appendSpaceAfterSelection = enput::json::BooleanOr(object, "appendSpaceAfterSelection", configuration.appendSpaceAfterSelection);
         configuration.preserveCase = enput::json::BooleanOr(object, "preserveCase", configuration.preserveCase);
+        configuration.avoidScreenEdges = enput::json::BooleanOr(object, "avoidScreenEdges", configuration.avoidScreenEdges);
         configuration.fontFamily = Utf8ToWide(enput::json::StringOr(object, "fontFamily", "Segoe UI"));
         if (configuration.fontFamily.empty()) configuration.fontFamily = L"Segoe UI";
         configuration.fontSize = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "fontSize", configuration.fontSize))), 10, 32);
@@ -258,6 +261,7 @@ const std::vector<std::wstring>& LoadDictionary() {
 }
 
 class KeyEditSession;
+class CandidateClickEditSession;
 
 class CandidateWindow final {
 public:
@@ -266,13 +270,14 @@ public:
         if (window_) DestroyWindow(window_);
     }
 
-    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration, size_t page, size_t pageCount, size_t selectedIndex, bool capsLock) {
+    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration, size_t page, size_t pageCount, size_t selectedIndex, bool capsLock, std::function<void(int)> actionCallback) {
         candidates_ = candidates;
         configuration_ = configuration;
         page_ = page;
         pageCount_ = pageCount;
         selectedIndex_ = selectedIndex;
         capsLock_ = capsLock;
+        actionCallback_ = std::move(actionCallback);
         if (candidates_.empty()) { Hide(); return; }
         if (!EnsureWindow()) return;
         ConfigureWindow();
@@ -286,8 +291,22 @@ public:
         if (FAILED(hr)) return;
 
         const SIZE size = MeasureWindow();
-        const int positionX = textRect.left;
-        const int positionY = textRect.bottom + 2;
+        int positionX = textRect.left;
+        int positionY = textRect.bottom + 2;
+        if (configuration_.avoidScreenEdges) {
+            MONITORINFO monitorInfo{ sizeof(monitorInfo) };
+            const HMONITOR monitor = MonitorFromRect(&textRect, MONITOR_DEFAULTTONEAREST);
+            if (monitor && GetMonitorInfoW(monitor, &monitorInfo)) {
+                const RECT& workArea = monitorInfo.rcWork;
+                if (positionY + size.cy > workArea.bottom && textRect.top - 2 - size.cy >= workArea.top) positionY = textRect.top - 2 - size.cy;
+                const int left = static_cast<int>(workArea.left);
+                const int top = static_cast<int>(workArea.top);
+                const int maximumX = static_cast<int>(workArea.right) - size.cx;
+                const int maximumY = static_cast<int>(workArea.bottom) - size.cy;
+                positionX = maximumX < left ? left : std::clamp(positionX, left, maximumX);
+                positionY = maximumY < top ? top : std::clamp(positionY, top, maximumY);
+            }
+        }
         const bool sizeChanged = size.cx != size_.cx || size.cy != size_.cy;
         const bool positionChanged = positionX != positionX_ || positionY != positionY_;
         if (sizeChanged) {
@@ -306,6 +325,7 @@ public:
 
     void Hide() {
         candidates_.clear();
+        actionCallback_ = {};
         if (window_) ShowWindow(window_, SW_HIDE);
     }
 
@@ -348,6 +368,37 @@ private:
         SIZE size{};
         GetTextExtentPoint32W(dc, label.c_str(), static_cast<int>(label.size()), &size);
         return size;
+    }
+
+    int HitTestAction(POINT point) const {
+        const int padding = configuration_.theme.padding;
+        const int rowHeight = configuration_.theme.rowHeight;
+        const int surfaceRight = size_.cx - configuration_.theme.shadowSize;
+        const int surfaceBottom = size_.cy - configuration_.theme.shadowSize;
+        const bool hasFooter = pageCount_ > 1 || capsLock_;
+        const int rowsBottom = surfaceBottom - padding - (hasFooter ? rowHeight : 0);
+        if (point.y >= padding && point.y < rowsBottom) {
+            if (!configuration_.horizontal) {
+                const int index = (point.y - padding) / rowHeight;
+                return index >= 0 && index < static_cast<int>(candidates_.size()) ? index : -3;
+            }
+            HDC dc = GetDC(window_);
+            HGDIOBJ previous = font_ ? SelectObject(dc, font_) : nullptr;
+            int left = padding;
+            for (size_t index = 0; index < candidates_.size(); ++index) {
+                const int right = left + LabelSize(dc, index).cx + padding * 2;
+                if (point.x >= left && point.x < right) {
+                    if (previous) SelectObject(dc, previous);
+                    ReleaseDC(window_, dc);
+                    return static_cast<int>(index);
+                }
+                left = right;
+            }
+            if (previous) SelectObject(dc, previous);
+            ReleaseDC(window_, dc);
+        }
+        if (pageCount_ > 1 && point.y >= rowsBottom && point.y < surfaceBottom - padding) return point.x < surfaceRight / 2 ? -1 : -2;
+        return -3;
     }
 
     bool EnsureWindow() {
@@ -436,8 +487,12 @@ private:
                     DrawTextW(dc, capsText.c_str(), static_cast<int>(capsText.size()), &pageRow, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
                 }
                 if (self->pageCount_ > 1) {
+                    const std::wstring previousText = L"< Prev";
+                    const std::wstring nextText = L"Next >";
                     SetTextColor(dc, self->configuration_.theme.foreground);
-                    DrawTextW(dc, pageText.c_str(), static_cast<int>(pageText.size()), &pageRow, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+                    DrawTextW(dc, previousText.c_str(), static_cast<int>(previousText.size()), &pageRow, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                    DrawTextW(dc, pageText.c_str(), static_cast<int>(pageText.size()), &pageRow, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                    DrawTextW(dc, nextText.c_str(), static_cast<int>(nextText.size()), &pageRow, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
                 }
             }
             if (previousFont) SelectObject(dc, previousFont);
@@ -445,6 +500,12 @@ private:
             return 0;
         }
         if (message == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+        if (message == WM_LBUTTONUP && self && self->actionCallback_) {
+            const POINT point{ static_cast<short>(LOWORD(parameter)), static_cast<short>(HIWORD(parameter)) };
+            const int action = self->HitTestAction(point);
+            if (action != -3) self->actionCallback_(action);
+            return 0;
+        }
         return DefWindowProcW(window, message, 0, parameter);
     }
 
@@ -456,6 +517,7 @@ private:
     size_t pageCount_ = 0;
     size_t selectedIndex_ = 0;
     bool capsLock_ = false;
+    std::function<void(int)> actionCallback_;
     SIZE size_{};
     int positionX_ = 0;
     int positionY_ = 0;
@@ -563,6 +625,19 @@ public:
 
 private:
     friend class KeyEditSession;
+    friend class CandidateClickEditSession;
+
+    void HandleCandidateWindowAction(int action);
+
+    HRESULT ApplyCandidateWindowAction(ITfContext* context, TfEditCookie cookie, int action) {
+        if (action >= 0 && action < static_cast<int>(candidates_.size())) {
+            const wchar_t trailing = configuration_.appendSpaceAfterSelection ? L' ' : L'\0';
+            return FinishComposition(cookie, candidates_[action], trailing);
+        }
+        if (action == -1) return MovePage(context, cookie, -1);
+        if (action == -2) return MovePage(context, cookie, 1);
+        return S_FALSE;
+    }
 
     bool ShouldHandleKey(WPARAM key) const {
         if (!typed_.empty()) return !IsModifierKey(key);
@@ -741,7 +816,7 @@ private:
                 caret->Release();
             }
         }
-        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0);
+        if (SUCCEEDED(hr)) candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, [this](int action) { HandleCandidateWindowAction(action); });
         range->Release();
         return hr;
     }
@@ -791,6 +866,30 @@ public:
     STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return passThrough_ ? service_->CommitForPassthrough(cookie) : printableCharacter_ ? service_->CommitWithCharacter(cookie, printableCharacter_) : service_->ApplyKey(context_, cookie, key_); }
 private: long refs_ = 1; TextService* service_; ITfContext* context_; WPARAM key_; bool passThrough_; wchar_t printableCharacter_;
 };
+
+class CandidateClickEditSession final : public ITfEditSession {
+public:
+    CandidateClickEditSession(TextService* service, ITfContext* context, int action) : service_(service), context_(context), action_(action) { service_->AddRef(); context_->AddRef(); }
+    ~CandidateClickEditSession() { context_->Release(); service_->Release(); }
+    STDMETHODIMP QueryInterface(REFIID iid, void** result) override { if (!result) return E_INVALIDARG; *result = nullptr; if (iid != IID_IUnknown && iid != IID_ITfEditSession) return E_NOINTERFACE; *result = static_cast<ITfEditSession*>(this); AddRef(); return S_OK; }
+    STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&refs_); }
+    STDMETHODIMP_(ULONG) Release() override { const auto refs = InterlockedDecrement(&refs_); if (!refs) delete this; return refs; }
+    STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return service_->ApplyCandidateWindowAction(context_, cookie, action_); }
+private:
+    long refs_ = 1;
+    TextService* service_;
+    ITfContext* context_;
+    int action_;
+};
+
+void TextService::HandleCandidateWindowAction(int action) {
+    if (!compositionContext_ || !composition_) return;
+    auto* session = new (std::nothrow) CandidateClickEditSession(this, compositionContext_, action);
+    if (!session) return;
+    HRESULT sessionResult{};
+    compositionContext_->RequestEditSession(clientId_, session, TF_ES_ASYNC | TF_ES_READWRITE, &sessionResult);
+    session->Release();
+}
 
 STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM key, LPARAM keyData, BOOL* eaten) {
     if (!eaten) return E_INVALIDARG;

@@ -3,6 +3,7 @@
   "layout": "vertical",
   "appendSpaceAfterSelection": true,
   "preserveCase": true,
+  "avoidScreenEdges": true,
   "fontFamily": "Segoe UI",
   "fontSize": 16,
   "opacity": 1.0,

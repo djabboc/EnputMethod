@@ -27,6 +27,12 @@
 - 新增 `avoidScreenEdges` 配置，在靠近屏幕边缘时自动选择可见位置。
 - 验收：鼠标选择、鼠标翻页及边缘位置均不抢焦点且文本正确。
 
+## Task 10 verification record
+
+- Completed: mouse clicks select a candidate or activate the previous/next page controls through a TSF edit session, without activating the candidate window.
+- Completed: `avoidScreenEdges` defaults to `true` and clamps the window to the active monitor work area, preferring placement above the text when there is no room below.
+- Static verification: Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors.
+
 ## 任务 11：连续联想和短语词典
 
 - 选择一个候选后保留候选窗，并基于已提交词显示下一个建议。

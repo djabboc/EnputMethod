@@ -492,16 +492,20 @@ public:
         }
         const bool sizeChanged = size.cx != size_.cx || size.cy != size_.cy;
         const bool positionChanged = positionX != positionX_ || positionY != positionY_;
+        const bool geometryChanged = !IsWindowVisible(window_) || sizeChanged || positionChanged;
         if (sizeChanged) {
             const int diameter = (std::max)(1, configuration_.theme.cornerRadius * 2);
-            SetWindowRgn(window_, CreateRoundRectRgn(0, 0, size.cx, size.cy, diameter, diameter), TRUE);
+            SetWindowRgn(window_, CreateRoundRectRgn(0, 0, size.cx, size.cy, diameter, diameter), FALSE);
             size_ = size;
         }
-        if (!IsWindowVisible(window_) || sizeChanged || positionChanged) {
+        if (geometryChanged) {
             SetWindowPos(window_, HWND_TOPMOST, positionX, positionY, size.cx, size.cy,
-                         SWP_NOACTIVATE | SWP_SHOWWINDOW);
+                         SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOREDRAW);
             positionX_ = positionX;
             positionY_ = positionY;
+            // Show the final candidate content in one paint, without exposing the window setup frame.
+            RedrawWindow(window_, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+            return;
         }
         const bool selectionOnly = !sizeChanged && !positionChanged && candidateSelectionChanged;
         if (selectionOnly) {

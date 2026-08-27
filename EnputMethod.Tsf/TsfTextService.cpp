@@ -439,6 +439,12 @@ public:
     }
 
     void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration, size_t page, size_t pageCount, size_t selectedIndex, bool capsLock, std::wstring modeMarker, std::function<void(int)> actionCallback) {
+        const std::vector<std::wstring> previousCandidates = candidates_;
+        const size_t previousPage = page_;
+        const size_t previousPageCount = pageCount_;
+        const size_t previousSelectedIndex = selectedIndex_;
+        const bool previousCapsLock = capsLock_;
+        const std::wstring previousModeMarker = modeMarker_;
         candidates_ = candidates;
         configuration_ = configuration;
         page_ = page;
@@ -489,7 +495,17 @@ public:
             positionX_ = positionX;
             positionY_ = positionY;
         }
-        InvalidateRect(window_, nullptr, FALSE);
+        const bool selectionOnly = !sizeChanged && !positionChanged && previousCandidates == candidates_ &&
+            previousPage == page_ && previousPageCount == pageCount_ && previousCapsLock == capsLock_ &&
+            previousModeMarker == modeMarker_ && previousSelectedIndex != selectedIndex_;
+        if (selectionOnly) {
+            const RECT previousRow = CandidateRow(previousSelectedIndex);
+            const RECT selectedRow = CandidateRow(selectedIndex_);
+            InvalidateRect(window_, &previousRow, FALSE);
+            InvalidateRect(window_, &selectedRow, FALSE);
+        } else {
+            InvalidateRect(window_, nullptr, FALSE);
+        }
     }
 
     void Hide() {
@@ -609,6 +625,21 @@ private:
         }
         if (pageCount_ > 1 && point.y >= rowsBottom && point.y < surfaceBottom - padding) return point.x < surfaceRight / 2 ? -1 : -2;
         return -3;
+    }
+
+    RECT CandidateRow(size_t index) const {
+        const int padding = configuration_.theme.padding;
+        const int rowHeight = configuration_.theme.rowHeight;
+        const int surfaceRight = size_.cx - configuration_.theme.shadowSize;
+        if (!configuration_.horizontal) return { padding, padding + static_cast<int>(index) * rowHeight, surfaceRight - padding, padding + static_cast<int>(index + 1) * rowHeight };
+        HDC dc = GetDC(window_);
+        HGDIOBJ previous = font_ ? SelectObject(dc, font_) : nullptr;
+        int left = padding;
+        for (size_t row = 0; row < index; ++row) left += LabelSize(dc, row).cx + padding * 2;
+        const int right = left + LabelSize(dc, index).cx + padding * 2;
+        if (previous) SelectObject(dc, previous);
+        ReleaseDC(window_, dc);
+        return { left, padding, right, padding + rowHeight };
     }
 
     bool EnsureWindow() {

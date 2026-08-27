@@ -93,5 +93,7 @@
 
 - Change: commit `5983741` adds an installer-managed ECDICT download and a file-backed lookup path for 770,000+ English-to-Chinese entries.
 - Source and license: ECDICT 1.0.28 under the MIT License; see `docs/dictionary-sources-zh-CN.md`.
-- Current status: the small installed JSON dictionary and window placement are verified. The first-install download, conversion, and non-demo word lookup remain pending manual verification.
+- Current status: the small installed JSON dictionary and window placement are verified. The local full dictionary has been generated successfully and contains the non-demo entry `abandon`; the first-install UI flow and non-demo window display remain pending consolidated manual verification.
 - Follow-up test: after installation completes with network access, enter a non-demo word such as `abandon`, open translation with `F3`, and verify English definition, Chinese meaning, and part of speech.
+
+All advanced-feature defects, deferred work, and consolidated acceptance cases are also tracked in `docs/development-issue-ledger-zh-CN.md`.

@@ -49,3 +49,4 @@ See [Architecture](docs/architecture.md) for implementation and registration det
 See [Root Cause Analysis](docs/root-cause-analysis.md) for the deployment and candidate-window incident review.
 See [Update Notes](docs/update-notes-zh-CN.md) for the Chinese configuration and update guide.
 See [Installation Validation](docs/installation-validation-zh-CN.md) for the repeatable build, installation, and joint manual-test procedure.
+See [Development Issue Ledger](docs/development-issue-ledger-zh-CN.md) for the complete problem history, deferred decisions, and the current consolidated manual acceptance list.

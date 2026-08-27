@@ -1,4 +1,6 @@
 #include <windows.h>
+#include <d2d1_3.h>
+#include <dwrite.h>
 #include <textstor.h>
 #include <msctf.h>
 #include "JsonObjectReader.h"
@@ -13,6 +15,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#pragma comment(lib, "d2d1.lib")
+#pragma comment(lib, "dwrite.lib")
 
 // A system-registered, transparent TSF keyboard profile.  It exists as a real input
 // method in Windows, while leaving normal English keystrokes to the app.
@@ -540,6 +545,32 @@ private:
         return candidate;
     }
 
+    static void DrawEmojiLabel(HDC dc, const RECT& row, const std::wstring& label, COLORREF color) {
+        ID2D1Factory* d2dFactory{};
+        ID2D1DCRenderTarget* target{};
+        IDWriteFactory* writeFactory{};
+        IDWriteTextFormat* format{};
+        ID2D1SolidColorBrush* brush{};
+        if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &d2dFactory))) return;
+        const D2D1_RENDER_TARGET_PROPERTIES properties = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE));
+        if (FAILED(d2dFactory->CreateDCRenderTarget(&properties, &target)) ||
+            FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(&writeFactory))) ||
+            FAILED(writeFactory->CreateTextFormat(L"Segoe UI Emoji", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"", &format)) ||
+            FAILED(target->CreateSolidColorBrush(D2D1::ColorF(GetRValue(color) / 255.0f, GetGValue(color) / 255.0f, GetBValue(color) / 255.0f), &brush))) {
+            if (brush) brush->Release(); if (format) format->Release(); if (writeFactory) writeFactory->Release(); if (target) target->Release(); d2dFactory->Release(); return;
+        }
+        RECT bounds{}; GetClipBox(dc, &bounds);
+        if (SUCCEEDED(target->BindDC(dc, &bounds))) {
+            target->BeginDraw();
+            target->DrawTextW(label.c_str(), static_cast<UINT32>(label.size()), format,
+                              D2D1::RectF(static_cast<float>(row.left), static_cast<float>(row.top), static_cast<float>(row.right), static_cast<float>(row.bottom)),
+                              brush, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+            target->EndDraw();
+        }
+        brush->Release(); format->Release(); writeFactory->Release(); target->Release(); d2dFactory->Release();
+    }
+
     int HitTestAction(POINT point) const {
         const int padding = configuration_.theme.padding;
         const int rowHeight = configuration_.theme.rowHeight;
@@ -646,7 +677,8 @@ private:
                 }
                 SetTextColor(dc, index == self->selectedIndex_ ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground);
                 const std::wstring label = std::to_wstring(index + 1) + L".  " + VisibleCandidate(self->candidates_[index]);
-                DrawTextW(dc, label.c_str(), static_cast<int>(label.size()), &row, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                if (self->modeMarker_ == L"EMOJI") DrawEmojiLabel(dc, row, label, index == self->selectedIndex_ ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground);
+                else DrawTextW(dc, label.c_str(), static_cast<int>(label.size()), &row, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             }
             if (self->pageCount_ > 1 || self->capsLock_ || !self->modeMarker_.empty()) {
                 const std::wstring pageText = L"Page " + std::to_wstring(self->page_ + 1) + L"/" + std::to_wstring(self->pageCount_);

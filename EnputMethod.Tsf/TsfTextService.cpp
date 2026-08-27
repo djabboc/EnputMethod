@@ -856,6 +856,7 @@ public:
         }
         if (emojiMode_ && key == VK_ESCAPE && typed_.empty()) { emojiMode_ = false; return S_OK; }
         if (key >= 'A' && key <= 'Z') {
+            ClearDetachedSuggestions();
             const bool uppercase = (GetKeyState(VK_SHIFT) < 0) ^ ((GetKeyState(VK_CAPITAL) & 1) != 0);
             typed_.insert(cursor_, 1, static_cast<wchar_t>(uppercase ? key : key + (L'a' - L'A')));
             ++cursor_;
@@ -884,8 +885,9 @@ public:
         if (key == VK_RIGHT && cursor_ < typed_.size()) { ++cursor_; return UpdateComposition(context, cookie); }
         const int candidateIndex = CandidateIndex(key);
         const wchar_t selectionTrailing = configuration_.appendSpaceAfterSelection ? L' ' : L'\0';
-        if (candidateIndex >= 0 && candidateIndex < static_cast<int>(candidates_.size())) return FinishWithSuggestions(context, cookie, candidates_[candidateIndex], selectionTrailing);
-        if (HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size()) return FinishWithSuggestions(context, cookie, candidates_[selectedIndex_], selectionTrailing);
+        if (candidateIndex >= 0 && candidateIndex < static_cast<int>(candidates_.size())) return CommitCandidate(context, cookie, candidates_[candidateIndex], selectionTrailing);
+        if (HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size()) return CommitCandidate(context, cookie, candidates_[selectedIndex_], selectionTrailing);
+        if (key == VK_SPACE && detachedSuggestionActive_) return CommitDetachedSuggestion(context, cookie, L"", L' ');
         if (key == VK_SPACE && IsSuggestionActive()) return FinishComposition(cookie, L"", L' ');
         if (key == VK_SPACE) return FinishWithSuggestions(context, cookie, typed_, L' ');
         if (key == VK_RETURN) return FinishComposition(cookie, typed_, L'\r');
@@ -893,11 +895,13 @@ public:
         return S_FALSE;
     }
 
-    HRESULT CommitForPassthrough(TfEditCookie cookie) {
+    HRESULT CommitForPassthrough(ITfContext* context, TfEditCookie cookie) {
+        if (detachedSuggestionActive_) return CommitDetachedSuggestion(context, cookie, L"", L'\0');
         return FinishComposition(cookie, typed_, L'\0');
     }
 
-    HRESULT CommitWithCharacter(TfEditCookie cookie, wchar_t character) {
+    HRESULT CommitWithCharacter(ITfContext* context, TfEditCookie cookie, wchar_t character) {
+        if (detachedSuggestionActive_) return CommitDetachedSuggestion(context, cookie, L"", character);
         return FinishComposition(cookie, typed_ + character, L'\0');
     }
 
@@ -910,7 +914,7 @@ private:
     HRESULT ApplyCandidateWindowAction(ITfContext* context, TfEditCookie cookie, const std::wstring& candidate, int action) {
         if (!candidate.empty()) {
             const wchar_t trailing = configuration_.appendSpaceAfterSelection ? L' ' : L'\0';
-            return FinishWithSuggestions(context, cookie, candidate, trailing);
+            return CommitCandidate(context, cookie, candidate, trailing);
         }
         if (action == -1) return MovePage(context, cookie, -1);
         if (action == -2) return MovePage(context, cookie, 1);
@@ -921,7 +925,7 @@ private:
         if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key)) return true;
         if (HasShortcut(configuration_.shortcuts.toggleEmojiMode, key)) return true;
         if (emojiMode_ && key == VK_ESCAPE && typed_.empty()) return true;
-        if (IsSuggestionActive()) return !IsModifierKey(key);
+        if (IsSuggestionActive() || detachedSuggestionActive_) return !IsModifierKey(key);
         if (!typed_.empty()) return !IsModifierKey(key);
         if (GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0) return false;
         return key >= 'A' && key <= 'Z';
@@ -929,7 +933,7 @@ private:
 
     bool ShouldPassThrough(WPARAM key) const {
         if (typed_.empty()) {
-            if (!IsSuggestionActive()) return false;
+            if (!IsSuggestionActive() && !detachedSuggestionActive_) return false;
             const bool hasModifier = GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0;
             if (!hasModifier && key >= 'A' && key <= 'Z') return false;
             if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key) || key == VK_SPACE || HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key)) return false;
@@ -1103,7 +1107,7 @@ private:
         if (currentPage_ == previousPage) return S_OK;
         UpdateCurrentPage();
         selectedIndex_ = 0;
-        return UpdateComposition(context, cookie);
+        return RefreshCandidates(context, cookie);
     }
 
     HRESULT MoveSelection(ITfContext* context, TfEditCookie cookie, int direction) {
@@ -1122,7 +1126,7 @@ private:
             selectedIndex_ = 0;
             changed = true;
         }
-        return changed ? UpdateComposition(context, cookie) : S_OK;
+        return changed ? RefreshCandidates(context, cookie) : S_OK;
     }
 
     HRESULT UpdateComposition(ITfContext* context, TfEditCookie cookie) {
@@ -1188,15 +1192,66 @@ private:
         currentPage_ = 0;
         selectedIndex_ = 0;
         UpdateCurrentPage();
-        return UpdateComposition(context, cookie);
+        detachedSuggestionActive_ = true;
+        detachedSuggestionContext_ = context;
+        detachedSuggestionContext_->AddRef();
+        return ShowDetachedSuggestions(context, cookie);
     }
 
     bool IsSuggestionActive() const {
         return composition_ && typed_.empty() && !candidates_.empty();
     }
 
+    void ClearDetachedSuggestions() {
+        detachedSuggestionActive_ = false;
+        if (detachedSuggestionContext_) { detachedSuggestionContext_->Release(); detachedSuggestionContext_ = nullptr; }
+    }
+
+    HRESULT ShowDetachedSuggestions(ITfContext* context, TfEditCookie cookie) {
+        if (!detachedSuggestionActive_ || candidates_.empty()) return S_OK;
+        TF_SELECTION selection{}; ULONG fetched{};
+        HRESULT hr = context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched);
+        if (FAILED(hr) || fetched != 1) return FAILED(hr) ? hr : E_FAIL;
+        candidateWindow_.Show(context, cookie, selection.range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
+        translationWindow_.Show(context, cookie, selection.range, translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr, configuration_);
+        selection.range->Release();
+        return S_OK;
+    }
+
+    HRESULT RefreshCandidates(ITfContext* context, TfEditCookie cookie) {
+        return detachedSuggestionActive_ ? ShowDetachedSuggestions(context, cookie) : UpdateComposition(context, cookie);
+    }
+
+    HRESULT CommitDetachedSuggestion(ITfContext* context, TfEditCookie cookie, const std::wstring& committedText, wchar_t trailing) {
+        TF_SELECTION selection{}; ULONG fetched{};
+        HRESULT hr = context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched);
+        if (FAILED(hr) || fetched != 1) return FAILED(hr) ? hr : E_FAIL;
+        std::wstring finalText = committedText;
+        if (trailing) finalText += trailing;
+        hr = selection.range->SetText(cookie, 0, finalText.data(), static_cast<LONG>(finalText.size()));
+        selection.range->Release();
+        ClearDetachedSuggestions();
+        candidateWindow_.Hide();
+        translationWindow_.Hide();
+        if (FAILED(hr) || committedText.empty()) return hr;
+        allCandidates_ = FindAssociatedCandidates(committedText);
+        currentPage_ = 0;
+        selectedIndex_ = 0;
+        UpdateCurrentPage();
+        if (allCandidates_.empty()) return hr;
+        detachedSuggestionActive_ = true;
+        detachedSuggestionContext_ = context;
+        detachedSuggestionContext_->AddRef();
+        return ShowDetachedSuggestions(context, cookie);
+    }
+
+    HRESULT CommitCandidate(ITfContext* context, TfEditCookie cookie, const std::wstring& candidate, wchar_t trailing) {
+        return detachedSuggestionActive_ ? CommitDetachedSuggestion(context, cookie, candidate, trailing) : FinishWithSuggestions(context, cookie, candidate, trailing);
+    }
+
     void ClearComposition() {
         if (composition_) { composition_->Release(); composition_ = nullptr; }
+        ClearDetachedSuggestions();
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
         typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidateWindow_.Hide(); translationWindow_.Hide();
     }
@@ -1206,6 +1261,7 @@ private:
     TfClientId clientId_ = TF_CLIENTID_NULL;
     ITfComposition* composition_ = nullptr;
     ITfContext* compositionContext_ = nullptr;
+    ITfContext* detachedSuggestionContext_ = nullptr;
     std::wstring typed_;
     size_t cursor_ = 0;
     std::vector<std::wstring> allCandidates_;
@@ -1215,6 +1271,7 @@ private:
     std::wstring lastCommittedText_;
     bool emojiMode_ = false;
     bool translationEnabled_ = false;
+    bool detachedSuggestionActive_ = false;
     RuntimeConfiguration configuration_{};
     CandidateWindow candidateWindow_;
     TranslationWindow translationWindow_;
@@ -1227,7 +1284,7 @@ public:
     STDMETHODIMP QueryInterface(REFIID iid, void** result) override { if (!result) return E_INVALIDARG; *result = nullptr; if (iid != IID_IUnknown && iid != IID_ITfEditSession) return E_NOINTERFACE; *result = static_cast<ITfEditSession*>(this); AddRef(); return S_OK; }
     STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&refs_); }
     STDMETHODIMP_(ULONG) Release() override { const auto refs = InterlockedDecrement(&refs_); if (!refs) delete this; return refs; }
-    STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return passThrough_ ? service_->CommitForPassthrough(cookie) : printableCharacter_ ? service_->CommitWithCharacter(cookie, printableCharacter_) : service_->ApplyKey(context_, cookie, key_); }
+    STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return passThrough_ ? service_->CommitForPassthrough(context_, cookie) : printableCharacter_ ? service_->CommitWithCharacter(context_, cookie, printableCharacter_) : service_->ApplyKey(context_, cookie, key_); }
 private: long refs_ = 1; TextService* service_; ITfContext* context_; WPARAM key_; bool passThrough_; wchar_t printableCharacter_;
 };
 
@@ -1248,12 +1305,13 @@ private:
 };
 
 void TextService::HandleCandidateWindowAction(int action) {
-    if (!compositionContext_ || !composition_) return;
+    ITfContext* context = composition_ ? compositionContext_ : detachedSuggestionContext_;
+    if (!context) return;
     const std::wstring candidate = action >= 0 && action < static_cast<int>(candidates_.size()) ? candidates_[action] : std::wstring{};
-    auto* session = new (std::nothrow) CandidateClickEditSession(this, compositionContext_, candidate, action);
+    auto* session = new (std::nothrow) CandidateClickEditSession(this, context, candidate, action);
     if (!session) return;
     HRESULT sessionResult{};
-    compositionContext_->RequestEditSession(clientId_, session, TF_ES_ASYNC | TF_ES_READWRITE, &sessionResult);
+    context->RequestEditSession(clientId_, session, TF_ES_ASYNC | TF_ES_READWRITE, &sessionResult);
     session->Release();
 }
 

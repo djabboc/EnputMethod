@@ -907,10 +907,10 @@ private:
 
     void HandleCandidateWindowAction(int action);
 
-    HRESULT ApplyCandidateWindowAction(ITfContext* context, TfEditCookie cookie, int action) {
-        if (action >= 0 && action < static_cast<int>(candidates_.size())) {
+    HRESULT ApplyCandidateWindowAction(ITfContext* context, TfEditCookie cookie, const std::wstring& candidate, int action) {
+        if (!candidate.empty()) {
             const wchar_t trailing = configuration_.appendSpaceAfterSelection ? L' ' : L'\0';
-            return FinishWithSuggestions(context, cookie, candidates_[action], trailing);
+            return FinishWithSuggestions(context, cookie, candidate, trailing);
         }
         if (action == -1) return MovePage(context, cookie, -1);
         if (action == -2) return MovePage(context, cookie, 1);
@@ -1233,22 +1233,24 @@ private: long refs_ = 1; TextService* service_; ITfContext* context_; WPARAM key
 
 class CandidateClickEditSession final : public ITfEditSession {
 public:
-    CandidateClickEditSession(TextService* service, ITfContext* context, int action) : service_(service), context_(context), action_(action) { service_->AddRef(); context_->AddRef(); }
+    CandidateClickEditSession(TextService* service, ITfContext* context, std::wstring candidate, int action) : service_(service), context_(context), candidate_(std::move(candidate)), action_(action) { service_->AddRef(); context_->AddRef(); }
     ~CandidateClickEditSession() { context_->Release(); service_->Release(); }
     STDMETHODIMP QueryInterface(REFIID iid, void** result) override { if (!result) return E_INVALIDARG; *result = nullptr; if (iid != IID_IUnknown && iid != IID_ITfEditSession) return E_NOINTERFACE; *result = static_cast<ITfEditSession*>(this); AddRef(); return S_OK; }
     STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&refs_); }
     STDMETHODIMP_(ULONG) Release() override { const auto refs = InterlockedDecrement(&refs_); if (!refs) delete this; return refs; }
-    STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return service_->ApplyCandidateWindowAction(context_, cookie, action_); }
+    STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return service_->ApplyCandidateWindowAction(context_, cookie, candidate_, action_); }
 private:
     long refs_ = 1;
     TextService* service_;
     ITfContext* context_;
+    std::wstring candidate_;
     int action_;
 };
 
 void TextService::HandleCandidateWindowAction(int action) {
     if (!compositionContext_ || !composition_) return;
-    auto* session = new (std::nothrow) CandidateClickEditSession(this, compositionContext_, action);
+    const std::wstring candidate = action >= 0 && action < static_cast<int>(candidates_.size()) ? candidates_[action] : std::wstring{};
+    auto* session = new (std::nothrow) CandidateClickEditSession(this, compositionContext_, candidate, action);
     if (!session) return;
     HRESULT sessionResult{};
     compositionContext_->RequestEditSession(clientId_, session, TF_ES_ASYNC | TF_ES_READWRITE, &sessionResult);

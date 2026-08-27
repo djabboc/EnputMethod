@@ -653,12 +653,13 @@ private:
                     DrawTextW(dc, capsText.c_str(), static_cast<int>(capsText.size()), &pageRow, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
                 }
                 if (self->pageCount_ > 1) {
-                    const std::wstring previousText = L"< Prev";
-                    const std::wstring nextText = L"Next >";
+                    const std::wstring previousText = L"<";
+                    const std::wstring nextText = L">";
                     SetTextColor(dc, self->configuration_.theme.foreground);
                     DrawTextW(dc, previousText.c_str(), static_cast<int>(previousText.size()), &pageRow, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-                    DrawTextW(dc, pageText.c_str(), static_cast<int>(pageText.size()), &pageRow, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
                     DrawTextW(dc, nextText.c_str(), static_cast<int>(nextText.size()), &pageRow, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+                    RECT pageNumber{ pageRow.left + rowHeight, pageRow.top, pageRow.right - rowHeight, pageRow.bottom };
+                    DrawTextW(dc, pageText.c_str(), static_cast<int>(pageText.size()), &pageNumber, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
                 }
             }
             if (previousFont) SelectObject(dc, previousFont);
@@ -1057,6 +1058,10 @@ private:
             if (Lowercase(entry.text) != lower) continue;
             for (const std::wstring& candidate : entry.next) appendUnique(candidate);
             for (const std::wstring& candidate : entry.phrases) appendUnique(candidate);
+        }
+        if (matches.empty()) {
+            static const std::vector<std::wstring> fallback{ L"the", L"to", L"and", L"a", L"is", L"of", L"for", L"in", L"that" };
+            matches = fallback;
         }
         return matches;
     }

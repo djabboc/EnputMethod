@@ -489,7 +489,7 @@ public:
         if (window_) DestroyWindow(window_);
     }
 
-    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration, size_t page, size_t pageCount, size_t selectedIndex, bool capsLock, std::wstring modeMarker, std::function<void(int)> actionCallback) {
+    void Show(ITfContext* context, TfEditCookie cookie, ITfRange* range, const std::vector<std::wstring>& candidates, const RuntimeConfiguration& configuration, size_t page, size_t pageCount, size_t selectedIndex, bool capsLock, bool preservePosition, std::wstring modeMarker, std::function<void(int)> actionCallback) {
         const std::vector<std::wstring> previousCandidates = candidates_;
         const size_t previousPage = page_;
         const size_t previousPageCount = pageCount_;
@@ -537,7 +537,7 @@ public:
             previousPage == page_ && previousPageCount == pageCount_ && previousCapsLock == capsLock_ &&
             previousModeMarker == modeMarker_ && previousSelectedIndex != selectedIndex_;
         // A selection key must not move the candidate window when the application's composition bounds settle.
-        if (candidateSelectionChanged) {
+        if (preservePosition || candidateSelectionChanged) {
             positionX = positionX_;
             positionY = positionY_;
         }
@@ -1315,7 +1315,7 @@ private:
         if (currentPage_ == previousPage) return S_OK;
         UpdateCurrentPage();
         selectedIndex_ = 0;
-        return RefreshCandidates(context, cookie);
+        return RefreshCandidatesAtCurrentPosition(context, cookie);
     }
 
     HRESULT MoveSelection(ITfContext* context, TfEditCookie cookie, int direction) {
@@ -1334,7 +1334,7 @@ private:
             selectedIndex_ = 0;
             changed = true;
         }
-        return changed ? RefreshCandidates(context, cookie) : S_OK;
+        return changed ? RefreshCandidatesAtCurrentPosition(context, cookie) : S_OK;
     }
 
     HRESULT UpdateComposition(ITfContext* context, TfEditCookie cookie) {
@@ -1368,7 +1368,7 @@ private:
             }
         }
         if (SUCCEEDED(hr)) {
-            candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
+            candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, keepCandidateWindowPosition_, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
             RECT candidateBounds{};
             translationWindow_.Show(context, cookie, range, translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr, configuration_, candidateWindow_.GetScreenBounds(&candidateBounds) ? &candidateBounds : nullptr);
         }
@@ -1421,7 +1421,7 @@ private:
         TF_SELECTION selection{}; ULONG fetched{};
         HRESULT hr = context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched);
         if (FAILED(hr) || fetched != 1) return FAILED(hr) ? hr : E_FAIL;
-        candidateWindow_.Show(context, cookie, selection.range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
+        candidateWindow_.Show(context, cookie, selection.range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, keepCandidateWindowPosition_, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
         RECT candidateBounds{};
         translationWindow_.Show(context, cookie, selection.range, translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr, configuration_, candidateWindow_.GetScreenBounds(&candidateBounds) ? &candidateBounds : nullptr);
         selection.range->Release();
@@ -1430,6 +1430,14 @@ private:
 
     HRESULT RefreshCandidates(ITfContext* context, TfEditCookie cookie) {
         return detachedSuggestionActive_ ? ShowDetachedSuggestions(context, cookie) : UpdateComposition(context, cookie);
+    }
+
+    HRESULT RefreshCandidatesAtCurrentPosition(ITfContext* context, TfEditCookie cookie) {
+        const bool previous = keepCandidateWindowPosition_;
+        keepCandidateWindowPosition_ = true;
+        const HRESULT hr = RefreshCandidates(context, cookie);
+        keepCandidateWindowPosition_ = previous;
+        return hr;
     }
 
     HRESULT CommitDetachedSuggestion(ITfContext* context, TfEditCookie cookie, const std::wstring& committedText, wchar_t trailing) {
@@ -1484,6 +1492,7 @@ private:
     bool emojiMode_ = false;
     bool translationEnabled_ = false;
     bool detachedSuggestionActive_ = false;
+    bool keepCandidateWindowPosition_ = false;
     RuntimeConfiguration configuration_{};
     CandidateWindow candidateWindow_;
     TranslationWindow translationWindow_;

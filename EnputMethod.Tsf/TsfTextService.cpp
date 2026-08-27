@@ -501,9 +501,10 @@ private:
         HDC dc = GetDC(window_);
         const int dpi = GetDeviceCaps(dc, LOGPIXELSY);
         ReleaseDC(window_, dc);
+        const wchar_t* fontFamily = modeMarker_ == L"EMOJI" ? L"Segoe UI Emoji" : configuration_.fontFamily.c_str();
         font_ = CreateFontW(-MulDiv(configuration_.fontSize, dpi, 72), 0, 0, 0,
                             FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, configuration_.fontFamily.c_str());
+                            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, fontFamily);
         SetLayeredWindowAttributes(window_, 0, configuration_.opacity, LWA_ALPHA);
     }
 
@@ -528,10 +529,15 @@ private:
     }
 
     SIZE LabelSize(HDC dc, size_t index) const {
-        const std::wstring label = std::to_wstring(index + 1) + L".  " + candidates_[index];
+        const std::wstring label = std::to_wstring(index + 1) + L".  " + VisibleCandidate(candidates_[index]);
         SIZE size{};
         GetTextExtentPoint32W(dc, label.c_str(), static_cast<int>(label.size()), &size);
         return size;
+    }
+
+    static std::wstring VisibleCandidate(std::wstring candidate) {
+        std::replace(candidate.begin(), candidate.end(), static_cast<wchar_t>(0x1F), L' ');
+        return candidate;
     }
 
     int HitTestAction(POINT point) const {
@@ -639,7 +645,7 @@ private:
                     }
                 }
                 SetTextColor(dc, index == self->selectedIndex_ ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground);
-                const std::wstring label = std::to_wstring(index + 1) + L".  " + self->candidates_[index];
+                const std::wstring label = std::to_wstring(index + 1) + L".  " + VisibleCandidate(self->candidates_[index]);
                 DrawTextW(dc, label.c_str(), static_cast<int>(label.size()), &row, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             }
             if (self->pageCount_ > 1 || self->capsLock_ || !self->modeMarker_.empty()) {
@@ -1001,6 +1007,7 @@ private:
     }
 
     static std::wstring DisplayCandidate(const std::wstring& candidate, const std::wstring& typed, const RuntimeConfiguration& configuration) {
+        if (candidate.find(static_cast<wchar_t>(0x1F)) != std::wstring::npos) return candidate;
         std::wstring display = candidate;
         const bool capsLock = (GetKeyState(VK_CAPITAL) & 1) != 0;
         if (capsLock || (configuration.preserveCase && IsAllUpper(typed))) {
@@ -1075,8 +1082,14 @@ private:
         std::vector<std::wstring> matches;
         for (const EmojiEntry& entry : LoadEmojiDictionary()) {
             const bool matchesKeyword = std::any_of(entry.keywords.begin(), entry.keywords.end(), [&lower](const std::wstring& keyword) { return Lowercase(keyword).starts_with(lower); });
-            if (!matchesKeyword || std::find(matches.begin(), matches.end(), entry.emoji) != matches.end()) continue;
-            matches.push_back(entry.emoji);
+            if (!matchesKeyword || std::any_of(matches.begin(), matches.end(), [&entry](const std::wstring& existing) { return existing.starts_with(entry.emoji); })) continue;
+            std::wstring candidate = entry.emoji;
+            candidate += static_cast<wchar_t>(0x1F);
+            for (size_t index = 0; index < entry.keywords.size(); ++index) {
+                if (index) candidate += L", ";
+                candidate += entry.keywords[index];
+            }
+            matches.push_back(std::move(candidate));
         }
         return matches;
     }
@@ -1246,7 +1259,9 @@ private:
     }
 
     HRESULT CommitCandidate(ITfContext* context, TfEditCookie cookie, const std::wstring& candidate, wchar_t trailing) {
-        return detachedSuggestionActive_ ? CommitDetachedSuggestion(context, cookie, candidate, trailing) : FinishWithSuggestions(context, cookie, candidate, trailing);
+        const size_t separator = candidate.find(static_cast<wchar_t>(0x1F));
+        const std::wstring committed = separator == std::wstring::npos ? candidate : candidate.substr(0, separator);
+        return detachedSuggestionActive_ ? CommitDetachedSuggestion(context, cookie, committed, trailing) : FinishWithSuggestions(context, cookie, committed, trailing);
     }
 
     void ClearComposition() {

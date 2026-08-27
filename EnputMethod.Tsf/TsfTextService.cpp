@@ -11,6 +11,7 @@
 #include <new>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // A system-registered, transparent TSF keyboard profile.  It exists as a real input
@@ -1014,16 +1015,18 @@ private:
         ToLowerInPlace(&lower);
         std::vector<std::wstring> exactMatches;
         std::vector<std::wstring> prefixMatches;
-        const auto appendUnique = [](std::vector<std::wstring>* candidates, const std::wstring& candidate) {
+        std::unordered_set<std::wstring> exactKeys;
+        std::unordered_set<std::wstring> prefixKeys;
+        const auto appendUnique = [](std::vector<std::wstring>* candidates, std::unordered_set<std::wstring>* keys, const std::wstring& candidate) {
             const std::wstring lowerCandidate = Lowercase(candidate);
-            if (std::none_of(candidates->begin(), candidates->end(), [&lowerCandidate](const std::wstring& existing) { return Lowercase(existing) == lowerCandidate; })) candidates->push_back(candidate);
+            if (keys->insert(lowerCandidate).second) candidates->push_back(candidate);
         };
         for (const std::wstring& word : LoadDictionary()) {
             std::wstring candidate = word;
             ToLowerInPlace(&candidate);
             if (!candidate.starts_with(lower)) continue;
-            if (candidate == lower) appendUnique(&exactMatches, word);
-            else appendUnique(&prefixMatches, word);
+            if (candidate == lower) appendUnique(&exactMatches, &exactKeys, word);
+            else appendUnique(&prefixMatches, &prefixKeys, word);
         }
         for (const SuggestionEntry& entry : LoadSuggestionDictionary()) {
             std::vector<std::wstring> phrases = entry.phrases;
@@ -1031,8 +1034,8 @@ private:
             for (const std::wstring& phrase : phrases) {
                 const std::wstring candidate = Lowercase(phrase);
                 if (!candidate.starts_with(lower)) continue;
-                if (candidate == lower) appendUnique(&exactMatches, phrase);
-                else appendUnique(&prefixMatches, phrase);
+                if (candidate == lower) appendUnique(&exactMatches, &exactKeys, phrase);
+                else appendUnique(&prefixMatches, &prefixKeys, phrase);
             }
         }
         std::vector<std::wstring> matches;
@@ -1045,9 +1048,10 @@ private:
     static std::vector<std::wstring> FindAssociatedCandidates(const std::wstring& committedText) {
         const std::wstring lower = Lowercase(committedText);
         std::vector<std::wstring> matches;
-        const auto appendUnique = [&matches](const std::wstring& candidate) {
+        std::unordered_set<std::wstring> keys;
+        const auto appendUnique = [&matches, &keys](const std::wstring& candidate) {
             const std::wstring lowerCandidate = Lowercase(candidate);
-            if (std::none_of(matches.begin(), matches.end(), [&lowerCandidate](const std::wstring& existing) { return Lowercase(existing) == lowerCandidate; })) matches.push_back(candidate);
+            if (keys.insert(lowerCandidate).second) matches.push_back(candidate);
         };
         for (const SuggestionEntry& entry : LoadSuggestionDictionary()) {
             if (Lowercase(entry.text) != lower) continue;

@@ -82,3 +82,9 @@
 - Completed: README documents candidate priority, mouse interaction, continuous suggestions, case and edge settings, emoji mode, translation mode, shortcuts, and all installed data files.
 - Completed: installer output contains `suggestions.json`, `emoji.json`, and `translations.json` alongside the existing configuration and dictionary files.
 - Static verification: final Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors. Manual installation testing is intentionally deferred until all tasks are complete.
+
+## Post-release correction: candidate lookup performance
+
+- Cause: duplicate detection added for phrase integration used a linear scan for every matching dictionary word, which made short prefixes grow quadratically against the large word list.
+- Correction: both regular and associated candidate paths use case-insensitive hash sets for duplicate detection.
+- Static verification: Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors.

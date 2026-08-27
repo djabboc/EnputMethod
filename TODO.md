@@ -24,7 +24,8 @@
   - Do not append an extra space when the selected word is immediately followed by punctuation or an explicit user action that should not receive one.
 - [x] Apply configured font family, size, and opacity to the floating candidate window.
 - [x] Keep the window non-activating, positioned at the TSF composition caret, and usable with number keys `1` through `9`.
-- [ ] Test repeated selection, backspace, Enter, Escape, Space, punctuation, cursor movement, no-match input, paging, and input in Notepad, EmEditor, and ChatGPT.
+- [~] Repeated selection, backspace, Enter, Escape, Space, punctuation, cursor movement, no-match input, paging, and input in Notepad, EmEditor, and ChatGPT.
+  - Many individual cases have passed user verification. The remaining cross-application regression and the latest mouse-pagination repair are listed for consolidated verification in `docs/development-issue-ledger-zh-CN.md`.
 
 ## Phase 3: Themes
 
@@ -46,7 +47,9 @@
 
 ## Completion Criteria
 
-- [ ] A clean installation creates the default configuration, dictionary, and four themes.
-- [ ] Editing the configuration changes candidate count, layout, automatic spacing, font, size, opacity, and theme without rebuilding the input method.
-- [ ] The default dark vertical candidate window shows nine numbered choices and adds a space after numeric selection.
-- [ ] All changes pass Release build, COM activation, installed-DLL verification, and manual multi-selection tests in Notepad and EmEditor.
+- [~] A clean installation creates the default configuration, dictionary, and four themes.
+  - Existing-install update behavior is verified; a clean-install regression remains in the consolidated acceptance list.
+- [x] Editing the configuration changes candidate count, layout, automatic spacing, font, size, opacity, and theme without rebuilding the input method.
+- [x] The default dark vertical candidate window shows nine numbered choices and adds a space after numeric selection.
+- [~] All changes pass Release build, COM activation, installed-DLL verification, and manual multi-selection tests in Notepad and EmEditor.
+  - Release build and installed-DLL checks have passed. Current manual status and remaining cases are maintained in `docs/development-issue-ledger-zh-CN.md`.

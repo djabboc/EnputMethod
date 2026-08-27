@@ -831,11 +831,13 @@ private:
                     row = { padding, padding + static_cast<int>(index) * rowHeight, surface.right - padding,
                             padding + static_cast<int>(index + 1) * rowHeight };
                 }
-                if (index == self->selectedIndex_) {
-                    HBRUSH selected = CreateSolidBrush(self->configuration_.theme.selectedBackground);
-                    FillRect(dc, &row, selected);
-                    DeleteObject(selected);
-                    if (self->configuration_.theme.selectedBorderWidth > 0) {
+                const bool selected = index == self->selectedIndex_;
+                const bool hovered = static_cast<int>(index) == self->hoverAction_;
+                if (selected || hovered) {
+                    HBRUSH highlightBrush = CreateSolidBrush(self->configuration_.theme.selectedBackground);
+                    FillRect(dc, &row, highlightBrush);
+                    DeleteObject(highlightBrush);
+                    if (selected && self->configuration_.theme.selectedBorderWidth > 0) {
                         HPEN selectedBorder = CreatePen(PS_SOLID, self->configuration_.theme.selectedBorderWidth, self->configuration_.theme.selectedBorder);
                         HGDIOBJ previousSelectedBorder = SelectObject(dc, selectedBorder);
                         HGDIOBJ previousSelectedBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
@@ -846,9 +848,9 @@ private:
                         DeleteObject(selectedBorder);
                     }
                 }
-                SetTextColor(dc, index == self->selectedIndex_ ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground);
+                SetTextColor(dc, selected ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground);
                 const std::wstring label = std::to_wstring(index + 1) + L".  " + VisibleCandidate(self->candidates_[index]);
-                if (self->modeMarker_ == L"EMOJI") DrawEmojiLabel(dc, row, label, index == self->selectedIndex_ ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground, self->configuration_.fontSize);
+                if (self->modeMarker_ == L"EMOJI") DrawEmojiLabel(dc, row, label, selected ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground, self->configuration_.fontSize);
                 else DrawTextW(dc, label.c_str(), static_cast<int>(label.size()), &row, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             }
             if (self->pageCount_ > 1 || self->capsLock_ || !self->modeMarker_.empty()) {
@@ -912,19 +914,37 @@ private:
             const POINT point{ static_cast<short>(LOWORD(parameter)), static_cast<short>(HIWORD(parameter)) };
             const int hoverAction = self->HitTestAction(point);
             if (hoverAction != self->hoverAction_) {
+                const int previousAction = self->hoverAction_;
                 self->hoverAction_ = hoverAction;
-                const RECT footer = self->FooterRow();
-                InvalidateRect(window, &footer, FALSE);
+                if (previousAction >= 0) {
+                    const RECT row = self->CandidateRow(static_cast<size_t>(previousAction));
+                    InvalidateRect(window, &row, FALSE);
+                }
+                if (hoverAction >= 0) {
+                    const RECT row = self->CandidateRow(static_cast<size_t>(hoverAction));
+                    InvalidateRect(window, &row, FALSE);
+                }
+                if (previousAction < 0 || hoverAction < 0) {
+                    const RECT footer = self->FooterRow();
+                    InvalidateRect(window, &footer, FALSE);
+                }
             }
+            SetCursor(LoadCursorW(nullptr, hoverAction != -3 ? IDC_HAND : IDC_ARROW));
             TRACKMOUSEEVENT tracking{ sizeof(tracking), TME_LEAVE, window, 0 };
             TrackMouseEvent(&tracking);
             return 0;
         }
         if (message == WM_MOUSELEAVE && self) {
             if (self->hoverAction_ != -3) {
+                const int previousAction = self->hoverAction_;
                 self->hoverAction_ = -3;
-                const RECT footer = self->FooterRow();
-                InvalidateRect(window, &footer, FALSE);
+                if (previousAction >= 0) {
+                    const RECT row = self->CandidateRow(static_cast<size_t>(previousAction));
+                    InvalidateRect(window, &row, FALSE);
+                } else {
+                    const RECT footer = self->FooterRow();
+                    InvalidateRect(window, &footer, FALSE);
+                }
             }
             return 0;
         }

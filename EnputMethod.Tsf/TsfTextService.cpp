@@ -716,8 +716,35 @@ private:
             if (previous) SelectObject(dc, previous);
             ReleaseDC(window_, dc);
         }
-        if (pageCount_ > 1 && point.y >= rowsBottom && point.y < surfaceBottom - padding) return point.x < surfaceRight / 2 ? -1 : -2;
+        if (pageCount_ > 1 && point.y >= rowsBottom && point.y < surfaceBottom - padding) {
+            const RECT previousButton{ FooterNavigationLeft(), rowsBottom, FooterNavigationLeft() + rowHeight, surfaceBottom - padding };
+            const RECT nextButton{ surfaceRight - padding - rowHeight, rowsBottom, surfaceRight - padding, surfaceBottom - padding };
+            if (PtInRect(&previousButton, point)) return -1;
+            if (PtInRect(&nextButton, point)) return -2;
+        }
         return -3;
+    }
+
+    int FooterNavigationLeft() const {
+        const int padding = configuration_.theme.padding;
+        if (!capsLock_ && modeMarker_.empty()) return padding;
+        HDC dc = GetDC(window_);
+        HGDIOBJ previous = font_ ? SelectObject(dc, font_) : nullptr;
+        std::wstring marker = capsLock_ ? L"CAPS" : L"";
+        if (!marker.empty() && !modeMarker_.empty()) marker += L" ";
+        marker += modeMarker_;
+        SIZE markerSize{};
+        GetTextExtentPoint32W(dc, marker.c_str(), static_cast<int>(marker.size()), &markerSize);
+        if (previous) SelectObject(dc, previous);
+        ReleaseDC(window_, dc);
+        return (std::min)(size_.cx - configuration_.theme.shadowSize - padding, padding + markerSize.cx + padding);
+    }
+
+    RECT FooterRow() const {
+        const int padding = configuration_.theme.padding;
+        const int rowHeight = configuration_.theme.rowHeight;
+        const int surfaceBottom = size_.cy - configuration_.theme.shadowSize;
+        return { padding, surfaceBottom - rowHeight - padding, size_.cx - configuration_.theme.shadowSize - padding, surfaceBottom - padding };
     }
 
     RECT CandidateRow(size_t index) const {
@@ -842,9 +869,17 @@ private:
                     const std::wstring previousText = L"<";
                     const std::wstring nextText = L">";
                     RECT navigationRow{ navigationLeft, pageRow.top, pageRow.right, pageRow.bottom };
-                    SetTextColor(dc, self->configuration_.theme.foreground);
-                    DrawTextW(dc, previousText.c_str(), static_cast<int>(previousText.size()), &navigationRow, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-                    DrawTextW(dc, nextText.c_str(), static_cast<int>(nextText.size()), &navigationRow, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+                    RECT previousButton{ navigationRow.left, navigationRow.top, navigationRow.left + rowHeight, navigationRow.bottom };
+                    RECT nextButton{ navigationRow.right - rowHeight, navigationRow.top, navigationRow.right, navigationRow.bottom };
+                    if (self->hoverAction_ == -1 || self->hoverAction_ == -2) {
+                        HBRUSH hover = CreateSolidBrush(self->configuration_.theme.selectedBackground);
+                        FillRect(dc, self->hoverAction_ == -1 ? &previousButton : &nextButton, hover);
+                        DeleteObject(hover);
+                    }
+                    SetTextColor(dc, self->hoverAction_ == -1 ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground);
+                    DrawTextW(dc, previousText.c_str(), static_cast<int>(previousText.size()), &previousButton, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                    SetTextColor(dc, self->hoverAction_ == -2 ? self->configuration_.theme.selectedForeground : self->configuration_.theme.foreground);
+                    DrawTextW(dc, nextText.c_str(), static_cast<int>(nextText.size()), &nextButton, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
                     RECT pageNumber{ navigationRow.left + rowHeight, navigationRow.top, navigationRow.right - rowHeight, navigationRow.bottom };
                     DrawTextW(dc, pageText.c_str(), static_cast<int>(pageText.size()), &pageNumber, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
                 }
@@ -861,12 +896,50 @@ private:
             EndPaint(window, &paint);
             return 0;
         }
+        if (message == WM_NCHITTEST) return HTCLIENT;
         if (message == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
         if (message == WM_ERASEBKGND) return 1;
+        if (message == WM_SETCURSOR && self) {
+            POINT point{};
+            GetCursorPos(&point);
+            ScreenToClient(window, &point);
+            if (self->HitTestAction(point) != -3) {
+                SetCursor(LoadCursorW(nullptr, IDC_HAND));
+                return TRUE;
+            }
+        }
+        if (message == WM_MOUSEMOVE && self) {
+            const POINT point{ static_cast<short>(LOWORD(parameter)), static_cast<short>(HIWORD(parameter)) };
+            const int hoverAction = self->HitTestAction(point);
+            if (hoverAction != self->hoverAction_) {
+                self->hoverAction_ = hoverAction;
+                const RECT footer = self->FooterRow();
+                InvalidateRect(window, &footer, FALSE);
+            }
+            TRACKMOUSEEVENT tracking{ sizeof(tracking), TME_LEAVE, window, 0 };
+            TrackMouseEvent(&tracking);
+            return 0;
+        }
+        if (message == WM_MOUSELEAVE && self) {
+            if (self->hoverAction_ != -3) {
+                self->hoverAction_ = -3;
+                const RECT footer = self->FooterRow();
+                InvalidateRect(window, &footer, FALSE);
+            }
+            return 0;
+        }
+        if (message == WM_LBUTTONDOWN && self) {
+            const POINT point{ static_cast<short>(LOWORD(parameter)), static_cast<short>(HIWORD(parameter)) };
+            self->pressedAction_ = self->HitTestAction(point);
+            if (self->pressedAction_ != -3) SetCapture(window);
+            return 0;
+        }
         if (message == WM_LBUTTONUP && self && self->actionCallback_) {
             const POINT point{ static_cast<short>(LOWORD(parameter)), static_cast<short>(HIWORD(parameter)) };
             const int action = self->HitTestAction(point);
-            if (action != -3) self->actionCallback_(action);
+            if (GetCapture() == window) ReleaseCapture();
+            if (action != -3 && action == self->pressedAction_) self->actionCallback_(action);
+            self->pressedAction_ = -3;
             return 0;
         }
         return DefWindowProcW(window, message, 0, parameter);
@@ -889,6 +962,8 @@ private:
     SIZE size_{};
     int positionX_ = 0;
     int positionY_ = 0;
+    int hoverAction_ = -3;
+    int pressedAction_ = -3;
 };
 
 class TranslationWindow final {

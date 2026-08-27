@@ -5,10 +5,11 @@ Enput Method is a prototype Windows English input method built with the Text Ser
 ## Features
 
 - System-level TSF input profile in the Chinese input-method group
-- Floating, paged candidate window that can traverse every matching English word
+- Floating, paged candidate window with keyboard and mouse selection
 - `1` through `9` select the corresponding item on the current page; `Tab` selects the highlighted item
-- Configurable multi-key shortcut actions, external dictionary, and four candidate-window themes
-- `Space` preserves the typed prefix and starts the next word
+- Exact word matches are always first; configured case preservation and a Caps Lock marker keep submitted text predictable
+- Configurable multi-key shortcut actions, external dictionary, phrase/next-word suggestions, emoji mode, translation window, and four candidate-window themes
+- Selecting a word can keep the candidate window open for its next-word or phrase suggestions
 - Uses the existing Windows `Ctrl + Shift` Chinese-group switching behavior
 
 ## Requirements
@@ -30,11 +31,11 @@ Run each executable from its complete build-output folder. The executable requir
 
 Windows can cache text services. If Enput does not appear in the existing `Ctrl + Shift` rotation immediately after installation, switch to another input method and back, then sign out and sign in once. `Ctrl + Space` is not claimed as a system-wide input-method switch shortcut.
 
-For the candidate-window prototype, type a prefix such as `he`. The document retains `he` while a floating window shows the configured number of matching words per page. Press `-` or `+` to move between pages, or use Up and Down to move the highlighted candidate across page boundaries. Press the matching number key to select a word on the current page, or press `Tab` to select the highlighted word. Press `Space` to keep only the typed prefix and start the next word. Navigation and punctuation first commit the active composition and are then passed to the target application, so ordinary in-place editing does not overwrite text.
+For the candidate-window prototype, type a prefix such as `he`. The document retains `he` while a floating window shows the configured number of matching words per page. Press `-` or `+` to move between pages, or use Up and Down to move the highlighted candidate across page boundaries. The mouse can select a candidate or use the previous/next page controls without taking focus. Press the matching number key to select a word on the current page, or press `Tab` to select the highlighted word. If an association exists, selecting a word or pressing Space keeps the candidate window open with the next-word and phrase suggestions. Navigation and punctuation first commit the active composition and are then passed to the target application, so ordinary in-place editing does not overwrite text.
 
 The Release installer explicitly loads its adjacent TSF DLL, clears a stale per-user Enput COM registration left by older builds, and registers the current service at a versioned DLL path derived from the DLL build timestamp and size. This allows an update to proceed while an earlier Enput DLL remains mapped in another application, and allows an unchanged build to be installed again safely.
 
-User-editable settings are stored in `%LOCALAPPDATA%\Enput Method\config.json`; shortcut actions are stored independently in `shortcut.json`. An action accepts an array of key names. The defaults are `selectCurrent: ["Tab"]`, `previousPage: ["Minus", "NumpadSubtract"]`, `nextPage: ["Plus", "NumpadAdd"]`, `selectPrevious: ["Up"]`, and `selectNext: ["Down"]`. `config.json` supports candidate count, layout, automatic spaces, font family, font size, opacity, and the theme name. `conf.json` from older releases remains supported and is migrated when possible. The accompanying `dictionary.txt` contains 370,763 ordered words; common words are first for useful suggestions, followed by a complete word list for broad coverage. The installer creates configuration, shortcut, dictionary, and theme files only when they are missing, so updates preserve user changes.
+User-editable settings are stored in `%LOCALAPPDATA%\Enput Method\config.json`; shortcut actions are stored independently in `shortcut.json`. An action accepts an array of key names. The defaults are `selectCurrent: ["Tab"]`, `previousPage: ["Minus", "NumpadSubtract"]`, `nextPage: ["Plus", "NumpadAdd"]`, `selectPrevious: ["Up"]`, `selectNext: ["Down"]`, `toggleEmojiMode: ["F2"]`, and `toggleTranslationWindow: ["F3"]`. `config.json` supports candidate count, layout, automatic spaces, `preserveCase`, `avoidScreenEdges`, font family, font size, opacity, and the theme name. `conf.json` from older releases remains supported and is migrated when possible. The accompanying `dictionary.txt` contains 370,763 ordered words; `suggestions.json` provides phrase and next-word associations; `emoji.json` maps keywords to emoji; and `translations.json` provides the multilingual translation schema. The bundled translation values are demonstration data only. Import licensed dictionary data before representing translations, parts of speech, or examples as authoritative. The installer creates configuration, shortcut, dictionary, data, and theme files only when they are missing, so updates preserve user changes.
 
 ## Repository Layout
 

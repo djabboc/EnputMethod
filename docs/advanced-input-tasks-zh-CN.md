@@ -76,3 +76,9 @@
 - 更新 README、架构、配置说明和安装验证矩阵。
 - 全量 Release 构建通过，默认配置和数据文件均进入安装器输出。
 - 所有实现完成后等待用户进行安装后手工测试。
+
+## Task 14 verification record
+
+- Completed: README documents candidate priority, mouse interaction, continuous suggestions, case and edge settings, emoji mode, translation mode, shortcuts, and all installed data files.
+- Completed: installer output contains `suggestions.json`, `emoji.json`, and `translations.json` alongside the existing configuration and dictionary files.
+- Static verification: final Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors. Manual installation testing is intentionally deferred until all tasks are complete.

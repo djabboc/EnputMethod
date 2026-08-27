@@ -113,6 +113,21 @@ private:
             case 'n': value->push_back('\n'); break;
             case 'r': value->push_back('\r'); break;
             case 't': value->push_back('\t'); break;
+            case 'u':
+                if (position_ + 4 > text_.size()) return false;
+                {
+                    unsigned int codePoint = 0;
+                    for (int index = 0; index < 4; ++index) {
+                        const char hex = text_[position_++];
+                        const int digit = hex >= '0' && hex <= '9' ? hex - '0' : hex >= 'a' && hex <= 'f' ? hex - 'a' + 10 : hex >= 'A' && hex <= 'F' ? hex - 'A' + 10 : -1;
+                        if (digit < 0) return false;
+                        codePoint = (codePoint << 4) | static_cast<unsigned int>(digit);
+                    }
+                    if (codePoint < 0x80) value->push_back(static_cast<char>(codePoint));
+                    else if (codePoint < 0x800) { value->push_back(static_cast<char>(0xC0 | (codePoint >> 6))); value->push_back(static_cast<char>(0x80 | (codePoint & 0x3F))); }
+                    else { value->push_back(static_cast<char>(0xE0 | (codePoint >> 12))); value->push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F))); value->push_back(static_cast<char>(0x80 | (codePoint & 0x3F))); }
+                }
+                break;
             default: return false;
             }
         }
@@ -261,6 +276,21 @@ private:
             case 'n': value->push_back('\n'); break;
             case 'r': value->push_back('\r'); break;
             case 't': value->push_back('\t'); break;
+            case 'u':
+                if (position_ + 4 > text_.size()) return false;
+                {
+                    unsigned int codePoint = 0;
+                    for (int index = 0; index < 4; ++index) {
+                        const char hex = text_[position_++];
+                        const int digit = hex >= '0' && hex <= '9' ? hex - '0' : hex >= 'a' && hex <= 'f' ? hex - 'a' + 10 : hex >= 'A' && hex <= 'F' ? hex - 'A' + 10 : -1;
+                        if (digit < 0) return false;
+                        codePoint = (codePoint << 4) | static_cast<unsigned int>(digit);
+                    }
+                    if (codePoint < 0x80) value->push_back(static_cast<char>(codePoint));
+                    else if (codePoint < 0x800) { value->push_back(static_cast<char>(0xC0 | (codePoint >> 6))); value->push_back(static_cast<char>(0x80 | (codePoint & 0x3F))); }
+                    else { value->push_back(static_cast<char>(0xE0 | (codePoint >> 12))); value->push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F))); value->push_back(static_cast<char>(0x80 | (codePoint & 0x3F))); }
+                }
+                break;
             default: return false;
             }
         }

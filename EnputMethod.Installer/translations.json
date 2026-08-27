@@ -4,8 +4,8 @@
       "text": "hello",
       "partOfSpeech": ["interjection", "noun"],
       "translations": {
-        "zh-CN": ["你好", "您好"],
-        "ja-JP": ["こんにちは"]
+        "zh-CN": ["\u4F60\u597D", "\u60A8\u597D"],
+        "ja-JP": ["\u3053\u3093\u306B\u3061\u306F"]
       },
       "examples": [{ "text": "Hello, world." }],
       "source": "Bundled demonstration data; replace with licensed dictionary content."
@@ -14,8 +14,8 @@
       "text": "world",
       "partOfSpeech": ["noun"],
       "translations": {
-        "zh-CN": ["世界"],
-        "ja-JP": ["世界"]
+        "zh-CN": ["\u4E16\u754C"],
+        "ja-JP": ["\u4E16\u754C"]
       },
       "examples": [{ "text": "The world is changing." }],
       "source": "Bundled demonstration data; replace with licensed dictionary content."

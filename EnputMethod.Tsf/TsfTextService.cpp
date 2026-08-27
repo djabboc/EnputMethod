@@ -260,6 +260,72 @@ const std::vector<std::wstring>& LoadDictionary() {
     return cache.words;
 }
 
+std::wstring Lowercase(std::wstring text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](wchar_t character) { return static_cast<wchar_t>(towlower(character)); });
+    return text;
+}
+
+struct SuggestionEntry {
+    std::wstring text;
+    std::vector<std::wstring> next;
+    std::vector<std::wstring> phrases;
+    int priority = 0;
+};
+
+std::wstring SuggestionDictionaryPath() {
+    const std::wstring directory = UserDataDirectory();
+    return directory.empty() ? std::wstring{} : directory + L"\\suggestions.json";
+}
+
+std::vector<std::wstring> JsonStrings(const enput::json::Value* value) {
+    std::vector<std::wstring> result;
+    if (!value || value->type != enput::json::Value::Type::Array) return result;
+    for (const enput::json::Value& item : value->array) {
+        if (item.type != enput::json::Value::Type::String) continue;
+        const std::wstring text = Utf8ToWide(item.string);
+        if (!text.empty()) result.push_back(text);
+    }
+    return result;
+}
+
+const std::vector<SuggestionEntry>& LoadSuggestionDictionary() {
+    struct Cache {
+        WIN32_FILE_ATTRIBUTE_DATA attributes{};
+        bool available = false;
+        std::vector<SuggestionEntry> entries;
+    };
+    static Cache cache;
+    const std::wstring path = SuggestionDictionaryPath();
+    WIN32_FILE_ATTRIBUTE_DATA attributes{};
+    const bool available = !path.empty() && GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attributes);
+    if (cache.available == available && (!available || (CompareFileTime(&cache.attributes.ftLastWriteTime, &attributes.ftLastWriteTime) == 0 &&
+        cache.attributes.nFileSizeHigh == attributes.nFileSizeHigh && cache.attributes.nFileSizeLow == attributes.nFileSizeLow))) return cache.entries;
+
+    std::vector<SuggestionEntry> entries;
+    enput::json::Value document;
+    const std::string contents = available ? ReadUtf8File(path) : std::string{};
+    const enput::json::Value* values = enput::json::ReadDocument(contents, &document) ? enput::json::ObjectValue(document, "entries") : nullptr;
+    if (values && values->type == enput::json::Value::Type::Array) {
+        for (const enput::json::Value& value : values->array) {
+            const enput::json::Value* textValue = enput::json::ObjectValue(value, "text");
+            if (!textValue || textValue->type != enput::json::Value::Type::String) continue;
+            SuggestionEntry entry;
+            entry.text = Utf8ToWide(textValue->string);
+            if (entry.text.empty()) continue;
+            entry.next = JsonStrings(enput::json::ObjectValue(value, "next"));
+            entry.phrases = JsonStrings(enput::json::ObjectValue(value, "phrases"));
+            const enput::json::Value* priority = enput::json::ObjectValue(value, "priority");
+            if (priority && priority->type == enput::json::Value::Type::Number) entry.priority = static_cast<int>(priority->number);
+            entries.push_back(std::move(entry));
+        }
+    }
+    std::stable_sort(entries.begin(), entries.end(), [](const SuggestionEntry& left, const SuggestionEntry& right) { return left.priority > right.priority; });
+    cache.attributes = attributes;
+    cache.available = available;
+    cache.entries = std::move(entries);
+    return cache.entries;
+}
+
 class KeyEditSession;
 class CandidateClickEditSession;
 
@@ -607,9 +673,10 @@ public:
         if (key == VK_RIGHT && cursor_ < typed_.size()) { ++cursor_; return UpdateComposition(context, cookie); }
         const int candidateIndex = CandidateIndex(key);
         const wchar_t selectionTrailing = configuration_.appendSpaceAfterSelection ? L' ' : L'\0';
-        if (candidateIndex >= 0 && candidateIndex < static_cast<int>(candidates_.size())) return FinishComposition(cookie, candidates_[candidateIndex], selectionTrailing);
-        if (HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size()) return FinishComposition(cookie, candidates_[selectedIndex_], selectionTrailing);
-        if (key == VK_SPACE) return FinishComposition(cookie, typed_, L' ');
+        if (candidateIndex >= 0 && candidateIndex < static_cast<int>(candidates_.size())) return FinishWithSuggestions(context, cookie, candidates_[candidateIndex], selectionTrailing);
+        if (HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size()) return FinishWithSuggestions(context, cookie, candidates_[selectedIndex_], selectionTrailing);
+        if (key == VK_SPACE && IsSuggestionActive()) return FinishComposition(cookie, L"", L' ');
+        if (key == VK_SPACE) return FinishWithSuggestions(context, cookie, typed_, L' ');
         if (key == VK_RETURN) return FinishComposition(cookie, typed_, L'\r');
         if (key == VK_ESCAPE) return FinishComposition(cookie, typed_, L'\0');
         return S_FALSE;
@@ -632,7 +699,7 @@ private:
     HRESULT ApplyCandidateWindowAction(ITfContext* context, TfEditCookie cookie, int action) {
         if (action >= 0 && action < static_cast<int>(candidates_.size())) {
             const wchar_t trailing = configuration_.appendSpaceAfterSelection ? L' ' : L'\0';
-            return FinishComposition(cookie, candidates_[action], trailing);
+            return FinishWithSuggestions(context, cookie, candidates_[action], trailing);
         }
         if (action == -1) return MovePage(context, cookie, -1);
         if (action == -2) return MovePage(context, cookie, 1);
@@ -640,13 +707,22 @@ private:
     }
 
     bool ShouldHandleKey(WPARAM key) const {
+        if (IsSuggestionActive()) return !IsModifierKey(key);
         if (!typed_.empty()) return !IsModifierKey(key);
         if (GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0) return false;
         return key >= 'A' && key <= 'Z';
     }
 
     bool ShouldPassThrough(WPARAM key) const {
-        if (typed_.empty()) return false;
+        if (typed_.empty()) {
+            if (!IsSuggestionActive()) return false;
+            const bool hasModifier = GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0;
+            if (!hasModifier && key >= 'A' && key <= 'Z') return false;
+            if (key == VK_SPACE || HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key)) return false;
+            if (HasShortcut(configuration_.shortcuts.selectPrevious, key) || HasShortcut(configuration_.shortcuts.selectNext, key)) return false;
+            if (CandidateIndex(key) >= 0 && CandidateIndex(key) < static_cast<int>(candidates_.size())) return false;
+            return !(HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size());
+        }
         const bool hasModifier = GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0;
         if (!hasModifier && key >= 'A' && key <= 'Z') return false;
         if (key == VK_BACK) return cursor_ == 0;
@@ -724,17 +800,46 @@ private:
         ToLowerInPlace(&lower);
         std::vector<std::wstring> exactMatches;
         std::vector<std::wstring> prefixMatches;
+        const auto appendUnique = [](std::vector<std::wstring>* candidates, const std::wstring& candidate) {
+            const std::wstring lowerCandidate = Lowercase(candidate);
+            if (std::none_of(candidates->begin(), candidates->end(), [&lowerCandidate](const std::wstring& existing) { return Lowercase(existing) == lowerCandidate; })) candidates->push_back(candidate);
+        };
         for (const std::wstring& word : LoadDictionary()) {
             std::wstring candidate = word;
             ToLowerInPlace(&candidate);
             if (!candidate.starts_with(lower)) continue;
-            if (candidate == lower) exactMatches.push_back(word);
-            else prefixMatches.push_back(word);
+            if (candidate == lower) appendUnique(&exactMatches, word);
+            else appendUnique(&prefixMatches, word);
+        }
+        for (const SuggestionEntry& entry : LoadSuggestionDictionary()) {
+            std::vector<std::wstring> phrases = entry.phrases;
+            if (entry.text.find(L' ') != std::wstring::npos) phrases.insert(phrases.begin(), entry.text);
+            for (const std::wstring& phrase : phrases) {
+                const std::wstring candidate = Lowercase(phrase);
+                if (!candidate.starts_with(lower)) continue;
+                if (candidate == lower) appendUnique(&exactMatches, phrase);
+                else appendUnique(&prefixMatches, phrase);
+            }
         }
         std::vector<std::wstring> matches;
         matches.reserve(exactMatches.size() + prefixMatches.size());
         matches.insert(matches.end(), exactMatches.begin(), exactMatches.end());
         matches.insert(matches.end(), prefixMatches.begin(), prefixMatches.end());
+        return matches;
+    }
+
+    static std::vector<std::wstring> FindAssociatedCandidates(const std::wstring& committedText) {
+        const std::wstring lower = Lowercase(committedText);
+        std::vector<std::wstring> matches;
+        const auto appendUnique = [&matches](const std::wstring& candidate) {
+            const std::wstring lowerCandidate = Lowercase(candidate);
+            if (std::none_of(matches.begin(), matches.end(), [&lowerCandidate](const std::wstring& existing) { return Lowercase(existing) == lowerCandidate; })) matches.push_back(candidate);
+        };
+        for (const SuggestionEntry& entry : LoadSuggestionDictionary()) {
+            if (Lowercase(entry.text) != lower) continue;
+            for (const std::wstring& candidate : entry.next) appendUnique(candidate);
+            for (const std::wstring& candidate : entry.phrases) appendUnique(candidate);
+        }
         return matches;
     }
 
@@ -835,6 +940,24 @@ private:
         return hr;
     }
 
+    HRESULT FinishWithSuggestions(ITfContext* context, TfEditCookie cookie, const std::wstring& committedText, wchar_t trailing) {
+        const HRESULT hr = FinishComposition(cookie, committedText, trailing);
+        if (FAILED(hr)) return hr;
+        lastCommittedText_ = committedText;
+        allCandidates_ = FindAssociatedCandidates(committedText);
+        if (allCandidates_.empty()) return hr;
+        typed_.clear();
+        cursor_ = 0;
+        currentPage_ = 0;
+        selectedIndex_ = 0;
+        UpdateCurrentPage();
+        return UpdateComposition(context, cookie);
+    }
+
+    bool IsSuggestionActive() const {
+        return composition_ && typed_.empty() && !candidates_.empty();
+    }
+
     void ClearComposition() {
         if (composition_) { composition_->Release(); composition_ = nullptr; }
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
@@ -852,6 +975,7 @@ private:
     std::vector<std::wstring> candidates_;
     size_t currentPage_ = 0;
     size_t selectedIndex_ = 0;
+    std::wstring lastCommittedText_;
     RuntimeConfiguration configuration_{};
     CandidateWindow candidateWindow_;
 };

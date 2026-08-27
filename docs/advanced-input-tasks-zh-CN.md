@@ -40,6 +40,12 @@
 - 词典迁移为 JSON，支持词条、短语、排序和下一词关联。
 - 验收：输入并选择 `hello` 后显示关联建议；选择短语得到完整短语文本。
 
+## Task 11 verification record
+
+- Completed: `suggestions.json` supports ordered entries, phrase candidates, and next-word associations while keeping the existing `dictionary.txt` compatible.
+- Completed: choosing a candidate (or committing a word with Space) starts a zero-length TSF composition only when an association exists, so the next suggestions remain visible at the caret.
+- Static verification: Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors.
+
 ## 任务 12：Emoji 模式
 
 - 在 `shortcut.json` 中新增 emoji 模式切换动作。

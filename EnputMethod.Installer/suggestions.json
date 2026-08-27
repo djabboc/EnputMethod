@@ -1,0 +1,27 @@
+{
+  "entries": [
+    {
+      "text": "hello",
+      "next": ["world", "there", "everyone"],
+      "phrases": ["hello world", "hello there"],
+      "priority": 100
+    },
+    {
+      "text": "good",
+      "next": ["morning", "afternoon", "evening"],
+      "phrases": ["good morning", "good afternoon", "good evening"],
+      "priority": 90
+    },
+    {
+      "text": "thank",
+      "next": ["you"],
+      "phrases": ["thank you", "thanks a lot"],
+      "priority": 80
+    },
+    {
+      "text": "how",
+      "phrases": ["how are you", "how is it going"],
+      "priority": 70
+    }
+  ]
+}

@@ -53,6 +53,7 @@ public partial class MainWindow : Window
         CopyDefaultFile("config.json", destinationDirectory);
         CopyDefaultFile("shortcut.json", destinationDirectory);
         CopyDefaultFile("dictionary.txt", destinationDirectory);
+        CopyDefaultFile("suggestions.json", destinationDirectory);
         CopyDefaultThemes(destinationDirectory);
     }
 

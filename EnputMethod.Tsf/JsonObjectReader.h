@@ -162,4 +162,125 @@ inline const std::vector<std::string>* StringArray(const Object& object, const c
     return value == object.stringArrays.end() ? nullptr : &value->second;
 }
 
+struct Value {
+    enum class Type { Null, String, Number, Boolean, Array, Object };
+    Type type = Type::Null;
+    std::string string;
+    double number = 0;
+    bool boolean = false;
+    std::vector<Value> array;
+    std::unordered_map<std::string, Value> object;
+};
+
+class DocumentReader final {
+public:
+    explicit DocumentReader(const std::string& text) : text_(text) {}
+
+    bool Read(Value* value) {
+        if (!value) return false;
+        if (text_.size() >= 3 && static_cast<unsigned char>(text_[0]) == 0xEF &&
+            static_cast<unsigned char>(text_[1]) == 0xBB && static_cast<unsigned char>(text_[2]) == 0xBF) position_ = 3;
+        SkipWhitespace();
+        return ReadValue(value) && AtEnd();
+    }
+
+private:
+    bool ReadValue(Value* value) {
+        SkipWhitespace();
+        if (position_ >= text_.size()) return false;
+        const char character = text_[position_];
+        if (character == '{') return ReadObject(value);
+        if (character == '[') return ReadArray(value);
+        if (character == '"') { value->type = Value::Type::String; return ReadString(&value->string); }
+        if (text_.compare(position_, 4, "true") == 0) { position_ += 4; value->type = Value::Type::Boolean; value->boolean = true; return true; }
+        if (text_.compare(position_, 5, "false") == 0) { position_ += 5; value->type = Value::Type::Boolean; value->boolean = false; return true; }
+        if (text_.compare(position_, 4, "null") == 0) { position_ += 4; value->type = Value::Type::Null; return true; }
+        const char* start = text_.c_str() + position_;
+        char* end = nullptr;
+        const double number = std::strtod(start, &end);
+        if (end == start) return false;
+        position_ += static_cast<size_t>(end - start);
+        value->type = Value::Type::Number;
+        value->number = number;
+        return true;
+    }
+
+    bool ReadObject(Value* value) {
+        if (!Consume('{')) return false;
+        value->type = Value::Type::Object;
+        value->object.clear();
+        SkipWhitespace();
+        if (Consume('}')) return true;
+        while (true) {
+            std::string key;
+            if (!ReadString(&key)) return false;
+            SkipWhitespace();
+            if (!Consume(':')) return false;
+            Value member;
+            if (!ReadValue(&member)) return false;
+            value->object[std::move(key)] = std::move(member);
+            SkipWhitespace();
+            if (Consume('}')) return true;
+            if (!Consume(',')) return false;
+            SkipWhitespace();
+        }
+    }
+
+    bool ReadArray(Value* value) {
+        if (!Consume('[')) return false;
+        value->type = Value::Type::Array;
+        value->array.clear();
+        SkipWhitespace();
+        if (Consume(']')) return true;
+        while (true) {
+            Value item;
+            if (!ReadValue(&item)) return false;
+            value->array.push_back(std::move(item));
+            SkipWhitespace();
+            if (Consume(']')) return true;
+            if (!Consume(',')) return false;
+            SkipWhitespace();
+        }
+    }
+
+    bool ReadString(std::string* value) {
+        if (!value || !Consume('"')) return false;
+        value->clear();
+        while (position_ < text_.size()) {
+            const char character = text_[position_++];
+            if (character == '"') return true;
+            if (character != '\\') { value->push_back(character); continue; }
+            if (position_ >= text_.size()) return false;
+            const char escaped = text_[position_++];
+            switch (escaped) {
+            case '"': value->push_back('"'); break;
+            case '\\': value->push_back('\\'); break;
+            case '/': value->push_back('/'); break;
+            case 'b': value->push_back('\b'); break;
+            case 'f': value->push_back('\f'); break;
+            case 'n': value->push_back('\n'); break;
+            case 'r': value->push_back('\r'); break;
+            case 't': value->push_back('\t'); break;
+            default: return false;
+            }
+        }
+        return false;
+    }
+
+    bool Consume(char character) { if (position_ >= text_.size() || text_[position_] != character) return false; ++position_; return true; }
+    void SkipWhitespace() { while (position_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[position_]))) ++position_; }
+    bool AtEnd() { SkipWhitespace(); return position_ == text_.size(); }
+
+    const std::string& text_;
+    size_t position_ = 0;
+};
+
+inline bool ReadDocument(const std::string& text, Value* value) { return DocumentReader(text).Read(value); }
+
+inline const Value* ObjectValue(const Value& object, const char* key) {
+    if (object.type != Value::Type::Object) return nullptr;
+    const auto value = object.object.find(key);
+    return value == object.object.end() ? nullptr : &value->second;
+}
+
 } // namespace enput::json

@@ -15,6 +15,8 @@ internal sealed class CandidateOverlayWindow : Window
     private readonly StackPanel _content = new();
     private readonly Border _frame;
     private string? _clientId;
+    private long _stateId;
+    private Func<OverlayMessage, Task>? _sendAction;
 
     public CandidateOverlayWindow()
     {
@@ -35,12 +37,21 @@ internal sealed class CandidateOverlayWindow : Window
             Padding = new Thickness(6),
             Child = _content,
         };
+        _frame.MouseRightButtonUp += (_, _) =>
+        {
+            if (_clientId is not null && _sendAction is not null)
+            {
+                _ = _sendAction(new OverlayMessage { Type = "dismiss", ClientId = _clientId, StateId = _stateId });
+            }
+        };
         Content = _frame;
     }
 
     public void ShowCandidates(string clientId, long stateId, CandidateView view, Func<OverlayMessage, Task> sendAction)
     {
         _clientId = clientId;
+        _stateId = stateId;
+        _sendAction = sendAction;
         OverlayTheme theme = view.Theme is { IsValid: true } configured ? configured : new OverlayTheme();
         ApplyTheme(theme);
         FontFamily candidateFont = new(view.ModeMarker == "EMOJI" ? "Segoe UI Emoji" : theme.FontFamily);

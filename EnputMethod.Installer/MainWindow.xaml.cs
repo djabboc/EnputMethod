@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Runtime.InteropServices;
@@ -33,9 +34,9 @@ public partial class MainWindow : Window
                 ? "安装完成。请切换到其他输入法后再切回 Enput Method。"
                 : $"安装失败 (0x{hr:X8})。";
         }
-        catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
+        catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException or IOException or UnauthorizedAccessException)
         {
-            message = "安装程序文件不完整或版本不匹配。请将整个安装程序文件夹中的文件放在一起后重试。";
+            message = "安装程序文件不完整、版本不匹配，或 Overlay 文件仍被占用。请关闭 Enput Method 后重试。";
         }
 
         MessageBox.Show(message, "Enput Method");
@@ -71,10 +72,41 @@ public partial class MainWindow : Window
     {
         string source = Path.Combine(AppContext.BaseDirectory, "Overlay");
         string destination = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Enput Method", "Overlay");
+        StopInstalledOverlay(destination);
         Directory.CreateDirectory(destination);
         foreach (string file in Directory.EnumerateFiles(source))
         {
             File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), true);
+        }
+    }
+
+    private static void StopInstalledOverlay(string overlayDirectory)
+    {
+        string executable = Path.GetFullPath(Path.Combine(overlayDirectory, "EnputMethod.Overlay.exe"));
+        foreach (Process process in Process.GetProcessesByName("EnputMethod.Overlay"))
+        {
+            try
+            {
+                if (!string.Equals(Path.GetFullPath(process.MainModule?.FileName ?? ""), executable, StringComparison.OrdinalIgnoreCase)) continue;
+                _ = process.CloseMainWindow();
+                if (!process.WaitForExit(2000))
+                {
+                    process.Kill(true);
+                    _ = process.WaitForExit(2000);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // The companion can exit between process discovery and shutdown.
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                // Only inaccessible processes are skipped; the deployed files will remain untouched if locked.
+            }
+            finally
+            {
+                process.Dispose();
+            }
         }
     }
 

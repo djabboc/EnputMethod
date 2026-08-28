@@ -13,6 +13,7 @@ internal sealed class CandidateOverlayWindow : Window
     private const long WsExNoActivate = 0x08000000L;
     private const long WsExToolWindow = 0x00000080L;
     private readonly StackPanel _content = new();
+    private string? _clientId;
 
     public CandidateOverlayWindow()
     {
@@ -37,6 +38,7 @@ internal sealed class CandidateOverlayWindow : Window
 
     public void ShowCandidates(string clientId, long stateId, CandidateView view, Func<OverlayMessage, Task> sendAction)
     {
+        _clientId = clientId;
         _content.Children.Clear();
         var candidates = new StackPanel { Orientation = view.Layout == "horizontal" ? Orientation.Horizontal : Orientation.Vertical };
         for (int index = 0; index < view.Items.Count; ++index)
@@ -69,6 +71,11 @@ internal sealed class CandidateOverlayWindow : Window
         Left = view.X;
         Top = view.Y;
         if (!IsVisible) Show();
+    }
+
+    public void HideFor(string clientId)
+    {
+        if (string.Equals(_clientId, clientId, StringComparison.Ordinal)) Hide();
     }
 
     private static Border CreateFooterAction(string label, string type, string clientId, long stateId, Func<OverlayMessage, Task> sendAction)

@@ -33,6 +33,7 @@ internal sealed record OverlayMessage
     public string Type { get; init; } = "";
     public string ClientId { get; init; } = "";
     public long StateId { get; init; }
+    public string? Surface { get; init; }
     public int? CandidateIndex { get; init; }
     public CandidateView? Candidates { get; init; }
     public TranslationView? Translation { get; init; }
@@ -42,7 +43,7 @@ internal sealed record OverlayMessage
     {
         "showCandidates" => HasClientId && StateId > 0 && Candidates is not null && Candidates.IsValid,
         "showTranslation" => HasClientId && StateId > 0 && Translation is not null && Translation.IsValid,
-        "hide" => HasClientId && StateId > 0,
+        "hide" => HasClientId && StateId > 0 && (Surface is null or "all" or "candidates" or "translation"),
         "selectCandidate" => HasClientId && StateId > 0 && CandidateIndex is >= 0,
         "previousPage" or "nextPage" or "dismiss" => HasClientId && StateId > 0,
         _ => false,

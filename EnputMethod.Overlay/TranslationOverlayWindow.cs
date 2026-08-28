@@ -13,6 +13,7 @@ internal sealed class TranslationOverlayWindow : Window
     private const long WsExToolWindow = 0x00000080L;
     private readonly TextBlock _title = new() { FontWeight = FontWeights.SemiBold, Foreground = Brushes.White };
     private readonly TextBlock _content = new() { Foreground = Brushes.WhiteSmoke, TextWrapping = TextWrapping.Wrap };
+    private string? _clientId;
 
     public TranslationOverlayWindow()
     {
@@ -43,13 +44,19 @@ internal sealed class TranslationOverlayWindow : Window
         };
     }
 
-    public void ShowTranslation(TranslationView view)
+    public void ShowTranslation(string clientId, TranslationView view)
     {
+        _clientId = clientId;
         _title.Text = view.Title;
         _content.Text = view.Content;
         Left = view.CandidateRight + 8;
         Top = view.CandidateTop;
         if (!IsVisible) Show();
+    }
+
+    public void HideFor(string clientId)
+    {
+        if (string.Equals(_clientId, clientId, StringComparison.Ordinal)) Hide();
     }
 
     protected override void OnSourceInitialized(EventArgs e)

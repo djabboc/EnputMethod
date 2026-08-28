@@ -17,11 +17,11 @@ internal sealed class OverlayController
                     _candidateWindow.ShowCandidates(message.ClientId, message.StateId, message.Candidates, sendAction);
                     break;
                 case "showTranslation" when message.Translation is not null:
-                    _translationWindow.ShowTranslation(message.Translation);
+                    _translationWindow.ShowTranslation(message.ClientId, message.Translation);
                     break;
                 case "hide":
-                    _candidateWindow.Hide();
-                    _translationWindow.Hide();
+                    if (message.Surface is not "translation") _candidateWindow.HideFor(message.ClientId);
+                    if (message.Surface is not "candidates") _translationWindow.HideFor(message.ClientId);
                     break;
             }
         });

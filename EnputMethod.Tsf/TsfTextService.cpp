@@ -4,6 +4,7 @@
 #include <textstor.h>
 #include <msctf.h>
 #include "JsonObjectReader.h"
+#include "OverlayClient.h"
 #include <algorithm>
 #include <cmath>
 #include <cwctype>
@@ -12,6 +13,7 @@
 #include <functional>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <new>
 #include <string>
 #include <unordered_map>
@@ -51,6 +53,48 @@ std::wstring Utf8ToWide(const std::string& text) {
     std::wstring result(static_cast<size_t>(length), L'\0');
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()), result.data(), length);
     return result;
+}
+
+std::string WideToUtf8(const std::wstring& text) {
+    if (text.empty()) return {};
+    const int length = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+    if (!length) return {};
+    std::string result(static_cast<size_t>(length), '\0');
+    WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()), result.data(), length, nullptr, nullptr);
+    return result;
+}
+
+std::string JsonString(const std::wstring& text) {
+    const std::string utf8 = WideToUtf8(text);
+    std::string result = "\"";
+    for (const unsigned char character : utf8) {
+        switch (character) {
+        case '\\': result += "\\\\"; break;
+        case '\"': result += "\\\""; break;
+        case '\b': result += "\\b"; break;
+        case '\f': result += "\\f"; break;
+        case '\n': result += "\\n"; break;
+        case '\r': result += "\\r"; break;
+        case '\t': result += "\\t"; break;
+        default:
+            if (character < 0x20) {
+                constexpr char hex[] = "0123456789abcdef";
+                result += "\\u00";
+                result += hex[(character >> 4) & 0x0f];
+                result += hex[character & 0x0f];
+            } else {
+                result += static_cast<char>(character);
+            }
+        }
+    }
+    result += '\"';
+    return result;
+}
+
+std::wstring OverlayExecutablePath() {
+    wchar_t modulePath[MAX_PATH]{};
+    if (!g_module || !GetModuleFileNameW(g_module, modulePath, ARRAYSIZE(modulePath))) return {};
+    return std::filesystem::path(modulePath).parent_path().append(L"Overlay").append(L"EnputMethod.Overlay.exe").wstring();
 }
 
 struct ThemeStyle {
@@ -512,6 +556,7 @@ const TranslationEntry* FindTranslation(const std::wstring& text) {
 
 class KeyEditSession;
 class CandidateClickEditSession;
+class OverlayFallbackEditSession;
 
 class CandidateWindow final {
 public:
@@ -1243,6 +1288,9 @@ public:
         if (!threadManager) return E_INVALIDARG;
         Deactivate();
         threadManager_ = threadManager; threadManager_->AddRef(); clientId_ = clientId;
+        CreateOverlayActionWindow();
+        overlayClient_ = std::make_unique<enput::OverlayClient>(OverlayExecutablePath(), [this](enput::OverlayEvent event) { PostOverlayEvent(std::move(event)); });
+        overlayClient_->Start();
         ITfKeystrokeMgr* keystrokeManager = nullptr;
         HRESULT hr = threadManager_->QueryInterface(IID_PPV_ARGS(&keystrokeManager));
         if (SUCCEEDED(hr)) {
@@ -1253,6 +1301,12 @@ public:
     }
     STDMETHODIMP ActivateEx(ITfThreadMgr* threadManager, TfClientId clientId, DWORD) override { return Activate(threadManager, clientId); }
     STDMETHODIMP Deactivate() override {
+        HideOverlay();
+        if (overlayClient_) {
+            overlayClient_->Stop();
+            overlayClient_.reset();
+        }
+        DestroyOverlayActionWindow();
         candidateWindow_.Hide();
         translationWindow_.Hide();
         if (threadManager_) {
@@ -1281,7 +1335,8 @@ public:
         if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key)) {
             configuration_ = LoadRuntimeConfiguration();
             translationEnabled_ = !translationEnabled_;
-            if (composition_) return UpdateComposition(context, cookie);
+            if (composition_ || detachedSuggestionActive_) return RefreshCandidates(context, cookie);
+            HideOverlay();
             translationWindow_.Hide();
             return S_OK;
         }
@@ -1349,6 +1404,74 @@ public:
 private:
     friend class KeyEditSession;
     friend class CandidateClickEditSession;
+    friend class OverlayFallbackEditSession;
+
+    static constexpr UINT kOverlayEventMessage = WM_APP + 73;
+    static constexpr wchar_t kOverlayActionWindowClassName[] = L"EnputMethodOverlayActionWindow";
+
+    static LRESULT CALLBACK OverlayActionWindowProc(HWND window, UINT message, WPARAM, LPARAM parameter) {
+        if (message == WM_NCCREATE) {
+            const auto* create = reinterpret_cast<const CREATESTRUCTW*>(parameter);
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(create->lpCreateParams));
+            return TRUE;
+        }
+        auto* self = reinterpret_cast<TextService*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        if (message == kOverlayEventMessage && self) {
+            std::unique_ptr<enput::OverlayEvent> event(reinterpret_cast<enput::OverlayEvent*>(parameter));
+            self->HandleOverlayEvent(*event);
+            return 0;
+        }
+        return DefWindowProcW(window, message, 0, parameter);
+    }
+
+    void CreateOverlayActionWindow() {
+        static const ATOM classAtom = [] {
+            WNDCLASSW windowClass{};
+            windowClass.lpfnWndProc = OverlayActionWindowProc;
+            windowClass.hInstance = g_module;
+            windowClass.lpszClassName = kOverlayActionWindowClassName;
+            const ATOM registered = RegisterClassW(&windowClass);
+            return registered ? registered : static_cast<ATOM>(GetLastError() == ERROR_CLASS_ALREADY_EXISTS ? 1 : 0);
+        }();
+        if (!classAtom || overlayActionWindow_) return;
+        overlayActionWindow_ = CreateWindowExW(0, kOverlayActionWindowClassName, nullptr, 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, g_module, this);
+    }
+
+    void DestroyOverlayActionWindow() {
+        if (!overlayActionWindow_) return;
+        DestroyWindow(overlayActionWindow_);
+        overlayActionWindow_ = nullptr;
+    }
+
+    void PostOverlayEvent(enput::OverlayEvent event) {
+        auto* queuedEvent = new (std::nothrow) enput::OverlayEvent(std::move(event));
+        if (!queuedEvent) return;
+        if (!overlayActionWindow_ || !PostMessageW(overlayActionWindow_, kOverlayEventMessage, 0, reinterpret_cast<LPARAM>(queuedEvent))) delete queuedEvent;
+    }
+
+    void HideOverlay() {
+        overlayActive_ = false;
+        ++overlayStateId_;
+        if (overlayClient_) {
+            overlayClient_->Publish("{\"type\":\"hide\",\"clientId\":\"" + overlayClient_->ClientId() + "\",\"stateId\":" + std::to_string(overlayStateId_) + "}");
+        }
+    }
+
+    void HandleOverlayEvent(const enput::OverlayEvent& event) {
+        if (event.type == enput::OverlayEventType::Disconnected) {
+            if (!overlayActive_) return;
+            overlayActive_ = false;
+            RequestOverlayFallback();
+            return;
+        }
+        if (!overlayClient_ || event.clientId != overlayClient_->ClientId() || event.stateId != overlayStateId_) return;
+        if (event.action == "selectCandidate") HandleCandidateWindowAction(event.candidateIndex);
+        else if (event.action == "previousPage") HandleCandidateWindowAction(-1);
+        else if (event.action == "nextPage") HandleCandidateWindowAction(-2);
+        else if (event.action == "dismiss") HandleCandidateWindowAction(-3);
+    }
+
+    void RequestOverlayFallback();
 
     void HandleCandidateWindowAction(int action);
 
@@ -1359,6 +1482,7 @@ private:
         }
         if (action == -1) return MovePage(context, cookie, -1);
         if (action == -2) return MovePage(context, cookie, 1);
+        if (action == -3) return detachedSuggestionActive_ ? CommitDetachedSuggestion(context, cookie, L"", L'\0') : FinishComposition(cookie, L"", L'\0');
         return S_FALSE;
     }
 
@@ -1580,6 +1704,70 @@ private:
         return changed ? RefreshCandidatesAtCurrentPosition(context, cookie) : S_OK;
     }
 
+    std::string CandidateOverlayMessage(const RECT& bounds, std::uint64_t stateId) const {
+        std::string message = "{\"type\":\"showCandidates\",\"clientId\":\"" + overlayClient_->ClientId() +
+            "\",\"stateId\":" + std::to_string(stateId) + ",\"candidates\":{\"x\":" + std::to_string(bounds.left) +
+            ",\"y\":" + std::to_string(bounds.top) + ",\"items\":[";
+        for (size_t index = 0; index < candidates_.size(); ++index) {
+            if (index) message += ',';
+            std::wstring visible = candidates_[index];
+            std::replace(visible.begin(), visible.end(), static_cast<wchar_t>(0x1F), L' ');
+            message += JsonString(visible);
+        }
+        message += "],\"page\":" + std::to_string(currentPage_) + ",\"pageCount\":" + std::to_string(PageCount()) +
+            ",\"selectedIndex\":" + std::to_string(selectedIndex_) + ",\"layout\":\"" + (configuration_.horizontal ? "horizontal" : "vertical") + "\"";
+        if (emojiMode_) message += ",\"modeMarker\":\"EMOJI\"";
+        return message + "}}";
+    }
+
+    std::string TranslationOverlayMessage(const TranslationEntry& entry, const RECT& candidateBounds, std::uint64_t stateId) const {
+        std::wstring content;
+        if (!entry.partsOfSpeech.empty()) {
+            for (size_t index = 0; index < entry.partsOfSpeech.size(); ++index) {
+                if (index) content += L", ";
+                content += entry.partsOfSpeech[index];
+            }
+        }
+        for (const auto& [language, meanings] : entry.translations) {
+            if (!content.empty()) content += L'\n';
+            content += language + L": ";
+            for (size_t index = 0; index < meanings.size(); ++index) {
+                if (index) content += L"; ";
+                content += meanings[index];
+            }
+        }
+        if (!entry.example.empty()) {
+            if (!content.empty()) content += L'\n';
+            content += L"Example: ";
+            content += entry.example;
+        }
+        if (!entry.source.empty()) {
+            if (!content.empty()) content += L'\n';
+            content += L"Source: ";
+            content += entry.source;
+        }
+        return "{\"type\":\"showTranslation\",\"clientId\":\"" + overlayClient_->ClientId() + "\",\"stateId\":" +
+            std::to_string(stateId) + ",\"translation\":{\"title\":" + JsonString(entry.text) + ",\"content\":" + JsonString(content) +
+            ",\"candidateRight\":" + std::to_string(candidateBounds.right) + ",\"candidateTop\":" + std::to_string(candidateBounds.top) + "}}";
+    }
+
+    void PresentCandidates(ITfContext* context, TfEditCookie cookie, ITfRange* range) {
+        candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, keepCandidateWindowPosition_, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
+        RECT candidateBounds{};
+        const TranslationEntry* translation = translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr;
+        translationWindow_.Show(context, cookie, range, translation, configuration_, candidateWindow_.GetScreenBounds(&candidateBounds) ? &candidateBounds : nullptr);
+
+        overlayActive_ = false;
+        if (!overlayClient_ || !overlayClient_->IsConnected() || !candidateWindow_.GetScreenBounds(&candidateBounds)) return;
+        const std::uint64_t stateId = ++overlayStateId_;
+        if (!overlayClient_->Publish(CandidateOverlayMessage(candidateBounds, stateId))) return;
+        if (translation) overlayClient_->Publish(TranslationOverlayMessage(*translation, candidateBounds, stateId));
+        else overlayClient_->Publish("{\"type\":\"hide\",\"clientId\":\"" + overlayClient_->ClientId() + "\",\"stateId\":" + std::to_string(stateId) + ",\"surface\":\"translation\"}");
+        overlayActive_ = true;
+        candidateWindow_.Hide();
+        translationWindow_.Hide();
+    }
+
     HRESULT UpdateComposition(ITfContext* context, TfEditCookie cookie) {
         if (!composition_) {
             ITfContextComposition* compositions{};
@@ -1610,11 +1798,7 @@ private:
                 caret->Release();
             }
         }
-        if (SUCCEEDED(hr)) {
-            candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, keepCandidateWindowPosition_, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
-            RECT candidateBounds{};
-            translationWindow_.Show(context, cookie, range, translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr, configuration_, candidateWindow_.GetScreenBounds(&candidateBounds) ? &candidateBounds : nullptr);
-        }
+        if (SUCCEEDED(hr)) PresentCandidates(context, cookie, range);
         range->Release();
         return hr;
     }
@@ -1626,7 +1810,7 @@ private:
         if (trailing) finalText += trailing;
         if (SUCCEEDED(hr)) { hr = range->SetText(cookie, 0, finalText.data(), static_cast<LONG>(finalText.size())); range->Release(); }
         ITfComposition* composition = composition_; composition_ = nullptr;
-        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidateWindow_.Hide(); translationWindow_.Hide();
+        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; HideOverlay(); candidateWindow_.Hide(); translationWindow_.Hide();
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
         if (SUCCEEDED(hr)) hr = composition->EndComposition(cookie);
         composition->Release();
@@ -1664,9 +1848,7 @@ private:
         TF_SELECTION selection{}; ULONG fetched{};
         HRESULT hr = context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched);
         if (FAILED(hr) || fetched != 1) return FAILED(hr) ? hr : E_FAIL;
-        candidateWindow_.Show(context, cookie, selection.range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, keepCandidateWindowPosition_, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
-        RECT candidateBounds{};
-        translationWindow_.Show(context, cookie, selection.range, translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr, configuration_, candidateWindow_.GetScreenBounds(&candidateBounds) ? &candidateBounds : nullptr);
+        PresentCandidates(context, cookie, selection.range);
         selection.range->Release();
         return S_OK;
     }
@@ -1692,6 +1874,7 @@ private:
         hr = selection.range->SetText(cookie, 0, finalText.data(), static_cast<LONG>(finalText.size()));
         selection.range->Release();
         ClearDetachedSuggestions();
+        HideOverlay();
         candidateWindow_.Hide();
         translationWindow_.Hide();
         if (FAILED(hr) || committedText.empty()) return hr;
@@ -1716,7 +1899,7 @@ private:
         if (composition_) { composition_->Release(); composition_ = nullptr; }
         ClearDetachedSuggestions();
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
-        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidateWindow_.Hide(); translationWindow_.Hide();
+        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; HideOverlay(); candidateWindow_.Hide(); translationWindow_.Hide();
     }
 
     long refs_ = 1;
@@ -1736,7 +1919,11 @@ private:
     bool translationEnabled_ = false;
     bool detachedSuggestionActive_ = false;
     bool keepCandidateWindowPosition_ = false;
+    bool overlayActive_ = false;
+    std::uint64_t overlayStateId_ = 0;
+    HWND overlayActionWindow_ = nullptr;
     RuntimeConfiguration configuration_{};
+    std::unique_ptr<enput::OverlayClient> overlayClient_;
     CandidateWindow candidateWindow_;
     TranslationWindow translationWindow_;
 };
@@ -1768,11 +1955,35 @@ private:
     int action_;
 };
 
+class OverlayFallbackEditSession final : public ITfEditSession {
+public:
+    OverlayFallbackEditSession(TextService* service, ITfContext* context) : service_(service), context_(context) { service_->AddRef(); context_->AddRef(); }
+    ~OverlayFallbackEditSession() { context_->Release(); service_->Release(); }
+    STDMETHODIMP QueryInterface(REFIID iid, void** result) override { if (!result) return E_INVALIDARG; *result = nullptr; if (iid != IID_IUnknown && iid != IID_ITfEditSession) return E_NOINTERFACE; *result = static_cast<ITfEditSession*>(this); AddRef(); return S_OK; }
+    STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&refs_); }
+    STDMETHODIMP_(ULONG) Release() override { const auto refs = InterlockedDecrement(&refs_); if (!refs) delete this; return refs; }
+    STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return service_->RefreshCandidates(context_, cookie); }
+private:
+    long refs_ = 1;
+    TextService* service_;
+    ITfContext* context_;
+};
+
 void TextService::HandleCandidateWindowAction(int action) {
     ITfContext* context = composition_ ? compositionContext_ : detachedSuggestionContext_;
     if (!context) return;
     const std::wstring candidate = action >= 0 && action < static_cast<int>(candidates_.size()) ? candidates_[action] : std::wstring{};
     auto* session = new (std::nothrow) CandidateClickEditSession(this, context, candidate, action);
+    if (!session) return;
+    HRESULT sessionResult{};
+    context->RequestEditSession(clientId_, session, TF_ES_ASYNC | TF_ES_READWRITE, &sessionResult);
+    session->Release();
+}
+
+void TextService::RequestOverlayFallback() {
+    ITfContext* context = composition_ ? compositionContext_ : detachedSuggestionContext_;
+    if (!context || candidates_.empty()) return;
+    auto* session = new (std::nothrow) OverlayFallbackEditSession(this, context);
     if (!session) return;
     HRESULT sessionResult{};
     context->RequestEditSession(clientId_, session, TF_ES_ASYNC | TF_ES_READWRITE, &sessionResult);

@@ -12,6 +12,6 @@
   <PropertyGroup><TargetName>EnputMethod.Tsf</TargetName><OutDir>$(MSBuildProjectDirectory)\..\bin\$(Configuration)\</OutDir><IntDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\</IntDir></PropertyGroup>
   <ItemDefinitionGroup><ClCompile><WarningLevel>Level4</WarningLevel><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp20</LanguageStandard></ClCompile><Link><SubSystem>Windows</SubSystem><AdditionalDependencies>ole32.lib;advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies><ModuleDefinitionFile>$(ProjectDir)EnputMethod.Tsf.def</ModuleDefinitionFile></Link></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><ClCompile><RuntimeLibrary>MultiThreaded</RuntimeLibrary></ClCompile></ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="TsfTextService.cpp" /></ItemGroup>
+  <ItemGroup><ClCompile Include="OverlayClient.cpp" /><ClCompile Include="TsfTextService.cpp" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

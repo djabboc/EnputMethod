@@ -1,0 +1,22 @@
+<Window x:Class="EnputMethod.Overlay.TestHost.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Enput Overlay Test Host" Width="540" Height="390"
+        Loaded="Window_Loaded" Closed="Window_Closed">
+  <Grid Margin="16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="12" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="12" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <TextBlock x:Name="ConnectionStatus" FontSize="15" />
+    <WrapPanel Grid.Row="2">
+      <Button Click="ShowCandidates_Click" Padding="12,6" Margin="0,0,8,0">Show candidates</Button>
+      <Button Click="ShowTranslation_Click" Padding="12,6" Margin="0,0,8,0">Show translation</Button>
+      <Button Click="Hide_Click" Padding="12,6">Hide</Button>
+    </WrapPanel>
+    <TextBox x:Name="Events" Grid.Row="4" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" />
+  </Grid>
+</Window>

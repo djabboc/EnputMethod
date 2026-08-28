@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>EnputMethod.Overlay.TestHost</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\EnputMethod.Overlay\EnputMethod.Overlay.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <Target Name="CopyOverlay" AfterTargets="Build">
+    <ItemGroup>
+      <OverlayFiles Include="$(MSBuildThisFileDirectory)..\EnputMethod.Overlay\bin\x64\$(Configuration)\net9.0-windows\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(OverlayFiles)" DestinationFolder="$(OutputPath)Overlay\" />
+  </Target>
+</Project>

@@ -1785,9 +1785,10 @@ private:
         overlayActive_ = false;
         if (!overlayClient_ || !overlayClient_->IsConnected() || !candidateWindow_.GetScreenBounds(&candidateBounds)) return;
         const std::uint64_t stateId = ++overlayStateId_;
-        if (!overlayClient_->Publish(CandidateOverlayMessage(candidateBounds, stateId))) return;
-        if (translation) overlayClient_->Publish(TranslationOverlayMessage(*translation, candidateBounds, stateId));
-        else overlayClient_->Publish("{\"type\":\"hide\",\"clientId\":\"" + overlayClient_->ClientId() + "\",\"stateId\":" + std::to_string(stateId) + ",\"surface\":\"translation\"}");
+        std::vector<std::string> messages{ CandidateOverlayMessage(candidateBounds, stateId) };
+        if (translation) messages.push_back(TranslationOverlayMessage(*translation, candidateBounds, stateId));
+        else messages.push_back("{\"type\":\"hide\",\"clientId\":\"" + overlayClient_->ClientId() + "\",\"stateId\":" + std::to_string(stateId) + ",\"surface\":\"translation\"}");
+        if (!overlayClient_->PublishBatch(std::move(messages))) return;
         overlayActive_ = true;
         candidateWindow_.Hide();
         translationWindow_.Hide();

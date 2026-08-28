@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace enput {
 
@@ -38,6 +39,7 @@ public:
 
     // Uses a bounded queue so paired candidate and translation updates stay ordered.
     bool Publish(std::string message);
+    bool PublishBatch(std::vector<std::string> messages);
 
 private:
     class Impl;

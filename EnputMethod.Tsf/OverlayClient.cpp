@@ -4,6 +4,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <deque>
@@ -55,10 +56,14 @@ public:
     }
 
     bool Publish(std::string message) {
-        if (!connected_.load() || message.empty()) return false;
+        return PublishBatch({ std::move(message) });
+    }
+
+    bool PublishBatch(std::vector<std::string> messages) {
+        if (!connected_.load() || messages.empty() || std::any_of(messages.begin(), messages.end(), [](const std::string& message) { return message.empty(); })) return false;
         std::scoped_lock lock(queueLock_);
-        if (queuedMessages_.size() == 20) queuedMessages_.pop_front();
-        queuedMessages_.push_back(std::move(message));
+        queuedMessages_.clear();
+        for (std::string& message : messages) queuedMessages_.push_back(std::move(message));
         return true;
     }
 
@@ -197,5 +202,6 @@ void OverlayClient::Stop() { impl_->Stop(); }
 bool OverlayClient::IsConnected() const { return impl_->IsConnected(); }
 const std::string& OverlayClient::ClientId() const { return impl_->ClientId(); }
 bool OverlayClient::Publish(std::string message) { return impl_->Publish(std::move(message)); }
+bool OverlayClient::PublishBatch(std::vector<std::string> messages) { return impl_->PublishBatch(std::move(messages)); }
 
 } // namespace enput

@@ -49,6 +49,7 @@ Host 只接受与其当前状态 ID 相同的动作，并在收到有效动作�
 ## 任务 3：Native Host 连接与回退
 
 - [ ] C++ Host 在需要显示候选时发布视图状态；Overlay 动作转换为已有候选窗动作。
+- [x] 安装器构建、打包并部署 Overlay 运行时文件到 `Program Files\Enput Method\Overlay`。
 - [ ] 保留 `CandidateWindow` 与 `TranslationWindow` 作为开关控制的回退实现。
 - [ ] 增加状态 ID、连接超时、子进程生命周期和故障检测。
 - [ ] 验收：Overlay 未启动、关闭或发送过期动作时，输入不丢失且原生候选窗仍可用。

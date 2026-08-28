@@ -26,6 +26,7 @@ public partial class MainWindow : Window
             int hr = InvokeNativeInstaller();
             if (hr >= 0)
             {
+                DeployOverlay();
                 EnsureUserConfiguration();
             }
             message = hr >= 0
@@ -64,6 +65,17 @@ public partial class MainWindow : Window
         MergeDefaultTranslations(destinationDirectory);
         EnsureFullTranslationDictionary(destinationDirectory);
         CopyDefaultThemes(destinationDirectory);
+    }
+
+    private static void DeployOverlay()
+    {
+        string source = Path.Combine(AppContext.BaseDirectory, "Overlay");
+        string destination = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Enput Method", "Overlay");
+        Directory.CreateDirectory(destination);
+        foreach (string file in Directory.EnumerateFiles(source))
+        {
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), true);
+        }
     }
 
     private static void MigrateLegacyConfiguration(string destinationDirectory)

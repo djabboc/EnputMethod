@@ -62,6 +62,7 @@ internal sealed record CandidateView
     public int SelectedIndex { get; init; }
     public string Layout { get; init; } = "vertical";
     public string? ModeMarker { get; init; }
+    public OverlayTheme? Theme { get; init; }
 
     [JsonIgnore]
     public bool IsValid => Items.Count > 0 && Page >= 0 && Page < PageCount && SelectedIndex >= 0 && SelectedIndex < Items.Count && Layout is "vertical" or "horizontal";
@@ -73,7 +74,38 @@ internal sealed record TranslationView
     public string Content { get; init; } = "";
     public int CandidateRight { get; init; }
     public int CandidateTop { get; init; }
+    public OverlayTheme? Theme { get; init; }
 
     [JsonIgnore]
     public bool IsValid => !string.IsNullOrWhiteSpace(Title);
+}
+
+internal sealed record OverlayTheme
+{
+    public string Background { get; init; } = "#1f262e";
+    public string Foreground { get; init; } = "#ffffff";
+    public string Border { get; init; } = "#616f7e";
+    public string SelectedBackground { get; init; } = "#2c597a";
+    public string SelectedForeground { get; init; } = "#ffffff";
+    public string TranslationBackground { get; init; } = "#1f262e";
+    public string TranslationForeground { get; init; } = "#f5f5f5";
+    public string TranslationTitleForeground { get; init; } = "#ffffff";
+    public string TranslationBorder { get; init; } = "#616f7e";
+    public string FontFamily { get; init; } = "Segoe UI";
+    public int FontSize { get; init; } = 16;
+    public int Opacity { get; init; } = 255;
+    public int BorderWidth { get; init; } = 1;
+    public int CornerRadius { get; init; } = 4;
+    public int Padding { get; init; } = 6;
+    public int RowHeight { get; init; } = 28;
+    public int TranslationBorderWidth { get; init; } = 1;
+    public int TranslationCornerRadius { get; init; } = 4;
+    public int TranslationPadding { get; init; } = 8;
+    public int TranslationWidth { get; init; } = 280;
+    public int TranslationMaxHeight { get; init; } = 180;
+
+    [JsonIgnore]
+    public bool IsValid => FontSize is >= 8 and <= 72 && Opacity is >= 32 and <= 255 &&
+        BorderWidth is >= 0 and <= 8 && CornerRadius is >= 0 and <= 32 && Padding is >= 0 and <= 48 &&
+        RowHeight is >= 16 and <= 96 && TranslationWidth is >= 160 and <= 1000 && TranslationMaxHeight is >= 80 and <= 1200;
 }

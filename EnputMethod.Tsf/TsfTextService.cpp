@@ -7,6 +7,7 @@
 #include "OverlayClient.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cwctype>
 #include <filesystem>
 #include <fstream>
@@ -1717,7 +1718,29 @@ private:
         message += "],\"page\":" + std::to_string(currentPage_) + ",\"pageCount\":" + std::to_string(PageCount()) +
             ",\"selectedIndex\":" + std::to_string(selectedIndex_) + ",\"layout\":\"" + (configuration_.horizontal ? "horizontal" : "vertical") + "\"";
         if (emojiMode_) message += ",\"modeMarker\":\"EMOJI\"";
+        message += ",\"theme\":" + OverlayThemeJson();
         return message + "}}";
+    }
+
+    static std::string ColorJson(COLORREF color) {
+        char text[10]{};
+        std::snprintf(text, sizeof(text), "\"#%02x%02x%02x\"", GetRValue(color), GetGValue(color), GetBValue(color));
+        return text;
+    }
+
+    std::string OverlayThemeJson() const {
+        const ThemeStyle& theme = configuration_.theme;
+        return "{\"background\":" + ColorJson(theme.background) + ",\"foreground\":" + ColorJson(theme.foreground) +
+            ",\"border\":" + ColorJson(theme.border) + ",\"selectedBackground\":" + ColorJson(theme.selectedBackground) +
+            ",\"selectedForeground\":" + ColorJson(theme.selectedForeground) + ",\"translationBackground\":" + ColorJson(theme.translationBackground) +
+            ",\"translationForeground\":" + ColorJson(theme.translationForeground) + ",\"translationTitleForeground\":" + ColorJson(theme.translationTitleForeground) +
+            ",\"translationBorder\":" + ColorJson(theme.translationBorder) + ",\"fontFamily\":" + JsonString(configuration_.fontFamily) +
+            ",\"fontSize\":" + std::to_string(configuration_.fontSize) + ",\"opacity\":" + std::to_string(configuration_.opacity) +
+            ",\"borderWidth\":" + std::to_string(theme.borderWidth) + ",\"cornerRadius\":" + std::to_string(theme.cornerRadius) +
+            ",\"padding\":" + std::to_string(theme.padding) + ",\"rowHeight\":" + std::to_string(theme.rowHeight) +
+            ",\"translationBorderWidth\":" + std::to_string(theme.translationBorderWidth) + ",\"translationCornerRadius\":" + std::to_string(theme.translationCornerRadius) +
+            ",\"translationPadding\":" + std::to_string(theme.translationPadding) + ",\"translationWidth\":" + std::to_string(theme.translationWidth) +
+            ",\"translationMaxHeight\":" + std::to_string(theme.translationMaxHeight) + "}";
     }
 
     std::string TranslationOverlayMessage(const TranslationEntry& entry, const RECT& candidateBounds, std::uint64_t stateId) const {
@@ -1748,7 +1771,8 @@ private:
         }
         return "{\"type\":\"showTranslation\",\"clientId\":\"" + overlayClient_->ClientId() + "\",\"stateId\":" +
             std::to_string(stateId) + ",\"translation\":{\"title\":" + JsonString(entry.text) + ",\"content\":" + JsonString(content) +
-            ",\"candidateRight\":" + std::to_string(candidateBounds.right) + ",\"candidateTop\":" + std::to_string(candidateBounds.top) + "}}";
+            ",\"candidateRight\":" + std::to_string(candidateBounds.right) + ",\"candidateTop\":" + std::to_string(candidateBounds.top) +
+            ",\"theme\":" + OverlayThemeJson() + "}}";
     }
 
     void PresentCandidates(ITfContext* context, TfEditCookie cookie, ITfRange* range) {

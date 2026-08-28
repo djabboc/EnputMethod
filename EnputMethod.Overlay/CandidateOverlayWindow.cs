@@ -13,6 +13,7 @@ internal sealed class CandidateOverlayWindow : Window
     private const long WsExNoActivate = 0x08000000L;
     private const long WsExToolWindow = 0x00000080L;
     private readonly StackPanel _content = new();
+    private readonly Border _frame;
     private string? _clientId;
 
     public CandidateOverlayWindow()
@@ -25,7 +26,7 @@ internal sealed class CandidateOverlayWindow : Window
         SizeToContent = SizeToContent.WidthAndHeight;
         Topmost = true;
         WindowStyle = WindowStyle.None;
-        Content = new Border
+        _frame = new Border
         {
             Background = new SolidColorBrush(Color.FromRgb(31, 38, 46)),
             BorderBrush = new SolidColorBrush(Color.FromRgb(97, 111, 126)),
@@ -34,11 +35,14 @@ internal sealed class CandidateOverlayWindow : Window
             Padding = new Thickness(6),
             Child = _content,
         };
+        Content = _frame;
     }
 
     public void ShowCandidates(string clientId, long stateId, CandidateView view, Func<OverlayMessage, Task> sendAction)
     {
         _clientId = clientId;
+        OverlayTheme theme = view.Theme is { IsValid: true } configured ? configured : new OverlayTheme();
+        ApplyTheme(theme);
         _content.Children.Clear();
         var candidates = new StackPanel { Orientation = view.Layout == "horizontal" ? Orientation.Horizontal : Orientation.Vertical };
         for (int index = 0; index < view.Items.Count; ++index)
@@ -46,13 +50,16 @@ internal sealed class CandidateOverlayWindow : Window
             int candidateIndex = index;
             var row = new Border
             {
-                Background = index == view.SelectedIndex ? new SolidColorBrush(Color.FromRgb(44, 89, 122)) : Brushes.Transparent,
+                Background = index == view.SelectedIndex ? Brush(theme.SelectedBackground, Brushes.SteelBlue) : Brushes.Transparent,
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(0, 1, view.Layout == "horizontal" ? 6 : 0, 1),
-                Padding = new Thickness(6, 3, 6, 3),
+                MinHeight = theme.RowHeight,
+                Padding = new Thickness(theme.Padding, 3, theme.Padding, 3),
                 Child = new TextBlock
                 {
-                    Foreground = Brushes.White,
+                    FontFamily = new FontFamily(theme.FontFamily),
+                    FontSize = theme.FontSize,
+                    Foreground = index == view.SelectedIndex ? Brush(theme.SelectedForeground, Brushes.White) : Brush(theme.Foreground, Brushes.White),
                     Text = $"{index + 1}  {view.Items[index]}",
                 },
             };
@@ -62,15 +69,16 @@ internal sealed class CandidateOverlayWindow : Window
         _content.Children.Add(candidates);
 
         var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 4, 0, 0) };
-        footer.Children.Add(CreateFooterAction("<", "previousPage", clientId, stateId, sendAction));
-        footer.Children.Add(new TextBlock { Foreground = Brushes.LightGray, Margin = new Thickness(8, 3, 8, 3), Text = $"{view.Page + 1}/{view.PageCount}" });
-        footer.Children.Add(CreateFooterAction(">", "nextPage", clientId, stateId, sendAction));
-        if (!string.IsNullOrWhiteSpace(view.ModeMarker)) footer.Children.Add(new TextBlock { Foreground = Brushes.LightSkyBlue, Margin = new Thickness(8, 3, 0, 3), Text = view.ModeMarker });
+        footer.Children.Add(CreateFooterAction("<", "previousPage", clientId, stateId, sendAction, theme));
+        footer.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.Foreground, Brushes.LightGray), Margin = new Thickness(8, 3, 8, 3), Text = $"{view.Page + 1}/{view.PageCount}" });
+        footer.Children.Add(CreateFooterAction(">", "nextPage", clientId, stateId, sendAction, theme));
+        if (!string.IsNullOrWhiteSpace(view.ModeMarker)) footer.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(8, 3, 0, 3), Text = view.ModeMarker });
         _content.Children.Add(footer);
 
-        Left = view.X;
-        Top = view.Y;
         if (!IsVisible) Show();
+        double scale = 96.0 / GetDpiForWindow(new WindowInteropHelper(this).Handle);
+        Left = view.X * scale;
+        Top = view.Y * scale;
     }
 
     public void HideFor(string clientId)
@@ -78,17 +86,33 @@ internal sealed class CandidateOverlayWindow : Window
         if (string.Equals(_clientId, clientId, StringComparison.Ordinal)) Hide();
     }
 
-    private static Border CreateFooterAction(string label, string type, string clientId, long stateId, Func<OverlayMessage, Task> sendAction)
+    private void ApplyTheme(OverlayTheme theme)
+    {
+        Opacity = theme.Opacity / 255.0;
+        _frame.Background = Brush(theme.Background, Brushes.Black);
+        _frame.BorderBrush = Brush(theme.Border, Brushes.Gray);
+        _frame.BorderThickness = new Thickness(theme.BorderWidth);
+        _frame.CornerRadius = new CornerRadius(theme.CornerRadius);
+        _frame.Padding = new Thickness(theme.Padding);
+    }
+
+    private static Border CreateFooterAction(string label, string type, string clientId, long stateId, Func<OverlayMessage, Task> sendAction, OverlayTheme theme)
     {
         var action = new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(48, 58, 68)),
+            Background = Brush(theme.Background, Brushes.DimGray),
             Cursor = Cursors.Hand,
-            Padding = new Thickness(6, 3, 6, 3),
-            Child = new TextBlock { Foreground = Brushes.White, Text = label },
+            Padding = new Thickness(theme.Padding, 3, theme.Padding, 3),
+            Child = new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.Foreground, Brushes.White), Text = label },
         };
         action.MouseLeftButtonUp += (_, _) => _ = sendAction(new OverlayMessage { Type = type, ClientId = clientId, StateId = stateId });
         return action;
+    }
+
+    private static Brush Brush(string value, Brush fallback)
+    {
+        try { return new SolidColorBrush((Color)ColorConverter.ConvertFromString(value)); }
+        catch (FormatException) { return fallback; }
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -104,4 +128,7 @@ internal sealed class CandidateOverlayWindow : Window
 
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
     private static extern IntPtr SetWindowLongPtr(IntPtr window, int index, IntPtr value);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr window);
 }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.IO.Pipes;
 using System.Text;
@@ -8,10 +9,9 @@ namespace EnputMethod.Overlay;
 internal sealed class OverlayPipeServer : IDisposable
 {
     private readonly CancellationTokenSource _cancellation = new();
+    private readonly ConcurrentDictionary<string, PipeConnection> _connections = new(StringComparer.Ordinal);
     private readonly Action<OverlayMessage, Func<OverlayMessage, Task>> _messageHandler;
-    private readonly SemaphoreSlim _writerLock = new(1, 1);
     private Task? _listener;
-    private StreamWriter? _writer;
 
     public OverlayPipeServer(Action<OverlayMessage, Func<OverlayMessage, Task>> messageHandler)
     {
@@ -29,14 +29,14 @@ internal sealed class OverlayPipeServer : IDisposable
         {
             try
             {
-                using var pipe = new NamedPipeServerStream(
+                var pipe = new NamedPipeServerStream(
                     OverlayProtocol.PipeName,
                     PipeDirection.InOut,
-                    1,
+                    NamedPipeServerStream.MaxAllowedServerInstances,
                     PipeTransmissionMode.Byte,
                     PipeOptions.Asynchronous);
                 await pipe.WaitForConnectionAsync(_cancellation.Token);
-                await ServeConnectionAsync(pipe, _cancellation.Token);
+                _ = Task.Run(() => ServeConnectionAsync(pipe, _cancellation.Token));
             }
             catch (OperationCanceledException) when (_cancellation.IsCancellationRequested)
             {
@@ -44,60 +44,65 @@ internal sealed class OverlayPipeServer : IDisposable
             }
             catch (IOException)
             {
-                // A disconnected Host is expected; immediately accept a replacement connection.
+                // A failed connection must not prevent the next TSF Host from connecting.
             }
         }
     }
 
-    private async Task ServeConnectionAsync(Stream stream, CancellationToken cancellationToken)
+    private async Task ServeConnectionAsync(NamedPipeServerStream pipe, CancellationToken cancellationToken)
     {
-        using var reader = new StreamReader(stream, new UTF8Encoding(false), false, 4096, true);
-        using var writer = new StreamWriter(stream, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
-        _writer = writer;
+        using (pipe)
+        {
+        using var reader = new StreamReader(pipe, new UTF8Encoding(false), false, 4096, true);
+        using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
+        PipeConnection? connection = null;
 
         try
         {
-            await SendRawAsync(JsonSerializer.Serialize(new { type = "ready", protocol = 1 }, OverlayProtocol.JsonOptions));
+            await writer.WriteLineAsync(JsonSerializer.Serialize(new { type = "ready", protocol = 1 }, OverlayProtocol.JsonOptions));
             while (!cancellationToken.IsCancellationRequested)
             {
                 string? line = await reader.ReadLineAsync(cancellationToken);
                 if (line is null) return;
                 if (!OverlayProtocol.TryParse(line, out OverlayMessage? message) || message is null)
                 {
-                    await SendRawAsync(JsonSerializer.Serialize(new { type = "error", reason = "invalidMessage" }, OverlayProtocol.JsonOptions));
+                    await writer.WriteLineAsync(JsonSerializer.Serialize(new { type = "error", reason = "invalidMessage" }, OverlayProtocol.JsonOptions));
+                    continue;
+                }
+
+                if (connection is null)
+                {
+                    connection = new PipeConnection(message.ClientId, writer);
+                    _connections.AddOrUpdate(message.ClientId, connection, (_, _) => connection);
+                }
+                else if (!string.Equals(connection.ClientId, message.ClientId, StringComparison.Ordinal))
+                {
+                    await writer.WriteLineAsync(JsonSerializer.Serialize(new { type = "error", reason = "clientIdChanged" }, OverlayProtocol.JsonOptions));
                     continue;
                 }
 
                 _messageHandler(message, SendActionAsync);
-                await SendRawAsync(JsonSerializer.Serialize(new { type = "accepted", stateId = message.StateId }, OverlayProtocol.JsonOptions));
+                await connection.SendAsync(JsonSerializer.Serialize(new { type = "accepted", stateId = message.StateId }, OverlayProtocol.JsonOptions), cancellationToken);
             }
+        }
+        catch (IOException)
+        {
+            // A Host process can exit while its service object still owns the pipe.
         }
         finally
         {
-            if (ReferenceEquals(_writer, writer)) _writer = null;
+            if (connection is not null && _connections.TryGetValue(connection.ClientId, out PipeConnection? current) && ReferenceEquals(current, connection))
+            {
+                _connections.TryRemove(connection.ClientId, out _);
+            }
+        }
         }
     }
 
     private Task SendActionAsync(OverlayMessage message)
     {
-        return SendRawAsync(JsonSerializer.Serialize(message, OverlayProtocol.JsonOptions));
-    }
-
-    private async Task SendRawAsync(string message)
-    {
-        await _writerLock.WaitAsync(_cancellation.Token);
-        try
-        {
-            if (_writer is not null) await _writer.WriteLineAsync(message);
-        }
-        catch (IOException)
-        {
-            // The Host may exit between a click and the response.
-        }
-        finally
-        {
-            _writerLock.Release();
-        }
+        if (!_connections.TryGetValue(message.ClientId, out PipeConnection? connection)) return Task.CompletedTask;
+        return connection.SendAsync(JsonSerializer.Serialize(message, OverlayProtocol.JsonOptions), _cancellation.Token);
     }
 
     public void Dispose()
@@ -105,7 +110,35 @@ internal sealed class OverlayPipeServer : IDisposable
         _cancellation.Cancel();
         try { _listener?.Wait(TimeSpan.FromSeconds(1)); }
         catch (AggregateException) { }
-        _writerLock.Dispose();
+        foreach (PipeConnection connection in _connections.Values) connection.Dispose();
         _cancellation.Dispose();
+    }
+
+    private sealed class PipeConnection(string clientId, StreamWriter writer) : IDisposable
+    {
+        private readonly SemaphoreSlim _writeLock = new(1, 1);
+
+        public string ClientId { get; } = clientId;
+
+        public async Task SendAsync(string message, CancellationToken cancellationToken)
+        {
+            var entered = false;
+            try
+            {
+                await _writeLock.WaitAsync(cancellationToken);
+                entered = true;
+                await writer.WriteLineAsync(message);
+            }
+            catch (IOException)
+            {
+                // The caller will reconnect with a new pipe instance.
+            }
+            finally
+            {
+                if (entered) _writeLock.Release();
+            }
+        }
+
+        public void Dispose() => _writeLock.Dispose();
     }
 }

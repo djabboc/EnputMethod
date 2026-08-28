@@ -14,7 +14,7 @@ internal sealed class OverlayController
             switch (message.Type)
             {
                 case "showCandidates" when message.Candidates is not null:
-                    _candidateWindow.ShowCandidates(message.StateId, message.Candidates, sendAction);
+                    _candidateWindow.ShowCandidates(message.ClientId, message.StateId, message.Candidates, sendAction);
                     break;
                 case "showTranslation" when message.Translation is not null:
                     _translationWindow.ShowTranslation(message.Translation);

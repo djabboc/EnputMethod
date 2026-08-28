@@ -31,6 +31,7 @@ internal static class OverlayProtocol
 internal sealed record OverlayMessage
 {
     public string Type { get; init; } = "";
+    public string ClientId { get; init; } = "";
     public long StateId { get; init; }
     public int? CandidateIndex { get; init; }
     public CandidateView? Candidates { get; init; }
@@ -39,13 +40,15 @@ internal sealed record OverlayMessage
     [JsonIgnore]
     public bool IsValid => Type switch
     {
-        "showCandidates" => StateId > 0 && Candidates is not null && Candidates.IsValid,
-        "showTranslation" => StateId > 0 && Translation is not null && Translation.IsValid,
-        "hide" => StateId > 0,
-        "selectCandidate" => StateId > 0 && CandidateIndex is >= 0,
-        "previousPage" or "nextPage" or "dismiss" => StateId > 0,
+        "showCandidates" => HasClientId && StateId > 0 && Candidates is not null && Candidates.IsValid,
+        "showTranslation" => HasClientId && StateId > 0 && Translation is not null && Translation.IsValid,
+        "hide" => HasClientId && StateId > 0,
+        "selectCandidate" => HasClientId && StateId > 0 && CandidateIndex is >= 0,
+        "previousPage" or "nextPage" or "dismiss" => HasClientId && StateId > 0,
         _ => false,
     };
+
+    private bool HasClientId => !string.IsNullOrWhiteSpace(ClientId) && ClientId.Length <= 128;
 }
 
 internal sealed record CandidateView

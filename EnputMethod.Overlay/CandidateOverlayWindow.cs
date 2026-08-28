@@ -35,7 +35,7 @@ internal sealed class CandidateOverlayWindow : Window
         };
     }
 
-    public void ShowCandidates(long stateId, CandidateView view, Func<OverlayMessage, Task> sendAction)
+    public void ShowCandidates(string clientId, long stateId, CandidateView view, Func<OverlayMessage, Task> sendAction)
     {
         _content.Children.Clear();
         var candidates = new StackPanel { Orientation = view.Layout == "horizontal" ? Orientation.Horizontal : Orientation.Vertical };
@@ -54,15 +54,15 @@ internal sealed class CandidateOverlayWindow : Window
                     Text = $"{index + 1}  {view.Items[index]}",
                 },
             };
-            row.MouseLeftButtonUp += (_, _) => _ = sendAction(new OverlayMessage { Type = "selectCandidate", StateId = stateId, CandidateIndex = candidateIndex });
+            row.MouseLeftButtonUp += (_, _) => _ = sendAction(new OverlayMessage { Type = "selectCandidate", ClientId = clientId, StateId = stateId, CandidateIndex = candidateIndex });
             candidates.Children.Add(row);
         }
         _content.Children.Add(candidates);
 
         var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 4, 0, 0) };
-        footer.Children.Add(CreateFooterAction("<", "previousPage", stateId, sendAction));
+        footer.Children.Add(CreateFooterAction("<", "previousPage", clientId, stateId, sendAction));
         footer.Children.Add(new TextBlock { Foreground = Brushes.LightGray, Margin = new Thickness(8, 3, 8, 3), Text = $"{view.Page + 1}/{view.PageCount}" });
-        footer.Children.Add(CreateFooterAction(">", "nextPage", stateId, sendAction));
+        footer.Children.Add(CreateFooterAction(">", "nextPage", clientId, stateId, sendAction));
         if (!string.IsNullOrWhiteSpace(view.ModeMarker)) footer.Children.Add(new TextBlock { Foreground = Brushes.LightSkyBlue, Margin = new Thickness(8, 3, 0, 3), Text = view.ModeMarker });
         _content.Children.Add(footer);
 
@@ -71,7 +71,7 @@ internal sealed class CandidateOverlayWindow : Window
         if (!IsVisible) Show();
     }
 
-    private static Border CreateFooterAction(string label, string type, long stateId, Func<OverlayMessage, Task> sendAction)
+    private static Border CreateFooterAction(string label, string type, string clientId, long stateId, Func<OverlayMessage, Task> sendAction)
     {
         var action = new Border
         {
@@ -80,7 +80,7 @@ internal sealed class CandidateOverlayWindow : Window
             Padding = new Thickness(6, 3, 6, 3),
             Child = new TextBlock { Foreground = Brushes.White, Text = label },
         };
-        action.MouseLeftButtonUp += (_, _) => _ = sendAction(new OverlayMessage { Type = type, StateId = stateId });
+        action.MouseLeftButtonUp += (_, _) => _ = sendAction(new OverlayMessage { Type = type, ClientId = clientId, StateId = stateId });
         return action;
     }
 

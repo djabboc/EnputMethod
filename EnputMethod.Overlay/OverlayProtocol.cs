@@ -60,6 +60,7 @@ internal sealed record CandidateView
     public int Page { get; init; }
     public int PageCount { get; init; }
     public int SelectedIndex { get; init; }
+    public bool CapsLock { get; init; }
     public string Layout { get; init; } = "vertical";
     public string? ModeMarker { get; init; }
     public OverlayTheme? Theme { get; init; }

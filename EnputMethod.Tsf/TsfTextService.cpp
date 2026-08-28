@@ -1716,7 +1716,8 @@ private:
             message += JsonString(visible);
         }
         message += "],\"page\":" + std::to_string(currentPage_) + ",\"pageCount\":" + std::to_string(PageCount()) +
-            ",\"selectedIndex\":" + std::to_string(selectedIndex_) + ",\"layout\":\"" + (configuration_.horizontal ? "horizontal" : "vertical") + "\"";
+            ",\"selectedIndex\":" + std::to_string(selectedIndex_) + ",\"capsLock\":" + ((GetKeyState(VK_CAPITAL) & 1) != 0 ? "true" : "false") +
+            ",\"layout\":\"" + (configuration_.horizontal ? "horizontal" : "vertical") + "\"";
         if (emojiMode_) message += ",\"modeMarker\":\"EMOJI\"";
         message += ",\"theme\":" + OverlayThemeJson();
         return message + "}}";

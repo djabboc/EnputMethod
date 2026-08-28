@@ -49,9 +49,12 @@ internal sealed class CandidateOverlayWindow : Window
         for (int index = 0; index < view.Items.Count; ++index)
         {
             int candidateIndex = index;
+            Brush regularBackground = Brushes.Transparent;
+            Brush activeBackground = Brush(theme.SelectedBackground, Brushes.SteelBlue);
+            bool isSelected = index == view.SelectedIndex;
             var row = new Border
             {
-                Background = index == view.SelectedIndex ? Brush(theme.SelectedBackground, Brushes.SteelBlue) : Brushes.Transparent,
+                Background = isSelected ? activeBackground : regularBackground,
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(0, 1, view.Layout == "horizontal" ? 6 : 0, 1),
                 MinHeight = theme.RowHeight,
@@ -64,6 +67,8 @@ internal sealed class CandidateOverlayWindow : Window
                     Text = $"{index + 1}  {view.Items[index]}",
                 },
             };
+            row.MouseEnter += (_, _) => row.Background = activeBackground;
+            row.MouseLeave += (_, _) => row.Background = isSelected ? activeBackground : regularBackground;
             row.MouseLeftButtonUp += (_, _) => _ = sendAction(new OverlayMessage { Type = "selectCandidate", ClientId = clientId, StateId = stateId, CandidateIndex = candidateIndex });
             candidates.Children.Add(row);
         }
@@ -73,6 +78,7 @@ internal sealed class CandidateOverlayWindow : Window
         footer.Children.Add(CreateFooterAction("<", "previousPage", clientId, stateId, sendAction, theme));
         footer.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.Foreground, Brushes.LightGray), Margin = new Thickness(8, 3, 8, 3), Text = $"{view.Page + 1}/{view.PageCount}" });
         footer.Children.Add(CreateFooterAction(">", "nextPage", clientId, stateId, sendAction, theme));
+        if (view.CapsLock) footer.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(8, 3, 0, 3), Text = "CAPS" });
         if (!string.IsNullOrWhiteSpace(view.ModeMarker)) footer.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(8, 3, 0, 3), Text = view.ModeMarker });
         _content.Children.Add(footer);
 

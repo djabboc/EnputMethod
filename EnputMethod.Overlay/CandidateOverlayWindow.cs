@@ -43,6 +43,7 @@ internal sealed class CandidateOverlayWindow : Window
         _clientId = clientId;
         OverlayTheme theme = view.Theme is { IsValid: true } configured ? configured : new OverlayTheme();
         ApplyTheme(theme);
+        FontFamily candidateFont = new(view.ModeMarker == "EMOJI" ? "Segoe UI Emoji" : theme.FontFamily);
         _content.Children.Clear();
         var candidates = new StackPanel { Orientation = view.Layout == "horizontal" ? Orientation.Horizontal : Orientation.Vertical };
         for (int index = 0; index < view.Items.Count; ++index)
@@ -57,7 +58,7 @@ internal sealed class CandidateOverlayWindow : Window
                 Padding = new Thickness(theme.Padding, 3, theme.Padding, 3),
                 Child = new TextBlock
                 {
-                    FontFamily = new FontFamily(theme.FontFamily),
+                    FontFamily = candidateFont,
                     FontSize = theme.FontSize,
                     Foreground = index == view.SelectedIndex ? Brush(theme.SelectedForeground, Brushes.White) : Brush(theme.Foreground, Brushes.White),
                     Text = $"{index + 1}  {view.Items[index]}",

@@ -113,7 +113,7 @@
 1. 输入 `he`：候选显示为更大的 18pt 视觉字号，`<`、页码和 `>` 分别位于左、中、右区域。
 2. 按 F2 输入 `fire`、`water`、`bucket`、`cat`、`dog`：候选应为彩色 Emoji，数字键可提交。
 3. 按 F3 输入 `braces`、`hug`、`block`：仅显示英文与中文，没有 `source` 正文，`n.` 与真实换行正确，翻译窗不覆盖候选窗。
-4. 拖动翻译窗任意边或角，隐藏后重新显示并切换候选：尺寸应保持，并在 `%LOCALAPPDATA%\Enput Method\config.json` 写回 `translationWindowWidth`、`translationWindowHeight`。
+4. 拖动翻译窗任意边或角，隐藏后重新显示并切换候选：尺寸应保持，并在 `%LOCALAPPDATA%\Enput Method\UserData\config.json` 写回 `translationWindowWidth`、`translationWindowHeight`。
 5. 在配置中加入 `"ja-JP"` 后重按 F3：才显示日语；删除该项后不显示日语。
 6. 在 VS Code 输入 F2 `saw`：若出现方框，记录 VS Code 的编辑器字体和 Windows Emoji 字体版本；提交文本必须仍是 `U+1FA9A`。
 7. 同时打开两个记事本，在两个窗口各输入前缀并来回切换焦点：仅前景窗口可见且可操作，背景窗口不得响应鼠标。
@@ -129,3 +129,13 @@
 
 | I-45 | 常见地名和跨学科短语召回不足，例如 `newyork`、机器学习、合同法。 | 原 suggestions 只覆盖少量手工高频续写，没有系统性多词语料。下载官方 WordNet 3.1，提取 62,319 条二至五词 lemma 导入 SQLite，并补充高优先级术语。 | Release 构建、SQLite、无空格匹配回归和系统安装验证通过；用户已确认成功。 |
 | I-46 | 用户习惯按 Shift 终止联想，但此前只支持 Escape。 | 取消动作被硬编码为单个 Escape 键且修饰键会直接放行。新增 `shortcut.json.cancelComposition` 数组，默认 Escape/Shift；TSF 在组合状态下优先捕获两者并执行同一取消路径。 | 自动化、安装验证通过；用户已确认成功。 |
+
+## 2026-08-29：一站式发布改造记录
+
+| 编号 | 问题/疑惑 | 结论与处理 | 验证状态 |
+| --- | --- | --- | --- |
+| P-01 | 发布目录能否在安装后任意删除？ | 采用方案 A：注册 DLL、Overlay 和静态资源部署到 `C:\Program Files\Enput Method`；发布目录只是安装介质。Windows 注册表不指向解压目录，因此安装后可移动/删除该目录。 | 本地包与发布 ZIP 结构检查通过；系统安装路径由安装验证检查。 |
+| P-02 | 为什么“直接从解压目录注册”不能自由删除？ | 若采用方案 B，注册表会指向解压目录中的 TSF DLL，目录移动/删除会留下失效 COM 路径。该方案未采用。 | 架构决策已文档化。 |
+| P-03 | 安装/卸载点击后看似卡住。 | 两个 WPF 启动器改为后台任务、阶段文本、进度条和禁用重复点击；安装覆盖部署、注册、SQLite 初始化、验证，卸载覆盖注销、停止 Overlay、删除产品根、验证。 | 卸载器 Release 构建 0 错误/0 警告；GUI 进度的真实 UAC 观察待系统安装验收。 |
+| P-04 | 静态资源与用户设置混在 AppData。 | 静态资源统一部署到 Program Files；仅配置、快捷键和日志留在 `UserData`。升级不覆盖用户文件，卸载默认保留它们。 | payload 完整性、UAC 安装、Program Files 路径、SQLite 自检和现有用户配置/快捷键 hash 保留均通过。 |
+| P-05 | 打包校验首次失败。 | 主题被打进 `Resources` 根目录，运行时实际从 `Resources\themes` 读取。拆分 MSBuild item 并将主题固定到 `payload\Resources\themes`。 | 重建本地 Release 包后 `--verify-package` 通过。 |

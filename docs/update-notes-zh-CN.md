@@ -99,3 +99,11 @@ there
 ```
 
 默认的 `Escape` 和 `Shift` 都会取消当前未确认的组合文本并关闭候选窗。Emoji 模式在没有输入内容时按该动作会退出 Emoji 模式。用户可从数组移除 `Shift` 或改为其他已支持按键；安装升级只补充缺失字段，不覆盖已有自定义值。
+
+## 一站式安装与卸载（2026-08-29）
+
+发布 ZIP 解压后，直接运行根目录的 `Install Enput Method.exe`。安装器会显示进度，部署运行组件与静态资源到 `C:\Program Files\Enput Method`，并把 TSF 注册表路径指向那里。因此安装成功后，下载目录或解压目录可以任意移动、删除，不会影响已经安装的输入法。
+
+用户配置现在在 `%LOCALAPPDATA%\Enput Method\UserData\config.json`，快捷键在同目录 `shortcut.json`；旧版根目录中的两项设置会在新文件不存在时迁移。主题、SQLite、词表、Emoji 和其它静态资源不在 AppData，而在 `C:\Program Files\Enput Method\Resources` 或 `Overlay`。升级不会覆盖已有配置；卸载器会移除 Program Files 的产品文件和输入法注册，但默认保留用户配置与学习频率。
+
+要彻底移除个人数据，可在卸载完成后手动删除 `%LOCALAPPDATA%\Enput Method\UserData`，并按需要删除 `HKCU\Software\Enput Method\CandidateFrequency`。这不是默认卸载动作，避免误删用户自定义设置。

@@ -14,3 +14,6 @@
 # Native build diagnostics
 *.tlog
 *.lastbuildstate
+
+# Local product packages and distributable archives
+artifacts/

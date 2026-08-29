@@ -19,7 +19,7 @@ Installation performs these operations:
 
 The installer explicitly loads the TSF DLL adjacent to its executable, copies it to a filename derived from its timestamp and size, then registers that installed path. The versioned deployment filename allows an update to complete when an earlier DLL remains mapped in a running application. Reinstalling the same DLL reuses an identical deployed file. The installer and uninstaller can therefore be kept or moved as complete output folders after installation. Use the uninstaller before manually deleting an installed DLL.
 
-The installer creates `%LOCALAPPDATA%\Enput Method\config.json`, `shortcut.json`, `dictionary.txt`, four JSON themes, and `enput.db`. `conf.json` from older releases is migrated without overwriting custom content. Configuration, shortcuts, and themes remain JSON because they are user settings. Lexicon content is SQLite-only: the package contains a validated `enput.seed.db`; an existing JSON/JSONL lexicon is imported transactionally once, validated, and then deleted. The native service opens `enput.db` through Windows `winsqlite3.dll` and has no JSON/JSONL lexicon fallback.
+The installer deploys `dictionary.txt`, `themes`, the validated `enput.seed.db`, and the resulting SQLite `enput.db` to `C:\Program Files\Enput Method\Resources`; Overlay files are under the same Program Files product root. It creates `%LOCALAPPDATA%\Enput Method\UserData\config.json` and `shortcut.json` only when absent, migrating compatible old settings without overwriting a user value. Configuration and shortcuts remain JSON user settings; themes are static package resources. Lexicon content is SQLite-only: legacy JSON/JSONL data is imported transactionally once, validated, and then deleted. The native service opens the Program Files `enput.db` through Windows `winsqlite3.dll` and has no JSON/JSONL lexicon fallback.
 
 ## Suggestions
 
@@ -59,3 +59,11 @@ While a typed prefix has not been committed or selected, the TSF service keeps i
 安装器将 Princeton WordNet 3.1 派生的 62,319 条多词短语一次性导入 SQLite `suggestions`，并用 `metadata.builtinPhraseVersion` 确保已有用户数据库只升级一次。高优先级补充覆盖通用地名和经济、商业、心理学、计算机、工程、法律术语；`newyork`、`machinelearning` 等无空格输入由紧凑保序短语匹配召回。`wordnet-phrases.txt` 仅用于安装导入，TSF 运行时仍只读 `enput.db`。
 
 `shortcut.json` 的 `cancelComposition` 是多按键动作，默认 `["Escape", "Shift"]`。配置中的任一按键都会先被 TSF 捕获并执行同一取消路径：终止当前未确认 composition、隐藏候选；Emoji 模式无输入时退出模式。安装只补充缺失配置字段，不覆盖用户已自定义的数组。
+
+## 发布与资源边界（2026-08-29）
+
+发布架构采用“安装介质与运行根分离”。`artifacts\local\<Configuration>` 是开发调试包，`artifacts\release\EnputMethod-<version>-win-x64` 是用户 ZIP 的顶层内容；二者都是 Git 忽略的产物。它们的根目录都有名称明确的安装器、卸载器和 `payload`。
+
+安装器从 `payload` 部署静态资源与 Overlay 到 `C:\Program Files\Enput Method`，并由 TSF 的本机注册函数将版本化 `EnputMethod.Tsf.<build-id>.dll` 注册在该目录。运行时通过已加载 TSF 模块的真实路径定位 `Resources` 和 `Overlay`，因此不依赖发布 ZIP 的解压位置。主题在 `Resources\themes`，SQLite 词库在 `Resources\enput.db`。
+
+`%LOCALAPPDATA%\Enput Method\UserData` 只保存用户配置、快捷键和诊断/安装日志；候选学习频率继续在 HKCU。安装只初始化缺失的用户配置文件，升级不覆盖已有值；卸载删除 Program Files 产品目录和 TSF 注册，但保留用户数据。旧 AppData 根目录下的 `config.json`、`shortcut.json` 及静态词库会按各自边界一次性迁移。

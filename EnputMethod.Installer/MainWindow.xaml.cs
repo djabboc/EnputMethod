@@ -21,88 +21,88 @@ public partial class MainWindow : Window
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate int InstallInputMethodDelegate();
 
+    internal sealed record InstallationProgress(int Percentage, string Stage);
+
     public MainWindow() => InitializeComponent();
 
-    private void Install_Click(object sender, RoutedEventArgs e)
+    private async void Install_Click(object sender, RoutedEventArgs e)
     {
-        InstallerVerification result = InstallAndVerify();
+        InstallButton.IsEnabled = false;
+        var progress = new Progress<InstallationProgress>(UpdateProgress);
+        InstallerVerification result = await Task.Run(() => InstallAndVerify(progress));
+        UpdateProgress(new InstallationProgress(result.Succeeded ? 100 : 0, result.Succeeded ? "安装完成。" : "安装失败。"));
         MessageBox.Show(result.Message, "Enput Method");
-        Close();
+        if (result.Succeeded) Close();
+        else InstallButton.IsEnabled = true;
     }
 
-    internal static InstallerVerification InstallAndVerify()
+    private void UpdateProgress(InstallationProgress progress)
     {
-        InstallerVerification package = InstallerVerifier.VerifyPackage(AppContext.BaseDirectory);
+        StatusText.Text = progress.Stage;
+        InstallProgress.Value = progress.Percentage;
+    }
+
+    internal static InstallerVerification InstallAndVerify(IProgress<InstallationProgress>? progress = null)
+    {
+        string payload = ProductLayout.PayloadDirectory;
+        InstallerVerification package = InstallerVerifier.VerifyPackage(payload);
         if (!package.Succeeded) return package;
         try
         {
-            int hr = InvokeNativeInstaller();
+            Report(progress, 5, "正在检查发布包...");
+            DeployStaticPayload(payload, progress);
+            Report(progress, 45, "正在注册 Windows 输入法服务...");
+            int hr = InvokeNativeInstaller(payload);
             if (hr < 0) return InstallerVerification.Failure($"Native TSF installation failed (0x{hr:X8}).");
-            DeployOverlay();
+            Report(progress, 60, "正在初始化用户配置...");
             EnsureUserConfiguration();
-            return InstallerVerifier.VerifySystemInstallation(AppContext.BaseDirectory);
+            Report(progress, 70, "正在准备静态词库...");
+            EnsureStaticLexicon(progress);
+            Report(progress, 92, "正在验证已安装文件...");
+            InstallerVerification result = InstallerVerifier.VerifySystemInstallation(payload);
+            Report(progress, result.Succeeded ? 100 : 0, result.Succeeded ? "安装完成。" : "安装验证失败。" );
+            return result;
         }
-        catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException or IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            return InstallerVerification.Failure("Installation files are incomplete, incompatible, or still in use.");
+            return InstallerVerification.Failure($"Installation failed: {ex.Message}");
         }
-
     }
-    private static int InvokeNativeInstaller()
+
+    private static void Report(IProgress<InstallationProgress>? progress, int percentage, string stage)
+        => progress?.Report(new InstallationProgress(percentage, stage));
+
+    private static int InvokeNativeInstaller(string payloadDirectory)
     {
-        string dllPath = Path.Combine(AppContext.BaseDirectory, "EnputMethod.Tsf.dll");
+        string dllPath = Path.Combine(payloadDirectory, "EnputMethod.Tsf.dll");
         IntPtr module = NativeLibrary.Load(dllPath);
         IntPtr procedure = NativeLibrary.GetExport(module, "InstallEnglishInputMethod");
         return Marshal.GetDelegateForFunctionPointer<InstallInputMethodDelegate>(procedure)();
     }
 
-    private static void EnsureUserConfiguration()
+    private static void DeployStaticPayload(string payloadDirectory, IProgress<InstallationProgress>? progress)
     {
-        string destinationDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Enput Method");
-        Directory.CreateDirectory(destinationDirectory);
-        MigrateLegacyConfiguration(destinationDirectory);
-        CopyDefaultFile("config.json", destinationDirectory);
-        MergeMissingConfigurationFields(destinationDirectory);
-        MigrateDefaultFontSize(destinationDirectory);
-        CopyDefaultFile("shortcut.json", destinationDirectory);
-        MergeMissingObjectFields(destinationDirectory, "shortcut.json");
-        CopyDefaultFile("dictionary.txt", destinationDirectory);
-        LexiconDatabaseBuilder.CreateOrMigrate(destinationDirectory, AppContext.BaseDirectory);
-        EnsureFullTranslationDictionary(destinationDirectory);
-        EnsureCcCedictEnglishIndex(destinationDirectory);
-        LexiconDatabaseBuilder.ImportDownloadedTranslations(destinationDirectory);
-        CopyDefaultThemes(destinationDirectory);
-    }
+        string overlaySource = Path.Combine(payloadDirectory, "Overlay");
+        string overlayDestination = Path.Combine(ProductLayout.InstallDirectory, "Overlay");
+        string resourcesSource = ProductLayout.PackageResourceDirectory;
+        string resourcesDestination = ProductLayout.StaticResourceDirectory;
+        Directory.CreateDirectory(ProductLayout.InstallDirectory);
+        MigrateLegacyStaticLexicon(resourcesDestination);
 
-    private static void DeployOverlay()
-    {
-        string source = Path.Combine(AppContext.BaseDirectory, "Overlay");
-        string destination = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Enput Method", "Overlay");
         using var updateMutex = new Mutex(false, @"Local\EnputMethod.Overlay.Updating.v1");
         bool lockTaken = false;
         try
         {
-            try
-            {
-                lockTaken = updateMutex.WaitOne(TimeSpan.FromSeconds(5));
-            }
-            catch (AbandonedMutexException)
-            {
-                lockTaken = true;
-            }
-
+            try { lockTaken = updateMutex.WaitOne(TimeSpan.FromSeconds(5)); }
+            catch (AbandonedMutexException) { lockTaken = true; }
             if (!lockTaken) throw new IOException("Another Overlay update is already in progress.");
 
-            Directory.CreateDirectory(destination);
-            StopInstalledOverlay(destination);
-            foreach (string file in Directory.EnumerateFiles(source, "*", System.IO.SearchOption.AllDirectories))
-            {
-                string relativePath = Path.GetRelativePath(source, file);
-                string destinationFile = Path.Combine(destination, relativePath);
-                CopyOverlayFile(file, destinationFile, destination);
-            }
+            Report(progress, 12, "正在停止旧的候选窗口...");
+            StopInstalledOverlay(overlayDestination);
+            Report(progress, 20, "正在部署输入法界面...");
+            CopyDirectory(overlaySource, overlayDestination, overwriteExisting: true);
+            Report(progress, 35, "正在部署静态资源...");
+            CopyDirectory(resourcesSource, resourcesDestination, overwriteExisting: false);
         }
         finally
         {
@@ -110,24 +110,19 @@ public partial class MainWindow : Window
         }
     }
 
-    private static void CopyOverlayFile(string sourceFile, string destinationFile, string overlayDirectory)
+    private static void CopyDirectory(string sourceDirectory, string destinationDirectory, bool overwriteExisting)
     {
-        const int attempts = 6;
-        Directory.CreateDirectory(Path.GetDirectoryName(destinationFile)!);
-        for (int attempt = 0; attempt < attempts; ++attempt)
+        if (!Directory.Exists(sourceDirectory)) throw new IOException($"Required package directory is missing: {sourceDirectory}");
+        foreach (string file in Directory.EnumerateFiles(sourceDirectory, "*", System.IO.SearchOption.AllDirectories))
         {
-            try
-            {
-                File.Copy(sourceFile, destinationFile, true);
-                return;
-            }
-            catch (IOException) when (attempt + 1 < attempts)
-            {
-                StopInstalledOverlay(overlayDirectory);
-                Thread.Sleep(100);
-            }
+            string relativePath = Path.GetRelativePath(sourceDirectory, file);
+            string destination = Path.Combine(destinationDirectory, relativePath);
+            if (!overwriteExisting && File.Exists(destination)) continue;
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(file, destination, overwriteExisting);
         }
     }
+
     private static void StopInstalledOverlay(string overlayDirectory)
     {
         string executable = Path.GetFullPath(Path.Combine(overlayDirectory, "EnputMethod.Overlay.exe"));
@@ -143,25 +138,48 @@ public partial class MainWindow : Window
                     _ = process.WaitForExit(2000);
                 }
             }
-            catch (InvalidOperationException)
-            {
-                // The companion can exit between process discovery and shutdown.
-            }
-            catch (System.ComponentModel.Win32Exception)
-            {
-                // Only inaccessible processes are skipped; the deployed files will remain untouched if locked.
-            }
-            finally
-            {
-                process.Dispose();
-            }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { }
+            finally { process.Dispose(); }
         }
+    }
+
+    private static void MigrateLegacyStaticLexicon(string resourceDirectory)
+    {
+        string legacyDirectory = ProductLayout.LegacyUserDataDirectory;
+        if (!Directory.Exists(legacyDirectory)) return;
+        Directory.CreateDirectory(resourceDirectory);
+        foreach (string name in new[] { "enput.db", "enput.db.ready" })
+        {
+            string source = Path.Combine(legacyDirectory, name);
+            string destination = Path.Combine(resourceDirectory, name);
+            if (!File.Exists(source) || File.Exists(destination)) continue;
+            File.Move(source, destination);
+        }
+    }
+
+    private static void EnsureUserConfiguration()
+    {
+        string userData = ProductLayout.UserDataDirectory;
+        Directory.CreateDirectory(userData);
+        MigrateLegacyUserFile("config.json");
+        MigrateLegacyUserFile("shortcut.json");
+        MigrateLegacyConfiguration(userData);
+        CopyDefaultUserFile("config.json", userData);
+        CopyDefaultUserFile("shortcut.json", userData);
+    }
+
+    private static void MigrateLegacyUserFile(string fileName)
+    {
+        string destination = Path.Combine(ProductLayout.UserDataDirectory, fileName);
+        string source = Path.Combine(ProductLayout.LegacyUserDataDirectory, fileName);
+        if (!File.Exists(destination) && File.Exists(source)) File.Copy(source, destination);
     }
 
     private static void MigrateLegacyConfiguration(string destinationDirectory)
     {
         string configuration = Path.Combine(destinationDirectory, "config.json");
-        string legacyConfiguration = Path.Combine(destinationDirectory, "conf.json");
+        string legacyConfiguration = Path.Combine(ProductLayout.LegacyUserDataDirectory, "conf.json");
         if (!File.Exists(configuration) && File.Exists(legacyConfiguration) && !IsLegacyDefaultConfiguration(legacyConfiguration))
         {
             File.Copy(legacyConfiguration, configuration);
@@ -180,41 +198,25 @@ public partial class MainWindow : Window
                 && count.ValueKind == JsonValueKind.Number
                 && count.GetInt32() == 4;
         }
-        catch (JsonException)
-        {
-            return false;
-        }
+        catch (JsonException) { return false; }
     }
 
-    private static void CopyDefaultFile(string fileName, string destinationDirectory)
+    private static void CopyDefaultUserFile(string fileName, string destinationDirectory)
     {
         string destination = Path.Combine(destinationDirectory, fileName);
-        if (!File.Exists(destination))
-        {
-            File.Copy(Path.Combine(AppContext.BaseDirectory, fileName), destination);
-        }
+        if (!File.Exists(destination)) File.Copy(Path.Combine(ProductLayout.PackageResourceDirectory, fileName), destination);
     }
 
-    private static void MigrateDefaultFontSize(string destinationDirectory)
+    private static void EnsureStaticLexicon(IProgress<InstallationProgress>? progress)
     {
-        string configuration = Path.Combine(destinationDirectory, "config.json");
-        try
-        {
-            JsonObject? settings = JsonNode.Parse(File.ReadAllText(configuration)) as JsonObject;
-            if (settings?["fontSize"] is not JsonValue value || !value.TryGetValue<int>(out int fontSize) || fontSize != 16) return;
-            settings["fontSize"] = 18;
-            File.WriteAllText(configuration, settings.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-        }
-        catch (JsonException)
-        {
-            // Keep a user's malformed configuration untouched.
-        }
-        catch (IOException)
-        {
-            // Configuration can be held briefly while the text service starts.
-        }
+        string resources = ProductLayout.StaticResourceDirectory;
+        LexiconDatabaseBuilder.CreateOrMigrate(resources, ProductLayout.PackageResourceDirectory);
+        Report(progress, 80, "正在导入完整翻译词典...");
+        EnsureFullTranslationDictionary(resources);
+        Report(progress, 86, "正在导入中文补充索引...");
+        EnsureCcCedictEnglishIndex(resources);
+        LexiconDatabaseBuilder.ImportDownloadedTranslations(resources);
     }
-
     private static void MergeDefaultSuggestions(string destinationDirectory)
     {
         string source = Path.Combine(AppContext.BaseDirectory, "suggestions.json");

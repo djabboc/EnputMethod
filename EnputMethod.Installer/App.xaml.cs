@@ -15,7 +15,7 @@ public partial class App : System.Windows.Application
                 string output = System.IO.Path.GetFullPath(e.Args[seedArgument + 1]);
                 string staging = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(output)!, ".enput-seed-build");
                 System.IO.Directory.CreateDirectory(staging);
-                LexiconDatabaseBuilder.CreateOrMigrate(staging, AppContext.BaseDirectory);
+                LexiconDatabaseBuilder.CreateOrMigrate(staging, ProductLayout.PackageResourceDirectory);
                 System.IO.File.Copy(System.IO.Path.Combine(staging, "enput.db"), output, true);
                 Environment.ExitCode = 0;
             }
@@ -24,73 +24,45 @@ public partial class App : System.Windows.Application
                 WriteInstallVerificationLog(ex.ToString());
                 Environment.ExitCode = 1;
             }
-            finally
-            {
-                Shutdown();
-            }
+            finally { Current.Shutdown(); }
             return;
         }
+
         if (e.Args.Contains("--migrate-lexicon", StringComparer.OrdinalIgnoreCase))
         {
-            try
+            RunHeadless(() =>
             {
-                string directory = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "Enput Method");
-                LexiconDatabaseBuilder.CreateOrMigrate(directory, AppContext.BaseDirectory);
-                WriteInstallVerificationLog("SQLite lexicon migration completed.");
-                Environment.ExitCode = 0;
-            }
-            catch (Exception ex)
-            {
-                WriteInstallVerificationLog(ex.ToString());
-                Environment.ExitCode = 1;
-            }
-            finally
-            {
-                Shutdown();
-            }
+                LexiconDatabaseBuilder.CreateOrMigrate(ProductLayout.StaticResourceDirectory, ProductLayout.PackageResourceDirectory);
+                return "SQLite lexicon migration completed.";
+            });
             return;
         }
+
         if (e.Args.Contains("--verify-lexicon", StringComparer.OrdinalIgnoreCase))
         {
-            try
+            RunHeadless(() =>
             {
-                string directory = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "Enput Method");
-                LexiconDatabaseBuilder.VerifyInstalledDatabase(directory);
-                WriteInstallVerificationLog("SQLite lexicon verification passed.");
-                Environment.ExitCode = 0;
-            }
-            catch (Exception ex)
-            {
-                WriteInstallVerificationLog(ex.ToString());
-                Environment.ExitCode = 1;
-            }
-            finally
-            {
-                Shutdown();
-            }
+                LexiconDatabaseBuilder.VerifyInstalledDatabase(ProductLayout.StaticResourceDirectory);
+                return "SQLite lexicon verification passed.";
+            });
             return;
         }
+
+        if (e.Args.Contains("--verify-package", StringComparer.OrdinalIgnoreCase))
+        {
+            InstallerVerification result = InstallerVerifier.VerifyPackage(ProductLayout.PayloadDirectory);
+            WriteInstallVerificationLog(result.Message);
+            Environment.ExitCode = result.Succeeded ? 0 : 1;
+            Shutdown();
+            return;
+        }
+
         if (e.Args.Contains("--install-and-verify", StringComparer.OrdinalIgnoreCase))
         {
-            try
-            {
-                InstallerVerification result = global::EnputMethod.Installer.MainWindow.InstallAndVerify();
-                WriteInstallVerificationLog(result.Message);
-                Environment.ExitCode = result.Succeeded ? 0 : 1;
-            }
-            catch (Exception ex)
-            {
-                WriteInstallVerificationLog(ex.ToString());
-                Environment.ExitCode = 1;
-            }
-            finally
-            {
-                Shutdown();
-            }
+            InstallerVerification result = global::EnputMethod.Installer.MainWindow.InstallAndVerify();
+            WriteInstallVerificationLog(result.Message);
+            Environment.ExitCode = result.Succeeded ? 0 : 1;
+            Shutdown();
             return;
         }
 
@@ -99,11 +71,24 @@ public partial class App : System.Windows.Application
         window.Show();
     }
 
+    private static void RunHeadless(Func<string> action)
+    {
+        try
+        {
+            WriteInstallVerificationLog(action());
+            Environment.ExitCode = 0;
+        }
+        catch (Exception ex)
+        {
+            WriteInstallVerificationLog(ex.ToString());
+            Environment.ExitCode = 1;
+        }
+        finally { Current.Shutdown(); }
+    }
+
     private static void WriteInstallVerificationLog(string message)
     {
-        string directory = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Enput Method");
+        string directory = ProductLayout.UserDataDirectory;
         System.IO.Directory.CreateDirectory(directory);
         System.IO.File.WriteAllText(System.IO.Path.Combine(directory, InstallVerificationLogFileName), message);
     }

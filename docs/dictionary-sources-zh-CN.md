@@ -2,9 +2,9 @@
 
 ## 当前运行时存储（2026-08-29）
 
-所有运行时词库均存储在 `%LOCALAPPDATA%\Enput Method\enput.db`，TSF 只查询 SQLite。安装包包含基础 `enput.seed.db`；已安装旧版本的 JSON/JSONL 词库会在事务导入、schema 与基本查询验证成功后删除。`suggestions.json`、`emoji.json`、`translations.json` 和两个 `translations.*.jsonl` 均不是运行时回退文件，新安装包也不再包含词库 JSON。
+所有运行时词库均存储在 `C:\Program Files\Enput Method\Resources\enput.db`，TSF 只查询 SQLite。安装包包含基础 `enput.seed.db`；已安装旧版本 AppData 根目录的 SQLite 会优先迁移到 Program Files，旧 JSON/JSONL 词库会在事务导入、schema 与基本查询验证成功后删除。`suggestions.json`、`emoji.json`、`translations.json` 和两个 `translations.*.jsonl` 均不是运行时回退文件，新安装包也不再包含词库 JSON。
 
-`config.json`、`shortcut.json` 和主题 JSON 仍是用户设置文件，和词库存储无关。
+`%LOCALAPPDATA%\Enput Method\UserData` 中的 `config.json`、`shortcut.json` 是用户设置文件；主题 JSON 是 Program Files 静态资源，和词库存储无关。
 
 ## 默认完整英中词典
 

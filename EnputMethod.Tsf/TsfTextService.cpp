@@ -44,7 +44,13 @@ long g_lockCount = 0;
 std::wstring UserDataDirectory() {
     wchar_t localAppData[MAX_PATH]{};
     if (!GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, ARRAYSIZE(localAppData))) return {};
-    return std::wstring(localAppData) + L"\\Enput Method";
+    return std::wstring(localAppData) + L"\\Enput Method\\UserData";
+}
+
+std::wstring InstalledResourceDirectory() {
+    wchar_t modulePath[MAX_PATH]{};
+    if (!g_module || !GetModuleFileNameW(g_module, modulePath, ARRAYSIZE(modulePath))) return {};
+    return std::filesystem::path(modulePath).parent_path().append(L"Resources").wstring();
 }
 
 std::string ReadUtf8File(const std::wstring& path) {
@@ -252,7 +258,7 @@ COLORREF ColorOr(const enput::json::Object& object, const char* key, COLORREF fa
 
 ThemeStyle LoadTheme(const std::string& name) {
     ThemeStyle theme;
-    const std::wstring directory = UserDataDirectory();
+    const std::wstring directory = InstalledResourceDirectory();
     if (!IsSafeThemeName(name) || directory.empty()) return theme;
     enput::json::Object object;
     if (!enput::json::ReadObject(ReadUtf8File(directory + L"\\themes\\" + Utf8ToWide(name) + L".json"), &object)) return theme;
@@ -688,7 +694,7 @@ const TranslationEntry* FindTranslationFromLegacyJson(const std::wstring& text) 
 // The text service reads lexicon content exclusively from the installed SQLite database.
 // JSON remains limited to user settings and theme files.
 std::wstring LexiconDatabasePath() {
-    const std::wstring directory = UserDataDirectory();
+    const std::wstring directory = InstalledResourceDirectory();
     return directory.empty() ? std::wstring{} : directory + L"\\enput.db";
 }
 

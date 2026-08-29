@@ -81,11 +81,11 @@ WPF 的字号单位是 DIP，而配置的 `fontSize` 是 pt。Overlay 固定使�
 
 ## 6. 数据、检索与许可
 
-运行时词库只使用 `%LOCALAPPDATA%\Enput Method\enput.db`，以 Windows 自带 `winsqlite3.dll` 查询。没有 JSON/JSONL 运行时回退。JSON 只保留给用户可编辑设置：`config.json`、`shortcut.json` 和主题文件。
+运行时词库只使用 `C:\Program Files\Enput Method\Resources\enput.db`，以 Windows 自带 `winsqlite3.dll` 查询。没有 JSON/JSONL 运行时回退。JSON 只保留给用户可编辑设置：`%LOCALAPPDATA%\Enput Method\UserData` 中的 `config.json`、`shortcut.json`；主题是 Program Files 下的静态资源。
 
 | 数据 | 运行时位置/表 | 用途 |
 | --- | --- | --- |
-| `dictionary.txt` | LocalAppData 普通 UTF-8 文本 | 有序单词前缀候选，允许用户自行编辑。 |
+| `dictionary.txt` | `C:\Program Files\Enput Method\Resources` 普通 UTF-8 文本 | 有序单词前缀候选；发布升级只补齐缺失文件。 |
 | `words` | SQLite | 已导入的基础单词索引。 |
 | `suggestions` | SQLite | 关联短语、多词短语、下一词建议。 |
 | `emoji`、`emoji_keyword` | SQLite | Emoji、关键词、优先级。 |
@@ -130,13 +130,13 @@ WPF 的字号单位是 DIP，而配置的 `fontSize` 是 pt。Overlay 固定使�
 因此，当前系统的“句子联想”是**手工/语料导入的短语和后续词查表**，不是上下文语言模型。WordNet 导入扩大了多词短语覆盖，但它本身不提供句子频率、语法或上下文概率。要实现真正基于前文的句子补全，需要新增 n-gram/语料频率、语境窗口和排序模型，属于后续功能而不是当前行为。
 ## 7. 配置与快捷键
 
-用户配置目录是 `%LOCALAPPDATA%\Enput Method`。
+用户配置目录是 `%LOCALAPPDATA%\Enput Method\UserData`。
 
 - `config.json`：候选数、纵横布局、选词后空格、候选排序、字体、透明度、主题、翻译语言、翻译框初始尺寸。
 - `shortcut.json`：每个动作映射一个或多个按键。默认 F2 为 Emoji，F3 为翻译，`cancelComposition` 为 `["Escape", "Shift"]`。
 - `themes/*.json`：候选与翻译窗口的颜色、边框、圆角、内边距、行高、阴影、滚动条和语义文本色。
 
-安装器只合并配置中缺失的字段，绝不覆盖已有用户值。因此用户移除 `Shift` 后，更新不会重新强制加入它。
+安装器仅在 UserData 中的配置或快捷键文件不存在时复制默认文件，绝不覆盖已有用户值。因此用户移除 `Shift` 后，更新不会重新强制加入它。
 
 ## 8. 部署、注册与更新
 
@@ -158,3 +158,11 @@ WPF 的字号单位是 DIP，而配置的 `fontSize` 是 pt。Overlay 固定使�
 - 目标编辑器字体可能缺少较新的 Emoji，例如 `U+1FA9A`，此时提交的码点正确但编辑区会显示方框。
 - 词典规模已显著扩展，但不等同于覆盖所有专业术语、例句或多语言释义；数据许可和来源必须持续记录。
 - WPF UI 自动化可验证协议和布局，不替代真实跨应用 TSF 交互验收。
+
+## 10. 一站式发布与运行目录（2026-08-29）
+
+发布不要求终端用户安装 Visual Studio 或 .NET SDK。`scripts\publish-release.ps1 -Version <version> -Zip` 产出自包含的 Windows x64 ZIP；用户在解压根目录运行 WPF `Install Enput Method.exe` 或 `Uninstall Enput Method.exe`。两个启动器各自携带相邻的托管 DLL、deps 和 runtimeconfig，运行时资源位于共同的 `payload`。
+
+安装时需要管理员权限：原生 TSF 注册函数把 DLL 复制为 `C:\Program Files\Enput Method\EnputMethod.Tsf.<build-id>.dll` 并写入 HKLM；WPF 安装器把 Overlay 与静态资源部署到同一产品根。静态 SQLite、主题、词表、Emoji 资源和归属文件都在 `C:\Program Files\Enput Method\Resources` 或 `Overlay`，不再放入 AppData。
+
+`%LOCALAPPDATA%\Enput Method\UserData` 是唯一的文件型用户状态边界，包含 `config.json`、`shortcut.json`、`install-verification.log`、`overlay-diagnostics.log`。这与 `HKCU\Software\Enput Method\CandidateFrequency` 的学习状态一起，在升级和默认卸载时保留。安装/卸载窗口使用 WPF `ProgressBar` 和后台 `Task`，使复制、SQLite 初始化、注册与删除期间 UI 保持响应。

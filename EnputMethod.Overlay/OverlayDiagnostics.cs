@@ -16,7 +16,7 @@ internal static class OverlayDiagnostics
             if (!mutex.WaitOne(TimeSpan.FromMilliseconds(25))) return;
             try
             {
-                string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Enput Method");
+                string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Enput Method", "UserData");
                 Directory.CreateDirectory(directory);
                 string line = $"{DateTimeOffset.Now:O} WPF pid={Environment.ProcessId} {@event} {detail}{Environment.NewLine}";
                 File.AppendAllText(Path.Combine(directory, "overlay-diagnostics.log"), line, new UTF8Encoding(false));

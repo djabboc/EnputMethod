@@ -25,18 +25,25 @@ Open `EnputMethod.sln` in Visual Studio, select `Release|x64`, and build the sol
 
 ## Install and Use
 
-Run `EnputMethod.Installer.exe` to install or `EnputMethod.Uninstaller.exe` to remove it. Both programs open a window, request UAC approval, perform the operation only after the user clicks its button, display the result, and close after the result is confirmed.
+For users, download and extract a release ZIP, then run `Install Enput Method.exe` from the extracted directory and accept Windows UAC. The release root visibly contains:
 
-Run each executable from its complete build-output folder. The executable requires its adjacent `.dll`, `.deps.json`, `.runtimeconfig.json`, and `EnputMethod.Tsf.dll` files.
+```text
+Install Enput Method.exe
+Uninstall Enput Method.exe
+payload\
+```
 
-Windows can cache text services. If Enput does not appear in the existing `Ctrl + Shift` rotation immediately after installation, switch to another input method and back, then sign out and sign in once. `Ctrl + Space` is not claimed as a system-wide input-method switch shortcut.
+Installation deploys the registered TSF DLL, WPF Overlay and every static resource under `C:\Program Files\Enput Method`. The release directory is only an installation medium, so after installation it may be moved or deleted without breaking the input method. To remove the product, close target editors, run `Uninstall Enput Method.exe` from a complete extracted release directory, then delete that directory after successful uninstall.
 
-For the candidate-window prototype, type a prefix such as `he`. The document retains `he` while a floating window shows the configured number of matching words per page. Press `-` or `+` to move between pages, or use Up and Down to move the highlighted candidate across page boundaries. The mouse can select a candidate or use the previous/next page controls without taking focus. Press the matching number key to select a word on the current page, or press `Tab` to select the highlighted word. If an association exists, selecting a word or pressing Space keeps the candidate window open with the next-word and phrase suggestions. Navigation and punctuation first commit the active composition and are then passed to the target application, so ordinary in-place editing does not overwrite text.
+Both WPF launchers show stage text and a progress bar while their long-running work is in progress. Installation disables repeated clicks while it stops an old Overlay, copies payload files, registers TSF, initializes user settings, prepares the static SQLite lexicon and verifies the installed result. Uninstall similarly reports unregistering, stopping Overlay, deleting Program Files resources and final verification.
 
-The Release installer explicitly loads its adjacent TSF DLL, clears a stale per-user Enput COM registration left by older builds, and registers the current service at a versioned DLL path derived from the DLL build timestamp and size. This allows an update to proceed while an earlier Enput DLL remains mapped in another application, and allows an unchanged build to be installed again safely.
+Static product content is kept out of AppData: `enput.db`, themes, dictionary data, WordNet source, bundled Twemoji assets and runtime binaries are under `C:\Program Files\Enput Method`. Only user-mutated state resides in `%LOCALAPPDATA%\Enput Method\UserData`: `config.json`, `shortcut.json`, installation/Overlay logs and the registry-backed adaptive frequency data. Upgrades initialize default config and shortcuts only when they are missing and do not overwrite existing user settings. Uninstall removes Program Files content but preserves user data and learned ranking for a later reinstall.
 
-User-editable settings are stored in `%LOCALAPPDATA%\Enput Method\config.json`; shortcut actions are stored independently in `shortcut.json`. The defaults include `F2` for Emoji mode and `F3` for the translation window. `config.json` supports candidate count, layout, automatic spaces, `preserveCase`, `avoidScreenEdges`, font family, font size, opacity, theme, translation languages, and persistent translation-window dimensions. The default translation languages are `en` and `zh-CN`; add `ja-JP` explicitly to enable Japanese. `conf.json` from older releases remains supported and is migrated when possible. `dictionary.txt` remains an ordered, user-editable word list. Phrase suggestions, Emoji keywords, compact translations, ECDICT, and CC-CEDICT data are stored and queried only through `%LOCALAPPDATA%\Enput Method\enput.db`. The installer ships `enput.seed.db`, imports any existing legacy lexicon once, validates it, then removes the legacy JSON/JSONL files. There is no JSON/JSONL runtime fallback.
-Set `adaptiveCandidateRanking` to `false` in `config.json` to preserve dictionary order and stop recording new candidate selections. The setting defaults to `true`.
+Windows can cache text services. If Enput does not appear in the existing `Ctrl + Shift` rotation immediately after installation, switch to another input method and back, then sign out and sign in once. Existing target applications must be closed and reopened after TSF updates because they keep the old in-process DLL mapped.
+
+For the candidate-window prototype, type a prefix such as `he`. The document retains `he` while a floating window shows the configured number of matching words per page. Press `-` or `+` to move between pages, or use Up and Down to move the highlighted candidate across page boundaries. The mouse can select a candidate or use the previous/next page controls without taking focus. Press the matching number key to select a word on the current page, or press `Tab` to select the highlighted word. Shift and Escape cancel an active composition. F2 enables Emoji mode and F3 shows the rich-text translation view.
+
+`fontSize` is a point value. The default is `18`; the WPF Overlay converts it to 24 device-independent pixels so it visually matches the native 18pt configuration. Emoji candidates use bundled Twemoji color PNG assets. The SQLite lexicon stores Unicode text directly, including `fire -> 🔥` and `saw -> 🪚`.
 
 ## Repository Layout
 

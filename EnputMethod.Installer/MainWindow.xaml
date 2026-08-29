@@ -1,19 +1,24 @@
 <Window x:Class="EnputMethod.Installer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Enput Method 安装" Width="430" Height="230"
+        Title="Enput Method 安装" Width="460" Height="270"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize">
     <Grid Margin="28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <TextBlock Text="Enput Method" FontSize="24" FontWeight="SemiBold"/>
         <TextBlock Grid.Row="1" VerticalAlignment="Center"
-                   Text="安装英文联想输入法到中文输入法组。&#x0a;操作需要管理员授权。"
+                   Text="安装英文联想输入法到中文输入法组。&#x0a;静态资源将部署到 Program Files，用户配置不会被更新覆盖。"
                    TextWrapping="Wrap" FontSize="14"/>
-        <Button Grid.Row="2" Content="安装" Click="Install_Click" IsDefault="True"
-                Padding="24,7" HorizontalAlignment="Right"/>
+        <StackPanel Grid.Row="2" Margin="0,12,0,0">
+            <TextBlock x:Name="StatusText" Text="准备安装。" Margin="0,0,0,6"/>
+            <ProgressBar x:Name="InstallProgress" Minimum="0" Maximum="100" Height="8" Value="0"/>
+        </StackPanel>
+        <Button x:Name="InstallButton" Grid.Row="3" Content="安装" Click="Install_Click" IsDefault="True"
+                Padding="24,7" Margin="0,16,0,0" HorizontalAlignment="Right"/>
     </Grid>
 </Window>

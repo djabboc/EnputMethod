@@ -69,8 +69,8 @@ dotnet --info
 ## 4. 安装后排查顺序
 
 1. 运行完整回归并确认退出码为零。
-2. 查看 `%LOCALAPPDATA%\Enput Method\install-verification.log`。成功记录应为 SQLite lexicon verification passed。
-3. 确认 `%LOCALAPPDATA%\Enput Method\enput.db` 和 `enput.db.ready` 存在。
+2. 查看 `%LOCALAPPDATA%\Enput Method\UserData\install-verification.log`。成功记录应为 SQLite lexicon verification passed。
+3. 确认 `C:\Program Files\Enput Method\Resources\enput.db` 和 `enput.db.ready` 存在。
 4. 检查 `shortcut.json` 的 `cancelComposition` 已保留预期数组；默认应为 `Escape, Shift`。
 5. 关闭所有待测宿主，再重新打开。TSF DLL 在编辑器进程内加载，已打开的应用不会自动切换到新 DLL。
 6. 在语言栏明确选择 Enput Method；不要用“脚本已经输入了 he”判断输入法切换成功。
@@ -165,3 +165,18 @@ dotnet --info
 6. 数据来源、许可、迁移版本、用户可见配置和已知限制同步写入文档。
 
 当前问题历史、人工验收清单和延后项见 [development-issue-ledger-zh-CN.md](development-issue-ledger-zh-CN.md)；配置细节见 [update-notes-zh-CN.md](update-notes-zh-CN.md)。
+
+## 11. 一站式包与资源边界验证（2026-08-29）
+
+修改安装、卸载、资源或发布脚本后，先运行：
+
+```powershell
+.\scripts\build-local-package.ps1 -Configuration Release
+.\scripts\publish-release.ps1 -Version <version> -Zip
+```
+
+前者必须通过安装器的 `--verify-package`，后者生成的 ZIP 解压后只允许有一个 `EnputMethod-<version>-win-x64` 顶层目录；安装器和卸载器必须直接位于其根目录，不能被额外的 `Release` 目录包住。验证 manifest 包含 `payload\Resources\themes\*.json`，主题误落在 Resources 根目录时会被拒绝。
+
+系统安装验证应使用 `run-regression.ps1` 或 `install-and-verify.ps1`。成功判据为已注册 DLL、Overlay 和静态 `enput.db` 位于 `C:\Program Files\Enput Method`，用户配置/日志位于 `%LOCALAPPDATA%\Enput Method\UserData`。升级前后对 UserData 的 `config.json` 与 `shortcut.json` 计算 hash，必须保持相同；AppData 根目录不应重新生成静态数据库、主题或发布词表。卸载后 Program Files 产品目录应不存在，而 UserData 与频率学习应保留。
+
+包完整性、原生逻辑、协议和受控 WPF 自动化不等于真实输入法已被目标应用选中。系统安装会显示 UAC，真实宿主仍需关闭重开并在语言栏确认 Enput。

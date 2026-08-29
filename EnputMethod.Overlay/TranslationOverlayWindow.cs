@@ -263,7 +263,7 @@ internal sealed class TranslationOverlayWindow : Window
         if (Width < MinWidth || Height < MinHeight) return;
         try
         {
-            string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Enput Method");
+            string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Enput Method", "UserData");
             Directory.CreateDirectory(directory);
             string configurationPath = Path.Combine(directory, "config.json");
             JsonObject configuration = File.Exists(configurationPath)

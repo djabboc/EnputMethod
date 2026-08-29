@@ -10,6 +10,7 @@ var tests = new (string Name, string Json, bool Expected)[]
     ("translation hide", """{"type":"hide","clientId":"host-1","stateId":6,"surface":"translation"}""", true),
     ("internal presented event", """{"type":"presented","clientId":"host-1","stateId":7}""", false),
     ("missing candidates", """{"type":"showCandidates","clientId":"host-1","stateId":8}""", false),
+    ("empty candidates", """{"type":"showCandidates","clientId":"host-1","stateId":8,"candidates":{"x":0,"y":0,"items":[],"page":0,"pageCount":1,"selectedIndex":0,"layout":"vertical"}}""", false),
     ("invalid page", """{"type":"showCandidates","clientId":"host-1","stateId":9,"candidates":{"x":0,"y":0,"items":["hello"],"page":1,"pageCount":1,"selectedIndex":0,"layout":"vertical"}}""", false),
     ("invalid surface", """{"type":"hide","clientId":"host-1","stateId":10,"surface":"unknown"}""", false),
     ("invalid action", """{"type":"selectCandidate","clientId":"host-1","stateId":11,"candidateIndex":-1}""", false),

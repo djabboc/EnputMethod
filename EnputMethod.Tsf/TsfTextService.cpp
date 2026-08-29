@@ -1785,6 +1785,10 @@ private:
 
     void PresentCandidates(ITfContext* context, TfEditCookie cookie, ITfRange* range) {
         overlayActive_ = false;
+        if (candidates_.empty()) {
+            HideOverlay();
+            return;
+        }
         if (!overlayClient_ || !overlayClient_->IsConnected()) {
             enput::WriteOverlayDiagnostic("candidate.skipped", "overlay-not-connected");
             return;
@@ -2009,7 +2013,10 @@ public:
     STDMETHODIMP QueryInterface(REFIID iid, void** result) override { if (!result) return E_INVALIDARG; *result = nullptr; if (iid != IID_IUnknown && iid != IID_ITfEditSession) return E_NOINTERFACE; *result = static_cast<ITfEditSession*>(this); AddRef(); return S_OK; }
     STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&refs_); }
     STDMETHODIMP_(ULONG) Release() override { const auto refs = InterlockedDecrement(&refs_); if (!refs) delete this; return refs; }
-    STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return service_->RefreshCandidates(context_, cookie); }
+    STDMETHODIMP DoEditSession(TfEditCookie cookie) override {
+        if (service_->candidates_.empty() || (context_ != service_->compositionContext_ && context_ != service_->detachedSuggestionContext_)) return S_OK;
+        return service_->RefreshCandidates(context_, cookie);
+    }
 private:
     long refs_ = 1;
     TextService* service_;

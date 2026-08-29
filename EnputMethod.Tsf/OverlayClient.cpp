@@ -101,7 +101,7 @@ public:
 
             bool pipeFailed = false;
             ReadMessages(pipe, &input, &pipeFailed, &wasConnected);
-            if (!pipeFailed && connected_.load()) WriteLatestMessage(pipe, &pipeFailed);
+            if (!pipeFailed && connected_.load()) WriteQueuedMessages(pipe, &pipeFailed);
             if (pipeFailed) {
                 CloseHandle(pipe);
                 pipe = INVALID_HANDLE_VALUE;
@@ -181,18 +181,21 @@ public:
         eventCallback_(std::move(event));
     }
 
-    void WriteLatestMessage(HANDLE pipe, bool* pipeFailed) {
-        std::string message;
+    void WriteQueuedMessages(HANDLE pipe, bool* pipeFailed) {
+        std::deque<std::string> messages;
         {
             std::scoped_lock lock(queueLock_);
             if (queuedMessages_.empty()) return;
-            message = std::move(queuedMessages_.back());
+            messages = std::move(queuedMessages_);
             queuedMessages_.clear();
         }
-        message.push_back('\n');
-        DWORD written = 0;
-        if (!WriteFile(pipe, message.data(), static_cast<DWORD>(message.size()), &written, nullptr) || written != message.size()) {
-            *pipeFailed = true;
+        for (std::string& message : messages) {
+            message.push_back('\n');
+            DWORD written = 0;
+            if (!WriteFile(pipe, message.data(), static_cast<DWORD>(message.size()), &written, nullptr) || written != message.size()) {
+                *pipeFailed = true;
+                return;
+            }
         }
     }
 

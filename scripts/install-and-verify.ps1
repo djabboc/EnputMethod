@@ -22,6 +22,15 @@ $configPath = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder
 $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
 if ($config.fontSize -ne 18) { throw "Installed default font size was not migrated to 18." }
 
+& $installer --verify-lexicon
+if ($LASTEXITCODE -ne 0)
+{
+    $diagnostic = if (Test-Path -LiteralPath $verificationLog) { Get-Content -LiteralPath $verificationLog -Raw } else { "No SQLite verification log was written." }
+    throw "SQLite lexicon verification failed with exit code $LASTEXITCODE.`n$diagnostic"
+}
+Write-Host "Installation and SQLite lexicon verification passed."
+return
+
 $emojiPath = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "Enput Method\emoji.json"
 $emoji = Get-Content -LiteralPath $emojiPath -Raw | ConvertFrom-Json
 foreach ($keyword in "fire", "water", "bucket", "cat", "dog") {

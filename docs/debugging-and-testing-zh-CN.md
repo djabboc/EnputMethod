@@ -202,3 +202,14 @@ dotnet --info
 常规卸载的完成条件是 Enput 的 TSF Profile、分类和 COM 注册已经移除，不是删除安装目录。输入法 DLL 以进程内方式加载；保留版本化 DLL、Overlay 和 `Resources` 可避免已打开宿主在退出前丢失数据库或 UI 依赖。保留的文件不会被新应用激活，因为 COM/Profile 入口已移除。
 
 卸载器支持 `--uninstall-and-verify` 无界面验证：必须以非零退出码报告注销失败，并写入 `uninstall-verification.log`。2026-08-29 已执行真实 UAC 链路：注销后确认 DLL、Overlay、`enput.db` 仍在、Enput CLSID 已删除、Microsoft Pinyin 默认项不变；随后不重启直接运行 `install-and-verify.ps1`，安装和 SQLite 验证通过。
+## 15. TSF STA 线程与失败回滚（2026-08-30）
+
+WPF 的 `Task.Run` 使用 MTA 线程。TSF `ITfInputProcessorProfiles` 和 `ITfCategoryMgr` 注册必须在 STA 中执行；GUI 安装若把原生调用放在 MTA，`CoInitializeEx(COINIT_APARTMENTTHREADED)` 返回 `RPC_E_CHANGED_MODE`，旧代码却继续执行，可能在分类阶段失败。无界面 WPF 启动线程通常是 STA，因此不能把其成功结果当作 GUI 成功的证据。
+
+安装器与卸载器的按钮和 `--install-and-verify` / `--uninstall-and-verify` 现在统一经专用 STA 工作线程调用原生 TSF。原生层在 STA 初始化失败时立即返回，不做任何注册变更。GUI 结果也会覆盖写入 `install-verification.log`，以免日志停留在上一次成功结果。
+
+TSF 注册是事务：先注册服务与语言 Profile，再注册核心键盘分类，最后启用 Profile；`TF_E_ALREADY_EXISTS` 对键盘分类视为幂等成功，immersive 分类只作为可选能力。任一失败会删除 Enput 自己的 Profile、分类、HKCU/HKLM `CTF\\TIP\\{9C8945D5-...}` 根和 COM CLSID，保留原始 HRESULT/阶段。绝不触及 Microsoft Pinyin 的 `{81D4E9C9-...}`。本轮已执行真实 UAC：STA 卸载清理残留 -> 检查 COM/TIP 不存在 -> STA 重装 -> 安装、SQLite 与 Microsoft Pinyin 默认项验证通过。
+
+安装器在报告成功前还会读取 HKLM 中 Enput 自己的 `LanguageProfile\\0x00000804\\{55F31085-...}` 与核心键盘分类 `{34745C63-...}`。因此 COM DLL 虽已注册、但输入法 Profile 或核心分类缺失的状态会被判定为安装失败，而不会误报成功。
+
+`scripts/uninstall-and-verify.ps1` 用发布目录中的无界面卸载器执行 UAC 测试：确认 Enput 的 HKCU/HKLM COM 与 TIP 根均不存在，Program Files 中为已打开宿主保留的 DLL、Overlay、SQLite 静态词库仍在，用户 `config.json` 未变，并比较卸载前后所有非 Enput 的 Windows 输入法项。`scripts/run-regression.ps1` 现在执行“安装 -> 卸载 -> 立即重装”，覆盖不重启重装和 STA 工作线程路径。

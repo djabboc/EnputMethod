@@ -2502,52 +2502,116 @@ HRESULT RegisterComServer() {
 
 HRESULT RegisterProfile() {
     SetRegistrationStage(20);
-    ITfInputProcessorProfiles* profiles{}; HRESULT hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&profiles));
+    ITfInputProcessorProfiles* profiles{};
+    HRESULT hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&profiles));
     if (FAILED(hr)) return hr;
-    std::wstring path; HRESULT pathHr = InstalledDllPath(&path); if (FAILED(pathHr)) { profiles->Release(); return pathHr; }
+
+    std::wstring path;
+    HRESULT pathHr = InstalledDllPath(&path);
+    if (FAILED(pathHr)) { profiles->Release(); return pathHr; }
+
     const wchar_t* description = L"Enput Method - English";
     SetRegistrationStage(21);
     hr = profiles->Register(kTextServiceClsid);
     if (hr == TF_E_ALREADY_EXISTS) hr = S_OK;
     if (FAILED(hr)) { profiles->Release(); return hr; }
+
     profiles->RemoveLanguageProfile(kTextServiceClsid, kLegacyEnglishUs, kProfileGuid);
     RegDeleteTreeW(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\CTF\\TIP\\{9C8945D5-01DF-48F4-A8DB-57E8B6A1EB10}\\LanguageProfile\\0x00000409");
     SetRegistrationStage(22);
     hr = profiles->AddLanguageProfile(kTextServiceClsid, kChineseSimplified, kProfileGuid, description, static_cast<ULONG>(wcslen(description)), path.c_str(), static_cast<ULONG>(path.size()), 0);
     if (hr == TF_E_ALREADY_EXISTS) hr = S_OK;
     if (FAILED(hr)) { profiles->Release(); return hr; }
-    SetRegistrationStage(23);
-    hr = profiles->EnableLanguageProfile(kTextServiceClsid, kChineseSimplified, kProfileGuid, TRUE);
-    profiles->Release(); if (FAILED(hr)) return hr;
+
     SetRegistrationStage(24);
-    ITfCategoryMgr* categories{}; hr = CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories));
-    if (FAILED(hr)) return hr;
+    ITfCategoryMgr* categories{};
+    hr = CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories));
+    if (FAILED(hr)) { profiles->Release(); return hr; }
+
     SetRegistrationStage(25);
     hr = categories->RegisterCategory(kTextServiceClsid, GUID_TFCAT_TIP_KEYBOARD, kTextServiceClsid);
-    if (SUCCEEDED(hr)) { SetRegistrationStage(26); hr = categories->RegisterCategory(kTextServiceClsid, GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT, kTextServiceClsid); }
-    categories->Release();
-    return hr;
-}
+    if (hr == TF_E_ALREADY_EXISTS) hr = S_OK;
+    if (FAILED(hr)) { categories->Release(); profiles->Release(); return hr; }
 
+    // Immersive support is optional. A capability-registration failure must not
+    // prevent the core keyboard TIP from being registered.
+    SetRegistrationStage(26);
+    HRESULT immersiveHr = categories->RegisterCategory(kTextServiceClsid, GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT, kTextServiceClsid);
+    categories->Release();
+    if (immersiveHr == TF_E_ALREADY_EXISTS) immersiveHr = S_OK;
+
+    // Do not enable the profile until the required keyboard category exists.
+    SetRegistrationStage(23);
+    hr = profiles->EnableLanguageProfile(kTextServiceClsid, kChineseSimplified, kProfileGuid, TRUE);
+    profiles->Release();
+    return FAILED(hr) ? hr : S_OK;
+}
 HRESULT RemoveProfile() {
-    SetRegistrationStage(40);
-    ITfInputProcessorProfiles* profiles{}; HRESULT hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&profiles));
-    if (SUCCEEDED(hr)) { profiles->RemoveLanguageProfile(kTextServiceClsid, kChineseSimplified, kProfileGuid); profiles->RemoveLanguageProfile(kTextServiceClsid, kLegacyEnglishUs, kProfileGuid); profiles->Unregister(kTextServiceClsid); profiles->Release(); }
     SetRegistrationStage(41);
-    ITfCategoryMgr* categories{}; if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories)))) { categories->UnregisterCategory(kTextServiceClsid, GUID_TFCAT_TIP_KEYBOARD, kTextServiceClsid); categories->UnregisterCategory(kTextServiceClsid, GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT, kTextServiceClsid); categories->Release(); }
+    ITfCategoryMgr* categories{};
+    if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&categories)))) {
+        categories->UnregisterCategory(kTextServiceClsid, GUID_TFCAT_TIP_KEYBOARD, kTextServiceClsid);
+        categories->UnregisterCategory(kTextServiceClsid, GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT, kTextServiceClsid);
+        categories->Release();
+    }
+
+    SetRegistrationStage(40);
+    ITfInputProcessorProfiles* profiles{};
+    if (SUCCEEDED(CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&profiles)))) {
+        profiles->RemoveLanguageProfile(kTextServiceClsid, kChineseSimplified, kProfileGuid);
+        profiles->RemoveLanguageProfile(kTextServiceClsid, kLegacyEnglishUs, kProfileGuid);
+        profiles->Unregister(kTextServiceClsid);
+        profiles->Release();
+    }
+
+    // The TSF APIs can leave a partial per-machine TIP key after a failed install.
+    // These keys belong only to Enput, never to Microsoft Pinyin or another TIP.
     SetRegistrationStage(42);
-    const LONG userStatus = RegDeleteTreeW(HKEY_CURRENT_USER, ClassKey().c_str());
-    const LONG machineStatus = RegDeleteTreeW(HKEY_LOCAL_MACHINE, ClassKey().c_str());
-    if (machineStatus != ERROR_SUCCESS && machineStatus != ERROR_FILE_NOT_FOUND) return HRESULT_FROM_WIN32(machineStatus);
-    if (userStatus != ERROR_SUCCESS && userStatus != ERROR_FILE_NOT_FOUND) return HRESULT_FROM_WIN32(userStatus);
+    constexpr wchar_t kEnputTipKey[] = L"Software\\Microsoft\\CTF\\TIP\\{9C8945D5-01DF-48F4-A8DB-57E8B6A1EB10}";
+    const LONG userTipStatus = RegDeleteTreeW(HKEY_CURRENT_USER, kEnputTipKey);
+    const LONG machineTipStatus = RegDeleteTreeW(HKEY_LOCAL_MACHINE, kEnputTipKey);
+    const LONG userClassStatus = RegDeleteTreeW(HKEY_CURRENT_USER, ClassKey().c_str());
+    const LONG machineClassStatus = RegDeleteTreeW(HKEY_LOCAL_MACHINE, ClassKey().c_str());
+    if (machineClassStatus != ERROR_SUCCESS && machineClassStatus != ERROR_FILE_NOT_FOUND) return HRESULT_FROM_WIN32(machineClassStatus);
+    if (userClassStatus != ERROR_SUCCESS && userClassStatus != ERROR_FILE_NOT_FOUND) return HRESULT_FROM_WIN32(userClassStatus);
+    if (machineTipStatus != ERROR_SUCCESS && machineTipStatus != ERROR_FILE_NOT_FOUND) return HRESULT_FROM_WIN32(machineTipStatus);
+    if (userTipStatus != ERROR_SUCCESS && userTipStatus != ERROR_FILE_NOT_FOUND) return HRESULT_FROM_WIN32(userTipStatus);
+
     // Keep the versioned DLL and shared resources for already running TSF hosts.
     // Registry removal prevents new activations; a later installation may reuse them.
     return S_OK;
 }
 }
 
-extern "C" HRESULT WINAPI InstallEnglishInputMethod() { SetRegistrationStage(1); HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED); const bool uninitialize = SUCCEEDED(hr); if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) return hr; hr = RegisterComServer(); if (SUCCEEDED(hr)) hr = RegisterProfile(); if (uninitialize) CoUninitialize(); if (SUCCEEDED(hr)) SetRegistrationStage(0); return hr; }
-extern "C" HRESULT WINAPI UninstallEnglishInputMethod() { SetRegistrationStage(30); HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED); const bool uninitialize = SUCCEEDED(hr); if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) return hr; hr = RemoveProfile(); if (uninitialize) CoUninitialize(); if (SUCCEEDED(hr)) SetRegistrationStage(0); return hr; }
+extern "C" HRESULT WINAPI InstallEnglishInputMethod() {
+    SetRegistrationStage(1);
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(hr)) return hr;
+
+    hr = RegisterComServer();
+    if (SUCCEEDED(hr)) hr = RegisterProfile();
+    if (FAILED(hr)) {
+        // Do not leave a selectable half-installed TIP after any registration failure.
+        const LONG failedStage = RegistrationStage();
+        RemoveProfile();
+        SetRegistrationStage(failedStage);
+    }
+
+    CoUninitialize();
+    if (SUCCEEDED(hr)) SetRegistrationStage(0);
+    return hr;
+}
+
+extern "C" HRESULT WINAPI UninstallEnglishInputMethod() {
+    SetRegistrationStage(30);
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(hr)) return hr;
+    hr = RemoveProfile();
+    CoUninitialize();
+    if (SUCCEEDED(hr)) SetRegistrationStage(0);
+    return hr;
+}
+
 extern "C" LONG WINAPI GetEnputRegistrationStage() { return RegistrationStage(); }
 BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) { if (reason == DLL_PROCESS_ATTACH) { g_module = module; DisableThreadLibraryCalls(module); } return TRUE; }
 STDAPI DllCanUnloadNow() { return (g_objectCount == 0 && g_lockCount == 0) ? S_OK : S_FALSE; }

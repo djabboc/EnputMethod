@@ -61,7 +61,7 @@ public partial class App : System.Windows.Application
 
         if (e.Args.Contains("--install-and-verify", StringComparer.OrdinalIgnoreCase))
         {
-            InstallerVerification result = global::EnputMethod.Installer.MainWindow.InstallAndVerify();
+            InstallerVerification result = global::EnputMethod.Installer.MainWindow.InstallAndVerifyOnStaWorker().GetAwaiter().GetResult();
             WriteVerificationLog(InstallVerificationLogFileName, result.Message);
             Environment.ExitCode = result.Succeeded ? 0 : 1;
             Shutdown(Environment.ExitCode);
@@ -87,6 +87,9 @@ public partial class App : System.Windows.Application
         }
         finally { Current.Shutdown(Environment.ExitCode); }
     }
+
+    internal static void WriteInstallVerificationLog(string message)
+        => WriteVerificationLog(InstallVerificationLogFileName, message);
 
     private static void WriteVerificationLog(string fileName, string message)
     {

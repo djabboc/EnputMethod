@@ -32,13 +32,28 @@ public partial class MainWindow : Window
     {
         InstallButton.IsEnabled = false;
         var progress = new Progress<InstallationProgress>(UpdateProgress);
-        InstallerVerification result = await Task.Run(() => InstallAndVerify(progress));
+        InstallerVerification result = await InstallAndVerifyOnStaWorker(progress);
+        App.WriteInstallVerificationLog(result.Message);
         UpdateProgress(new InstallationProgress(result.Succeeded ? 100 : 0, result.Succeeded ? "安装完成。" : "安装失败。"));
         MessageBox.Show(result.Message, "Enput Method");
         if (result.Succeeded) Close();
         else InstallButton.IsEnabled = true;
     }
 
+    internal static Task<InstallerVerification> InstallAndVerifyOnStaWorker(IProgress<InstallationProgress>? progress = null)
+        => RunOnStaAsync(() => InstallAndVerify(progress));
+    private static Task<T> RunOnStaAsync<T>(Func<T> action)
+    {
+        var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            try { completion.SetResult(action()); }
+            catch (Exception ex) { completion.SetException(ex); }
+        }) { IsBackground = true };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        return completion.Task;
+    }
     private void UpdateProgress(InstallationProgress progress)
     {
         StatusText.Text = progress.Stage;
@@ -111,6 +126,7 @@ public partial class MainWindow : Window
 
     private static string NativeStageText(int stage) => stage switch
     {
+        1 => "initializing STA COM for TSF registration",
         10 => "resolving the Program Files target",
         11 => "copying or registering the TSF COM DLL",
         20 => "creating the Windows TSF profile manager",

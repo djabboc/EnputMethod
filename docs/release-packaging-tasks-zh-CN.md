@@ -103,3 +103,10 @@ C:\Program Files\Enput Method\
 安装器现在把整个部署、词库准备、TSF 注册和验证视为单一互斥事务。若已有安装器正在运行，第二个实例会报告占用而不会并发写入 SQLite staging 文件。词库准备在 TSF 注册前完成，避免注册后已打开的宿主重新启动 Overlay 并锁住 `enput.db`。已有且能通过 schema/数据校验的静态数据库会保留，只补 `enput.db.ready`；检测到 ECDICT/CC-CEDICT 来源时不重复下载。无界面安装验证会返回真实进程退出码，`install-and-verify.ps1` 可以可靠拦截失败。
 
 本轮提升权限验证已通过：TSF DLL 已注册到 `C:\Program Files\Enput Method`，Overlay 与静态资源完整，SQLite 验证成功，Microsoft Pinyin 仍为默认输入法。新版卸载已通过真实 UAC 注销验证，并在不重启的情况下立即重新安装成功；运行文件被保留以兼容已打开宿主。
+## 8. TSF 注册线程模型修正（2026-08-30）
+
+WPF 的按钮不能直接用 `Task.Run` 执行 TSF 注册或注销，因为线程池是 MTA。发布包中的安装器、卸载器和无界面验证现在共用专用 STA 工作线程；原生函数检测到 STA 初始化失败会在任何注册前返回。安装失败会写入独立安装日志，并回滚 Enput 自己的 COM 与 CTF TIP 注册，避免输入法列表留下半安装项。键盘分类已存在是可重试的正常状态，immersive 分类不会阻断核心输入法安装。
+
+安装器的完成验证同时检查 Enput 的 COM DLL、中文 LanguageProfile 与核心键盘分类，避免只复制了 DLL 或只写入 Profile 时仍向用户报告安装成功。
+
+发布前运行 `scripts/run-regression.ps1 -Configuration Release`。它会构建本地包，执行 Overlay 测试，并以提升权限执行“安装 -> 无界面卸载验证 -> 立即重装验证”。卸载验证还会确认 Enput 专属注册已消失、共享运行文件和用户配置仍被保留、非 Enput 输入法项没有变化。

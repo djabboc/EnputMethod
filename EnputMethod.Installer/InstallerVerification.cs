@@ -15,6 +15,8 @@ internal sealed record InstallerVerification(bool Succeeded, string Message)
 internal static class InstallerVerifier
 {
     private const string TextServiceClsid = "{9C8945D5-01DF-48F4-A8DB-57E8B6A1EB10}";
+    private const string TextServiceProfileGuid = "{55F31085-E7CD-4886-BB80-1D61CE392107}";
+    private const string KeyboardCategoryGuid = "{34745C63-B2F0-4784-8B67-5E12C8701A31}";
     private static readonly string[] RequiredPayloadFiles =
     [
         "EnputMethod.Tsf.dll",
@@ -47,6 +49,14 @@ internal static class InstallerVerifier
         if (!installedDll.StartsWith(ProductLayout.InstallDirectory, StringComparison.OrdinalIgnoreCase) || !FilesMatch(sourceDll, installedDll))
         {
             return InstallerVerification.Failure("Installed TSF registration does not point to the verified Program Files product directory.");
+        }
+
+        string tipRoot = $@"SOFTWARE\Microsoft\CTF\TIP\{TextServiceClsid}";
+        using RegistryKey? profile = Registry.LocalMachine.OpenSubKey($@"{tipRoot}\LanguageProfile\0x00000804\{TextServiceProfileGuid}");
+        using RegistryKey? keyboardCategory = Registry.LocalMachine.OpenSubKey($@"{tipRoot}\Category\Category\{KeyboardCategoryGuid}\{TextServiceClsid}");
+        if (profile is null || keyboardCategory is null)
+        {
+            return InstallerVerification.Failure("Installed TSF profile or keyboard category is missing.");
         }
 
         string sourceOverlay = Path.Combine(payloadDirectory, "Overlay");

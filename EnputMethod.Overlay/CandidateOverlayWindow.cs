@@ -12,6 +12,8 @@ internal sealed class CandidateOverlayWindow : Window
     private const int GwlExStyle = -20;
     private const long WsExNoActivate = 0x08000000L;
     private const long WsExToolWindow = 0x00000080L;
+    private const int WmMouseActivate = 0x0021;
+    private const int MaNoActivate = 3;
     private readonly StackPanel _content = new();
     private readonly Border _frame;
     private string? _clientId;
@@ -139,6 +141,14 @@ internal sealed class CandidateOverlayWindow : Window
         IntPtr handle = new WindowInteropHelper(this).Handle;
         long style = GetWindowLongPtr(handle, GwlExStyle).ToInt64();
         SetWindowLongPtr(handle, GwlExStyle, new IntPtr(style | WsExNoActivate | WsExToolWindow));
+        ((HwndSource)PresentationSource.FromVisual(this)).AddHook(WindowProc);
+    }
+
+    private static IntPtr WindowProc(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (message != WmMouseActivate) return IntPtr.Zero;
+        handled = true;
+        return new IntPtr(MaNoActivate);
     }
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]

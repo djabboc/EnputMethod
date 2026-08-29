@@ -1660,8 +1660,10 @@ private:
         std::wstring lower = typed;
         ToLowerInPlace(&lower);
         std::vector<std::wstring> exactMatches;
+        std::vector<std::wstring> continuationMatches;
         std::vector<std::wstring> prefixMatches;
         std::unordered_set<std::wstring> exactKeys;
+        std::unordered_set<std::wstring> continuationKeys;
         std::unordered_set<std::wstring> prefixKeys;
         const auto appendUnique = [](std::vector<std::wstring>* candidates, std::unordered_set<std::wstring>* keys, const std::wstring& candidate) {
             const std::wstring lowerCandidate = Lowercase(candidate);
@@ -1675,11 +1677,16 @@ private:
             else appendUnique(&prefixMatches, &prefixKeys, word);
         }
         for (const SuggestionEntry& entry : LoadSuggestionDictionary()) {
+            const bool isExactTrigger = Lowercase(entry.text) == lower;
             std::vector<std::wstring> phrases = entry.phrases;
             if (entry.text.find(L' ') != std::wstring::npos) phrases.insert(phrases.begin(), entry.text);
             for (const std::wstring& phrase : phrases) {
                 const std::wstring candidate = Lowercase(phrase);
                 if (!candidate.starts_with(lower)) continue;
+                if (isExactTrigger && candidate.starts_with(lower + L" ")) {
+                    appendUnique(&continuationMatches, &continuationKeys, phrase);
+                    continue;
+                }
                 if (candidate == lower) appendUnique(&exactMatches, &exactKeys, phrase);
                 else appendUnique(&prefixMatches, &prefixKeys, phrase);
             }
@@ -1688,14 +1695,21 @@ private:
         if (configuration_.adaptiveCandidateRanking) {
             const enput::CandidateFrequencyMap& frequencies = CandidateFrequencies();
             enput::RankCandidatesByFrequency(&exactMatches, frequencies);
+            enput::RankCandidatesByFrequency(&continuationMatches, frequencies);
             enput::RankCandidatesByFrequency(&prefixMatches, frequencies);
         }
-        matches.reserve(exactMatches.size() + prefixMatches.size());
-        matches.insert(matches.end(), exactMatches.begin(), exactMatches.end());
-        matches.insert(matches.end(), prefixMatches.begin(), prefixMatches.end());
+        matches.reserve(exactMatches.size() + continuationMatches.size() + prefixMatches.size());
+        std::unordered_set<std::wstring> matchKeys;
+        const auto appendMatches = [&matches, &matchKeys](const std::vector<std::wstring>& source) {
+            for (const std::wstring& candidate : source) {
+                if (matchKeys.insert(Lowercase(candidate)).second) matches.push_back(candidate);
+            }
+        };
+        appendMatches(exactMatches);
+        appendMatches(continuationMatches);
+        appendMatches(prefixMatches);
         return matches;
     }
-
     std::vector<std::wstring> FindAssociatedCandidates(const std::wstring& committedText) {
         const std::wstring lower = Lowercase(committedText);
         const std::wstring phrasePrefix = lower + L" ";

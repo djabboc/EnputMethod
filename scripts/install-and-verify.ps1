@@ -29,3 +29,13 @@ foreach ($keyword in "fire", "water", "bucket", "cat", "dog") {
     if ($preferred.Count -ne 1) { throw "Installed Emoji dictionary is missing the preferred '$keyword' entry." }
 }
 Write-Host "Installation and system verification passed."
+
+$suggestionPath = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "Enput Method\suggestions.json"
+$suggestions = Get-Content -LiteralPath $suggestionPath -Raw | ConvertFrom-Json
+$can = @($suggestions.entries | Where-Object { $_.text -ieq "can" })
+if ($can.Count -ne 1 -or -not ($can[0].phrases -contains "can i help you?")) { throw "Installed suggestion dictionary is missing the Can I help you? continuation." }
+
+$translationPath = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "Enput Method\translations.json"
+$translations = Get-Content -LiteralPath $translationPath -Raw | ConvertFrom-Json
+$braces = @($translations.entries | Where-Object { $_.text -ieq "braces" })
+if ($braces.Count -ne 1 -or -not ($braces[0].translations.'zh-CN' -contains "牙套；牙齿矫正器")) { throw "Installed translation dictionary is missing the braces dental-appliance sense." }

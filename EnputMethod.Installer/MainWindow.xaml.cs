@@ -64,6 +64,7 @@ public partial class MainWindow : Window
         CopyDefaultFile("shortcut.json", destinationDirectory);
         CopyDefaultFile("dictionary.txt", destinationDirectory);
         CopyDefaultFile("suggestions.json", destinationDirectory);
+        MergeDefaultSuggestions(destinationDirectory);
         MergeDefaultEmojiDictionary(destinationDirectory);
         MergeDefaultTranslations(destinationDirectory);
         EnsureFullTranslationDictionary(destinationDirectory);
@@ -209,6 +210,83 @@ public partial class MainWindow : Window
         }
     }
 
+    private static void MergeDefaultSuggestions(string destinationDirectory)
+    {
+        string source = Path.Combine(AppContext.BaseDirectory, "suggestions.json");
+        string destination = Path.Combine(destinationDirectory, "suggestions.json");
+        if (!File.Exists(destination))
+        {
+            File.Copy(source, destination);
+            return;
+        }
+
+        try
+        {
+            JsonObject? bundled = JsonNode.Parse(File.ReadAllText(source)) as JsonObject;
+            JsonObject? installed = JsonNode.Parse(File.ReadAllText(destination)) as JsonObject;
+            if (bundled?["entries"] is not JsonArray bundledEntries || installed?["entries"] is not JsonArray installedEntries) return;
+
+            var entriesByText = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
+            foreach (JsonNode? entry in installedEntries)
+            {
+                if (entry is JsonObject objectEntry && objectEntry["text"]?.GetValue<string>() is string text && !string.IsNullOrWhiteSpace(text)) entriesByText.TryAdd(text, objectEntry);
+            }
+
+            bool changed = false;
+            foreach (JsonNode? entry in bundledEntries)
+            {
+                if (entry is not JsonObject bundledEntry || bundledEntry["text"]?.GetValue<string>() is not string text || string.IsNullOrWhiteSpace(text)) continue;
+                if (!entriesByText.TryGetValue(text, out JsonObject? installedEntry))
+                {
+                    JsonObject copy = (JsonObject)bundledEntry.DeepClone();
+                    installedEntries.Add(copy);
+                    entriesByText.Add(text, copy);
+                    changed = true;
+                    continue;
+                }
+                changed |= MergeSuggestionList(installedEntry, bundledEntry, "next");
+                changed |= MergeSuggestionList(installedEntry, bundledEntry, "phrases");
+                changed |= MergeSuggestionPriority(installedEntry, bundledEntry);
+            }
+            if (changed) File.WriteAllText(destination, installed.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (JsonException)
+        {
+            // Leave a user's malformed custom dictionary untouched.
+        }
+        catch (IOException)
+        {
+            // The input method can hold the file briefly while it starts.
+        }
+    }
+
+    private static bool MergeSuggestionList(JsonObject installedEntry, JsonObject bundledEntry, string propertyName)
+    {
+        if (bundledEntry[propertyName] is not JsonArray bundledValues) return false;
+        JsonArray installedValues = installedEntry[propertyName] as JsonArray ?? new JsonArray();
+        bool changed = !ReferenceEquals(installedEntry[propertyName], installedValues);
+        if (changed) installedEntry[propertyName] = installedValues;
+        var existingValues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (JsonNode? valueNode in installedValues)
+        {
+            if (valueNode is JsonValue value && value.TryGetValue<string>(out string? text) && !string.IsNullOrWhiteSpace(text)) existingValues.Add(text);
+        }
+        foreach (JsonNode? valueNode in bundledValues)
+        {
+            if (valueNode is not JsonValue value || !value.TryGetValue<string>(out string? text) || string.IsNullOrWhiteSpace(text) || !existingValues.Add(text)) continue;
+            installedValues.Add(text);
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static bool MergeSuggestionPriority(JsonObject installedEntry, JsonObject bundledEntry)
+    {
+        if (bundledEntry["priority"] is not JsonValue bundledValue || !bundledValue.TryGetValue<int>(out int bundledPriority)) return false;
+        if (installedEntry["priority"] is JsonValue installedValue && installedValue.TryGetValue<int>(out int installedPriority) && installedPriority >= bundledPriority) return false;
+        installedEntry["priority"] = bundledPriority;
+        return true;
+    }
     private static void MergeDefaultEmojiDictionary(string destinationDirectory)
     {
         string source = Path.Combine(AppContext.BaseDirectory, "emoji.json");
@@ -320,7 +398,10 @@ public partial class MainWindow : Window
         {
             JsonObject? bundled = JsonNode.Parse(File.ReadAllText(source)) as JsonObject;
             JsonObject? installed = JsonNode.Parse(File.ReadAllText(destination)) as JsonObject;
-            if (bundled?["entries"] is not JsonArray bundledEntries || installed?["entries"] is not JsonArray installedEntries) return;
+            if (bundled?["entries"] is not JsonArray bundledEntries || installed is null) return;
+
+            bool changed = MigrateLegacyTranslations(installed);
+            if (installed["entries"] is not JsonArray installedEntries) return;
 
             var existingWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (JsonNode? entry in installedEntries)
@@ -328,7 +409,6 @@ public partial class MainWindow : Window
                 if (entry is JsonObject objectEntry && objectEntry["text"]?.GetValue<string>() is string text) existingWords.Add(text);
             }
 
-            bool changed = false;
             foreach (JsonNode? entry in bundledEntries)
             {
                 if (entry is not JsonObject objectEntry || objectEntry["text"]?.GetValue<string>() is not string text || !existingWords.Add(text)) continue;
@@ -347,6 +427,25 @@ public partial class MainWindow : Window
         }
     }
 
+    private static bool MigrateLegacyTranslations(JsonObject installed)
+    {
+        if (installed["entries"] is JsonArray) return false;
+
+        var entries = new JsonArray();
+        foreach ((string text, JsonNode? node) in installed)
+        {
+            if (node is not JsonObject legacyEntry || string.IsNullOrWhiteSpace(text)) continue;
+            var entry = new JsonObject { ["text"] = text };
+            if (legacyEntry["partOfSpeech"] is JsonValue partOfSpeech && partOfSpeech.TryGetValue<string>(out string? part) && !string.IsNullOrWhiteSpace(part)) entry["partOfSpeech"] = new JsonArray(part);
+            if (legacyEntry["chinese"] is JsonValue chinese && chinese.TryGetValue<string>(out string? translation) && !string.IsNullOrWhiteSpace(translation)) entry["translations"] = new JsonObject { ["zh-CN"] = new JsonArray(translation) };
+            if (legacyEntry["english"] is JsonValue english && english.TryGetValue<string>(out string? example) && !string.IsNullOrWhiteSpace(example)) entry["examples"] = new JsonArray(new JsonObject { ["text"] = example });
+            if (legacyEntry["source"] is JsonValue source && source.TryGetValue<string>(out string? sourceText) && !string.IsNullOrWhiteSpace(sourceText)) entry["source"] = sourceText;
+            entries.Add(entry);
+        }
+        installed.Clear();
+        installed["entries"] = entries;
+        return true;
+    }
     private static void EnsureFullTranslationDictionary(string destinationDirectory)
     {
         string destination = Path.Combine(destinationDirectory, "translations.ecdict.jsonl");

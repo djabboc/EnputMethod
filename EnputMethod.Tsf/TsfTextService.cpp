@@ -3,6 +3,7 @@
 #include <dwrite.h>
 #include <textstor.h>
 #include <msctf.h>
+#include <winsqlite/winsqlite3.h>
 #include "CandidateRanking.h"
 #include "CandidateSelection.h"
 #include "JsonObjectReader.h"
@@ -652,7 +653,7 @@ void MergeTranslationEntry(TranslationEntry* target, const TranslationEntry& sou
     }
 }
 
-const TranslationEntry* FindTranslation(const std::wstring& text) {
+const TranslationEntry* FindTranslationFromLegacyJson(const std::wstring& text) {
     const std::wstring lower = Lowercase(text);
     TranslationEntry merged;
     bool found = false;
@@ -667,6 +668,141 @@ const TranslationEntry* FindTranslation(const std::wstring& text) {
     if (customEntry != entries.end()) merge(&*customEntry);
     merge(FindTranslationInJsonLines(FullTranslationDictionaryPath(), lower));
     merge(FindTranslationInJsonLines(CcCedictTranslationDictionaryPath(), lower));
+    if (!found) return nullptr;
+    static TranslationEntry result;
+    result = std::move(merged);
+    return &result;
+}
+
+// The text service reads lexicon content exclusively from the installed SQLite database.
+// JSON remains limited to user settings and theme files.
+std::wstring LexiconDatabasePath() {
+    const std::wstring directory = UserDataDirectory();
+    return directory.empty() ? std::wstring{} : directory + L"\\enput.db";
+}
+
+class SqliteStatement final {
+public:
+    SqliteStatement(sqlite3* database, const wchar_t* sql) {
+        if (database) sqlite3_prepare16_v2(database, sql, -1, &statement_, nullptr);
+    }
+    ~SqliteStatement() { if (statement_) sqlite3_finalize(statement_); }
+    explicit operator bool() const { return statement_ != nullptr; }
+    void Bind(int index, const std::wstring& value) const { sqlite3_bind_text16(statement_, index, value.c_str(), -1, SQLITE_TRANSIENT); }
+    bool Next() const { return sqlite3_step(statement_) == SQLITE_ROW; }
+    std::wstring Text(int index) const {
+        const wchar_t* value = static_cast<const wchar_t*>(sqlite3_column_text16(statement_, index));
+        const int bytes = sqlite3_column_bytes16(statement_, index);
+        return value && bytes > 0 ? std::wstring(value, static_cast<size_t>(bytes / sizeof(wchar_t))) : std::wstring{};
+    }
+    int Int(int index) const { return sqlite3_column_int(statement_, index); }
+private:
+    sqlite3_stmt* statement_{};
+};
+
+class LexiconDatabase final {
+public:
+    ~LexiconDatabase() { Close(); }
+    sqlite3* Open() {
+        const std::wstring path = LexiconDatabasePath();
+        WIN32_FILE_ATTRIBUTE_DATA attributes{};
+        if (path.empty() || !GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attributes)) { Close(); return nullptr; }
+        if (database_ && path == path_ && CompareFileTime(&attributes.ftLastWriteTime, &attributes_.ftLastWriteTime) == 0 &&
+            attributes.nFileSizeHigh == attributes_.nFileSizeHigh && attributes.nFileSizeLow == attributes_.nFileSizeLow) return database_;
+        Close();
+        if (sqlite3_open16(path.c_str(), &database_) != SQLITE_OK) { Close(); return nullptr; }
+        sqlite3_busy_timeout(database_, 250);
+        path_ = path;
+        attributes_ = attributes;
+        return database_;
+    }
+private:
+    void Close() { if (database_) sqlite3_close_v2(database_); database_ = nullptr; path_.clear(); }
+    sqlite3* database_{};
+    std::wstring path_;
+    WIN32_FILE_ATTRIBUTE_DATA attributes_{};
+};
+
+LexiconDatabase& Lexicon() { static LexiconDatabase database; return database; }
+std::wstring PrefixLimit(const std::wstring& prefix) { return prefix + static_cast<wchar_t>(0xffff); }
+
+std::vector<std::wstring> QueryWords(const std::wstring& prefix) {
+    SqliteStatement query(Lexicon().Open(), L"SELECT text FROM words WHERE normalized >= ?1 AND normalized < ?2 ORDER BY ordinal;");
+    if (!query) return {};
+    query.Bind(1, prefix); query.Bind(2, PrefixLimit(prefix));
+    std::vector<std::wstring> results;
+    while (query.Next()) results.push_back(query.Text(0));
+    return results;
+}
+
+struct StoredSuggestion { std::wstring trigger; std::wstring candidate; int kind = 0; };
+
+std::vector<StoredSuggestion> QuerySuggestionPrefixes(const std::wstring& prefix) {
+    SqliteStatement query(Lexicon().Open(), L"SELECT trigger, kind, candidate FROM suggestions WHERE kind = 1 AND candidate >= ?1 AND candidate < ?2 ORDER BY priority DESC, ordinal;");
+    if (!query) return {};
+    query.Bind(1, prefix); query.Bind(2, PrefixLimit(prefix));
+    std::vector<StoredSuggestion> results;
+    while (query.Next()) results.push_back({ query.Text(0), query.Text(2), query.Int(1) });
+    return results;
+}
+
+std::vector<StoredSuggestion> QuerySuggestions(const std::wstring& trigger) {
+    SqliteStatement query(Lexicon().Open(), L"SELECT trigger, kind, candidate FROM suggestions WHERE trigger = ?1 ORDER BY priority DESC, kind, ordinal;");
+    if (!query) return {};
+    query.Bind(1, trigger);
+    std::vector<StoredSuggestion> results;
+    while (query.Next()) results.push_back({ query.Text(0), query.Text(2), query.Int(1) });
+    return results;
+}
+
+struct StoredEmoji { std::wstring emoji; std::vector<std::wstring> keywords; int priority = 0; bool exactKeyword = false; };
+
+std::vector<StoredEmoji> QueryEmoji(const std::wstring& prefix) {
+    SqliteStatement query(Lexicon().Open(), L"SELECT k.emoji, k.keyword, k.normalized, e.priority FROM emoji_keyword k JOIN emoji e ON e.emoji = k.emoji WHERE k.emoji IN (SELECT emoji FROM emoji_keyword WHERE normalized >= ?1 AND normalized < ?2) ORDER BY e.priority DESC, k.emoji, k.normalized;");
+    if (!query) return {};
+    query.Bind(1, prefix); query.Bind(2, PrefixLimit(prefix));
+    std::vector<StoredEmoji> results;
+    while (query.Next()) {
+        const std::wstring emoji = query.Text(0);
+        auto entry = std::find_if(results.begin(), results.end(), [&emoji](const StoredEmoji& value) { return value.emoji == emoji; });
+        if (entry == results.end()) { results.push_back({ emoji, {}, query.Int(3), false }); entry = std::prev(results.end()); }
+        entry->keywords.push_back(query.Text(1));
+        if (query.Text(2) == prefix) entry->exactKeyword = true;
+    }
+    return results;
+}
+
+const TranslationEntry* FindTranslation(const std::wstring& text) {
+    const std::wstring key = Lowercase(text);
+    SqliteStatement entries(Lexicon().Open(), L"SELECT source, text FROM translation_entry WHERE key = ?1 ORDER BY rank;");
+    if (!entries) return nullptr;
+    entries.Bind(1, key);
+    TranslationEntry merged;
+    bool found = false;
+    const auto appendUnique = [](std::vector<std::wstring>* values, const std::wstring& value) {
+        if (!value.empty() && std::none_of(values->begin(), values->end(), [&value](const std::wstring& existing) { return Lowercase(existing) == Lowercase(value); })) values->push_back(value);
+    };
+    while (entries.Next()) {
+        const std::wstring source = entries.Text(0);
+        if (merged.text.empty()) merged.text = enput::NormalizeDictionaryText(entries.Text(1));
+        SqliteStatement parts(Lexicon().Open(), L"SELECT value FROM translation_part WHERE key = ?1 AND source = ?2 ORDER BY ordinal;");
+        if (parts) { parts.Bind(1, key); parts.Bind(2, source); while (parts.Next()) appendUnique(&merged.partsOfSpeech, enput::NormalizeDictionaryText(parts.Text(0))); }
+        SqliteStatement meanings(Lexicon().Open(), L"SELECT language, value FROM translation_meaning WHERE key = ?1 AND source = ?2 ORDER BY language, ordinal;");
+        if (meanings) {
+            meanings.Bind(1, key); meanings.Bind(2, source);
+            while (meanings.Next()) {
+                const std::wstring language = meanings.Text(0);
+                auto existing = std::find_if(merged.translations.begin(), merged.translations.end(), [&language](const auto& item) { return item.first == language; });
+                if (existing == merged.translations.end()) { merged.translations.emplace_back(language, std::vector<std::wstring>{}); existing = std::prev(merged.translations.end()); }
+                appendUnique(&existing->second, enput::NormalizeDictionaryText(meanings.Text(1)));
+            }
+        }
+        if (merged.example.empty()) {
+            SqliteStatement example(Lexicon().Open(), L"SELECT value FROM translation_example WHERE key = ?1 AND source = ?2 ORDER BY ordinal LIMIT 1;");
+            if (example) { example.Bind(1, key); example.Bind(2, source); if (example.Next()) merged.example = enput::NormalizeDictionaryText(example.Text(0)); }
+        }
+        found = true;
+    }
     if (!found) return nullptr;
     static TranslationEntry result;
     result = std::move(merged);
@@ -1724,26 +1860,21 @@ private:
             const std::wstring lowerCandidate = Lowercase(candidate);
             if (keys->insert(lowerCandidate).second) candidates->push_back(candidate);
         };
-        for (const std::wstring& word : LoadDictionary()) {
+        for (const std::wstring& word : QueryWords(lower)) {
             std::wstring candidate = word;
             ToLowerInPlace(&candidate);
             if (!candidate.starts_with(lower)) continue;
             if (candidate == lower) appendUnique(&exactMatches, &exactKeys, word);
             else appendUnique(&prefixMatches, &prefixKeys, word);
         }
-        for (const SuggestionEntry& entry : LoadSuggestionDictionary()) {
-            const bool isExactTrigger = Lowercase(entry.text) == lower;
-            std::vector<std::wstring> phrases = entry.phrases;
-            if (entry.text.find(L' ') != std::wstring::npos) phrases.insert(phrases.begin(), entry.text);
-            for (const std::wstring& phrase : phrases) {
-                const std::wstring candidate = Lowercase(phrase);
-                if (!candidate.starts_with(lower)) continue;
-                if (isExactTrigger && candidate.starts_with(lower + L" ")) {
-                    appendUnique(&continuationMatches, &continuationKeys, phrase);
-                    continue;
-                }
-                if (candidate == lower) appendUnique(&exactMatches, &exactKeys, phrase);
-                else appendUnique(&prefixMatches, &prefixKeys, phrase);
+        for (const StoredSuggestion& entry : QuerySuggestionPrefixes(lower)) {
+            const std::wstring candidate = Lowercase(entry.candidate);
+            if (Lowercase(entry.trigger) == lower && candidate.starts_with(lower + L" ")) {
+                appendUnique(&continuationMatches, &continuationKeys, entry.candidate);
+            } else if (candidate == lower) {
+                appendUnique(&exactMatches, &exactKeys, entry.candidate);
+            } else {
+                appendUnique(&prefixMatches, &prefixKeys, entry.candidate);
             }
         }
         std::vector<std::wstring> matches;
@@ -1774,12 +1905,10 @@ private:
             const std::wstring lowerCandidate = Lowercase(candidate);
             if (keys.insert(lowerCandidate).second) matches.push_back(candidate);
         };
-        for (const SuggestionEntry& entry : LoadSuggestionDictionary()) {
-            if (Lowercase(entry.text) != lower) continue;
-            for (const std::wstring& candidate : entry.next) appendUnique(candidate);
-            for (const std::wstring& candidate : entry.phrases) {
-                const std::wstring lowerCandidate = Lowercase(candidate);
-                if (lowerCandidate.starts_with(phrasePrefix)) appendUnique(candidate.substr(committedText.size() + 1));
+        for (const StoredSuggestion& entry : QuerySuggestions(lower)) {
+            if (entry.kind == 0) appendUnique(entry.candidate);
+            else if (const std::wstring lowerCandidate = Lowercase(entry.candidate); lowerCandidate.starts_with(phrasePrefix)) {
+                appendUnique(entry.candidate.substr(committedText.size() + 1));
             }
         }
         if (matches.empty()) {
@@ -1800,17 +1929,14 @@ private:
 
         const std::wstring lower = Lowercase(typed);
         std::vector<Match> matches;
-        for (const EmojiEntry& entry : LoadEmojiDictionary()) {
-            const bool matchesKeyword = std::any_of(entry.keywords.begin(), entry.keywords.end(), [&lower](const std::wstring& keyword) { return Lowercase(keyword).starts_with(lower); });
-            if (!matchesKeyword || std::any_of(matches.begin(), matches.end(), [&entry](const Match& existing) { return existing.emoji == entry.emoji; })) continue;
+        for (const StoredEmoji& entry : QueryEmoji(lower)) {
             std::wstring candidate = entry.emoji;
             candidate += static_cast<wchar_t>(0x1F);
             for (size_t index = 0; index < entry.keywords.size(); ++index) {
                 if (index) candidate += L", ";
                 candidate += entry.keywords[index];
             }
-            const bool exactKeyword = std::any_of(entry.keywords.begin(), entry.keywords.end(), [&lower](const std::wstring& keyword) { return Lowercase(keyword) == lower; });
-            matches.push_back({ entry.emoji, std::move(candidate), entry.priority, exactKeyword });
+            matches.push_back({ entry.emoji, std::move(candidate), entry.priority, entry.exactKeyword });
         }
         std::stable_sort(matches.begin(), matches.end(), [](const Match& left, const Match& right) {
             if (left.priority != right.priority) return left.priority > right.priority;

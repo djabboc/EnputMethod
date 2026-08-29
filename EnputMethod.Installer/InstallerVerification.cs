@@ -17,7 +17,7 @@ internal static class InstallerVerifier
     private const string TextServiceClsid = "{9C8945D5-01DF-48F4-A8DB-57E8B6A1EB10}";
     private static readonly string[] RequiredPackageFiles =
     [
-        "EnputMethod.Tsf.dll", "config.json", "shortcut.json", "dictionary.txt", "suggestions.json", "emoji.json", "translations.json",
+        "EnputMethod.Tsf.dll", "config.json", "shortcut.json", "dictionary.txt", "enput.seed.db",
         "Overlay\\EnputMethod.Overlay.exe", "Overlay\\EnputMethod.Overlay.dll", "Overlay\\EnputMethod.Overlay.deps.json", "Overlay\\EnputMethod.Overlay.runtimeconfig.json", "Overlay\\EmojiAssets\\1f600.png", "Overlay\\EmojiAssets\\2764.png", "Overlay\\TWEMOJI-LICENSE.txt",
         "themes\\dark.json", "themes\\eye-care.json", "themes\\light.json", "themes\\paper.json",
     ];

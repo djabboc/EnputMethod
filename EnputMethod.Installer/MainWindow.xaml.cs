@@ -68,12 +68,10 @@ public partial class MainWindow : Window
         MigrateDefaultFontSize(destinationDirectory);
         CopyDefaultFile("shortcut.json", destinationDirectory);
         CopyDefaultFile("dictionary.txt", destinationDirectory);
-        CopyDefaultFile("suggestions.json", destinationDirectory);
-        MergeDefaultSuggestions(destinationDirectory);
-        MergeDefaultEmojiDictionary(destinationDirectory);
-        MergeDefaultTranslations(destinationDirectory);
+        LexiconDatabaseBuilder.CreateOrMigrate(destinationDirectory, AppContext.BaseDirectory);
         EnsureFullTranslationDictionary(destinationDirectory);
         EnsureCcCedictEnglishIndex(destinationDirectory);
+        LexiconDatabaseBuilder.ImportDownloadedTranslations(destinationDirectory);
         CopyDefaultThemes(destinationDirectory);
     }
 
@@ -484,7 +482,7 @@ public partial class MainWindow : Window
     private static void EnsureCcCedictEnglishIndex(string destinationDirectory)
     {
         string destination = Path.Combine(destinationDirectory, "translations.cc-cedict.jsonl");
-        if (File.Exists(destination) && new FileInfo(destination).Length > 1024)
+        if (File.Exists(Path.Combine(destinationDirectory, "enput.db.cc-cedict.ready")))
         {
             try
             {
@@ -585,7 +583,7 @@ public partial class MainWindow : Window
     private static void EnsureFullTranslationDictionary(string destinationDirectory)
     {
         string destination = Path.Combine(destinationDirectory, "translations.ecdict.jsonl");
-        if (File.Exists(destination) && new FileInfo(destination).Length > 1024) return;
+        if (File.Exists(Path.Combine(destinationDirectory, "enput.db.ecdict.ready"))) return;
 
         string downloadedCsv = destination + ".download";
         string pendingDictionary = destination + ".pending";

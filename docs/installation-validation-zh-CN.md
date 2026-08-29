@@ -10,11 +10,17 @@
 
 ## 2. 安装
 
-1. 代理启动安装器，但不代替用户确认 UAC。
-2. 用户在 Windows 管理员提示中选择“是”，并在安装器中点击“安装”。
-3. 用户报告“安装成功”或完整的 HRESULT 错误码。
-4. 成功后，代理读取 HKLM CLSID `InprocServer32` 默认值，确认它指向版本化 DLL 路径。
-5. 比较已安装 DLL 与安装器输出 DLL 的 SHA-256，二者必须一致。
+每次验证默认执行无人值守安装：
+
+```powershell
+.\scripts\install-and-verify.ps1 -Configuration Release
+```
+
+脚本以管理员权限启动安装器的命令行模式，不显示安装器窗口，也不需要点击“安装”。非管理员终端仍可能显示一次 Windows UAC 提示。
+
+该模式会检查安装包完整性、注册 TSF DLL，然后逐个比较已注册 DLL 和 Program Files 中 Overlay 文件的 SHA-256。失败时会将详细异常写入 `%LOCALAPPDATA%\Enput Method\install-verification.log`，并在脚本终端中输出。
+
+需要观察安装器窗口或人工排查时，再直接运行 `EnputMethod.Installer.exe` 并点击“安装”。
 
 若安装失败，先检查以下事实，不要直接重复安装：
 

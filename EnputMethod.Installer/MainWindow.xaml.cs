@@ -21,28 +21,29 @@ public partial class MainWindow : Window
 
     private void Install_Click(object sender, RoutedEventArgs e)
     {
-        string message;
-        try
-        {
-            int hr = InvokeNativeInstaller();
-            if (hr >= 0)
-            {
-                DeployOverlay();
-                EnsureUserConfiguration();
-            }
-            message = hr >= 0
-                ? "安装完成。请切换到其他输入法后再切回 Enput Method。"
-                : $"安装失败 (0x{hr:X8})。";
-        }
-        catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException or IOException or UnauthorizedAccessException)
-        {
-            message = "安装程序文件不完整、版本不匹配，或 Overlay 文件仍被占用。请关闭 Enput Method 后重试。";
-        }
-
-        MessageBox.Show(message, "Enput Method");
+        InstallerVerification result = InstallAndVerify();
+        MessageBox.Show(result.Message, "Enput Method");
         Close();
     }
 
+    internal static InstallerVerification InstallAndVerify()
+    {
+        InstallerVerification package = InstallerVerifier.VerifyPackage(AppContext.BaseDirectory);
+        if (!package.Succeeded) return package;
+        try
+        {
+            int hr = InvokeNativeInstaller();
+            if (hr < 0) return InstallerVerification.Failure($"Native TSF installation failed (0x{hr:X8}).");
+            DeployOverlay();
+            EnsureUserConfiguration();
+            return InstallerVerifier.VerifySystemInstallation(AppContext.BaseDirectory);
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException or IOException or UnauthorizedAccessException)
+        {
+            return InstallerVerification.Failure("Installation files are incomplete, incompatible, or still in use.");
+        }
+
+    }
     private static int InvokeNativeInstaller()
     {
         string dllPath = Path.Combine(AppContext.BaseDirectory, "EnputMethod.Tsf.dll");

@@ -27,6 +27,9 @@
   "fontFamily": "Segoe UI",
   "fontSize": 18,
   "opacity": 1.0,
+  "translationLanguages": ["en", "zh-CN"],
+  "translationWindowWidth": 380,
+  "translationWindowHeight": 280,
   "theme": "dark"
 }
 ```
@@ -38,6 +41,8 @@
 - `adaptiveCandidateRanking`：是否根据当前用户的历史选词频率调整候选排序。默认 `true`；设为 `false` 后保持词典顺序，且不再记录新的选择频率。
 - `fontFamily` 与 `fontSize`：候选窗和翻译窗字体；`fontSize` 单位为点（pt），默认 `18`。WPF Overlay 会按 96/72 换算为设备无关像素，因此 18pt 实际渲染为 24 DIP。
 - `opacity`：范围为 `0.2` 到 `1.0`。
+- `translationLanguages`：翻译窗显示的语言代码数组。默认仅为 `"en"` 与 `"zh-CN"`；添加 `"ja-JP"` 后才显示随词典提供的日文映射。例如可设为 `["en", "zh-CN", "ja-JP"]`。未列出的语言不会显示。
+- `translationWindowWidth` 与 `translationWindowHeight`：翻译窗初始宽高，合法范围分别为 `260`-`1200` 和 `160`-`900` WPF DIP。可以直接编辑；也可以拖动翻译窗任意边或角，停止拖动后会自动写回这两个值。
 - `theme`：`dark`、`light`、`eye-care` 或 `paper`。
 
 旧版 `conf.json` 会被兼容读取；如为旧版默认内容，安装时会升级为新的 `config.json`。JSON 文件可以保存为带或不带 UTF-8 BOM 的格式。
@@ -62,7 +67,7 @@ there
 
 主题目录为 `%LOCALAPPDATA%\Enput Method\themes`，包含四个默认文件：`dark.json`、`light.json`、`eye-care.json`、`paper.json`。主题文件可控制背景、前景、首选项颜色、边框、圆角、内边距、行高和阴影尺寸。主题修改会在下一次显示候选窗时读取。
 
-翻译窗使用独立的主题字段：`translationBackground`、`translationForeground`、`translationTitleForeground`、`translationBorder`、`translationBorderWidth`、`translationCornerRadius`、`translationPadding`、`translationWidth`、`translationMaxHeight`、`translationScrollbarTrack` 和 `translationScrollbarThumb`。`translationMaxHeight` 低于完整释义高度时会显示滚动条；默认深色主题设置为 `160`，便于验证长释义的滚动。安装更新只会补齐主题中缺失的新字段，已有值不会被覆盖。
+翻译窗使用独立的主题字段：`translationBackground`、`translationForeground`、`translationTitleForeground`、`translationBorder`、`translationBorderWidth`、`translationCornerRadius`、`translationPadding`、`translationScrollbarTrack` 和 `translationScrollbarThumb`。窗口尺寸由 `config.json` 的 `translationWindowWidth` 与 `translationWindowHeight` 统一控制并持久化；旧主题中的 `translationWidth` 与 `translationMaxHeight` 仅为旧版本兼容字段，不再决定实际窗口大小。翻译正文使用只读富文本 `FlowDocument`，词性、语言标签、义项和例句分别渲染，长内容可以滚动；窗口保持不抢输入焦点。
 
 
 ## 2026-08-29 UI and Data Corrections
@@ -71,3 +76,10 @@ there
 - Emoji candidates use installed Twemoji color assets and an expanded catalog. The installer merges the supplied keyword and priority updates without replacing user-added entries. The C++ JSON reader now combines escaped UTF-16 surrogate pairs, so an installed entry such as `"emoji":"\\uD83D\\uDD25"` is read as `🔥`.
 - Full ECDICT translations may store line breaks as literal `\\n` or `\\r\\n`. The input service now converts those markers to real line breaks before the WPF translation window displays them. `block` is a regression example.
 - Candidate pager placement is a three-region layout: previous button at the left frame edge, page text centered in available space, next button at the right frame edge. Its hover state is enabled only when movement is available.
+
+## 2026-08-29 翻译窗口与数据修正
+
+- 词典的 `source` 字段不再出现在翻译正文。ECDICT 的 MIT 信息和 CC-CEDICT 的 CC BY-SA 4.0 署名仍被保留；后者写入 `%LOCALAPPDATA%\Enput Method\CC-CEDICT-ATTRIBUTION.txt`，不能删除。
+- 释义导入会清除已知的 ECDICT 模板标记 `{{or}}`，并将行首 `n`、`v`、`vt` 等已知词性前缀规范成 `n.`、`v.`、`vt.`。已有句点不重复添加，其他标点不作通用删除。
+- `hug` 在完整 ECDICT 中本来就有英中释义；此前只见 `source` 是 UI 把来源作为正文显示导致的误判，不是数据缺失。更新后应关闭并重新打开目标宿主，再按 F3 验证。
+- `🪚` 是 Unicode `U+1FA9A`。Enput 提交的码点已通过回归；VS Code 内显示方框表示当前编辑器字体或 Windows Emoji 字体没有该字形，输入法不能替目标编辑器补字形。Saint Helena 使用区域指示符 `S`、`H`，即 `🇸🇭`；瑞士是 `🇨🇭`。两者均增加了码点校验，避免通过旗帜外观误判。

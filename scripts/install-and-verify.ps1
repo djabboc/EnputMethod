@@ -39,6 +39,14 @@ $translationPath = Join-Path ([Environment]::GetFolderPath([Environment+SpecialF
 $translations = Get-Content -LiteralPath $translationPath -Raw | ConvertFrom-Json
 $braces = @($translations.entries | Where-Object { $_.text -ieq "braces" })
 if ($braces.Count -ne 1 -or -not ($braces[0].translations.'zh-CN' -contains "牙套；牙齿矫正器")) { throw "Installed translation dictionary is missing the braces dental-appliance sense." }
+$packageConfigPath = Join-Path (Split-Path -Parent $installer) "config.json"
+$packageConfig = Get-Content -Raw -LiteralPath $packageConfigPath | ConvertFrom-Json
+if ($packageConfig.translationLanguages -notcontains "en" -or $packageConfig.translationLanguages -notcontains "zh-CN" -or $packageConfig.translationLanguages -contains "ja-JP") { throw "Packaged default configuration must enable English and Chinese translations only." }
+if ($packageConfig.translationWindowWidth -lt 260 -or $packageConfig.translationWindowHeight -lt 160) { throw "Packaged translation window dimensions are invalid." }
+$saw = @($emoji.entries | Where-Object { $_.keywords -contains "saw" })
+if ($saw.Count -lt 1 -or $saw[0].emoji -ne ([char]::ConvertFromUtf32(0x1FA9A))) { throw "Installed saw Emoji must be Unicode U+1FA9A." }
+$saintHelena = @($emoji.entries | Where-Object { $_.keywords -contains "helena" })
+if ($saintHelena.Count -ne 1 -or $saintHelena[0].emoji -ne (([char]::ConvertFromUtf32(0x1F1F8)) + ([char]::ConvertFromUtf32(0x1F1ED)))) { throw "Installed Saint Helena flag must use regional indicators S and H." }
 $ccCedictIndexPath = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "Enput Method\translations.cc-cedict.jsonl"
 if (-not (Test-Path -LiteralPath $ccCedictIndexPath) -or (Get-Item -LiteralPath $ccCedictIndexPath).Length -le 1024) { throw "CC-CEDICT supplemental translation index was not installed." }
 if (-not (Select-String -LiteralPath $ccCedictIndexPath -SimpleMatch '"key":"braces"' -Quiet)) { throw "CC-CEDICT supplemental translation index is missing braces." }

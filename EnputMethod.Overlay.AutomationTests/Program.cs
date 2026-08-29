@@ -1,6 +1,7 @@
 using EnputMethod.Overlay;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Interop;
@@ -21,6 +22,7 @@ internal static class Program
             VerifyCandidateWindowWarmup();
             VerifyPointFontSizeUsesWpfDips();
             VerifyPaginationLayoutAndHover();
+            VerifyTranslationWindowUsesRichTextAndConfiguredSize();
             Console.WriteLine("Overlay foreground automation tests passed.");
             return 0;
         }
@@ -146,6 +148,38 @@ internal static class Program
             Assert(Grid.GetColumn(previous) == 0 && Grid.GetColumn(next) == 3, "Previous and next controls must stay at opposite candidate-frame edges.");
             next.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = Mouse.MouseEnterEvent });
             Assert(next.Background is SolidColorBrush { Color: var color } && color == (Color)ColorConverter.ConvertFromString("#2c597a"), "An available navigation button must highlight on hover.");
+        }
+        finally
+        {
+            overlay.Close();
+        }
+    }
+    private static void VerifyTranslationWindowUsesRichTextAndConfiguredSize()
+    {
+        var overlay = new TranslationOverlayWindow();
+        try
+        {
+            overlay.ShowTranslation("translation-test", new TranslationView
+            {
+                Title = "braces",
+                Content = "noun\nen: n. a dental appliance\nzh-CN: 牙套\nExample: She wears braces.",
+                Theme = new OverlayTheme { FontSize = 18, TranslationWindowWidth = 460, TranslationWindowHeight = 340 },
+            }, null);
+            Assert(overlay.Width == 460 && overlay.Height == 340, "Translation window must use the configured persistent dimensions.");
+            var frame = (Border)overlay.Content;
+            var panel = (Grid)frame.Child;
+            var content = (RichTextBox)panel.Children[1];
+            Assert(content.Document.Blocks.Count == 4, "Translation content must be rendered as structured FlowDocument paragraphs.");
+            Assert(content.Document.Blocks.OfType<Paragraph>().Any(paragraph => paragraph.Inlines.OfType<Run>().Any(run => run.Text == "zh-CN: ")), "Language labels must remain semantic rich-text runs.");
+            overlay.Width = 520;
+            overlay.Height = 360;
+            overlay.ShowTranslation("translation-test", new TranslationView
+            {
+                Title = "braces",
+                Content = "en: n. a dental appliance",
+                Theme = new OverlayTheme { TranslationWindowWidth = 460, TranslationWindowHeight = 340 },
+            }, null);
+            Assert(overlay.Width == 520 && overlay.Height == 360, "A user-resized translation window must not be reset by a stale service message.");
         }
         finally
         {

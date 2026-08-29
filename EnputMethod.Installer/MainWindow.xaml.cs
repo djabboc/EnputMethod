@@ -64,6 +64,7 @@ public partial class MainWindow : Window
         Directory.CreateDirectory(destinationDirectory);
         MigrateLegacyConfiguration(destinationDirectory);
         CopyDefaultFile("config.json", destinationDirectory);
+        MergeMissingConfigurationFields(destinationDirectory);
         MigrateDefaultFontSize(destinationDirectory);
         CopyDefaultFile("shortcut.json", destinationDirectory);
         CopyDefaultFile("dictionary.txt", destinationDirectory);
@@ -262,6 +263,35 @@ public partial class MainWindow : Window
         catch (IOException)
         {
             // The input method can hold the file briefly while it starts.
+        }
+    }
+
+    private static void MergeMissingConfigurationFields(string destinationDirectory)
+    {
+        string source = Path.Combine(AppContext.BaseDirectory, "config.json");
+        string destination = Path.Combine(destinationDirectory, "config.json");
+        try
+        {
+            JsonObject? bundled = JsonNode.Parse(File.ReadAllText(source)) as JsonObject;
+            JsonObject? installed = JsonNode.Parse(File.ReadAllText(destination)) as JsonObject;
+            if (bundled is null || installed is null) return;
+
+            bool changed = false;
+            foreach ((string key, JsonNode? value) in bundled)
+            {
+                if (installed.ContainsKey(key)) continue;
+                installed[key] = value?.DeepClone();
+                changed = true;
+            }
+            if (changed) File.WriteAllText(destination, installed.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (JsonException)
+        {
+            // Keep malformed user configuration untouched.
+        }
+        catch (IOException)
+        {
+            // The text service can read configuration while installation is running.
         }
     }
 

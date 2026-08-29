@@ -45,6 +45,14 @@ void VerifyEmojiJsonEscapes() {
     Expect(enput::json::ReadDocument(R"({"emoji":"\uD83D\uDD25"})", &document), "Emoji JSON with a surrogate pair must parse.");
     const enput::json::Value* emoji = enput::json::ObjectValue(document, "emoji");
     Expect(emoji && emoji->type == enput::json::Value::Type::String && emoji->string == "\xF0\x9F\x94\xA5", "A JSON surrogate pair must decode to the UTF-8 fire Emoji.");
+
+    Expect(enput::json::ReadDocument(R"({"emoji":"\uD83E\uDE9A"})", &document), "Saw Emoji JSON must parse.");
+    emoji = enput::json::ObjectValue(document, "emoji");
+    Expect(emoji && emoji->type == enput::json::Value::Type::String && emoji->string == "\xF0\x9F\xAA\x9A", "Saw must preserve Unicode U+1FA9A when it is committed to an editor.");
+
+    Expect(enput::json::ReadDocument(R"({"emoji":"\uD83C\uDDF8\uD83C\uDDED"})", &document), "Saint Helena flag JSON must parse.");
+    emoji = enput::json::ObjectValue(document, "emoji");
+    Expect(emoji && emoji->type == enput::json::Value::Type::String && emoji->string == "\xF0\x9F\x87\xB8\xF0\x9F\x87\xAD", "Saint Helena must preserve regional indicators S and H, not Switzerland C and H.");
 }
 
 void VerifyTranslationLineBreaks() {
@@ -65,6 +73,11 @@ void VerifyFrequencyRanking() {
     enput::RankCandidatesByFrequency(&disabledCandidates, frequencies, false);
     Expect(disabledCandidates == std::vector<std::wstring>{ L"hello", L"help", L"helium", L"hero" }, "Disabled frequency ranking must preserve dictionary order.");
 }
+void VerifyTranslationTextNormalization() {
+    const std::wstring normalized = enput::NormalizeDictionaryText(L"n a brace\n{{or}} a support\nvt hold steady");
+    Expect(normalized == L"n. a brace\nor a support\nvt. hold steady", "Dictionary markup must be cleaned while POS punctuation is normalized.");
+    Expect(enput::NormalizeDictionaryText(L"n. already punctuated") == L"n. already punctuated", "Existing POS punctuation must not be removed or duplicated.");
+}
 
 }
 
@@ -72,6 +85,7 @@ int main() {
     VerifyDigitMappings();
     VerifyEmojiJsonEscapes();
     VerifyTranslationLineBreaks();
+    VerifyTranslationTextNormalization();
     VerifyFrequencyRanking();
     VerifyCandidateBounds();
     std::cout << "TSF candidate selection tests passed.\n";

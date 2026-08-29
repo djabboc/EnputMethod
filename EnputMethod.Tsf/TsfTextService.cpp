@@ -149,6 +149,9 @@ struct RuntimeConfiguration {
     std::wstring fontFamily = L"Segoe UI";
     int fontSize = 18;
     BYTE opacity = 255;
+    std::vector<std::wstring> translationLanguages{ L"en", L"zh-CN" };
+    int translationWindowWidth = 380;
+    int translationWindowHeight = 280;
     ThemeStyle theme{};
     ShortcutConfiguration shortcuts{};
 };
@@ -287,6 +290,18 @@ RuntimeConfiguration LoadRuntimeConfiguration() {
         configuration.fontSize = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "fontSize", configuration.fontSize))), 10, 32);
         const double opacity = std::clamp(enput::json::NumberOr(object, "opacity", 1.0), 0.2, 1.0);
         configuration.opacity = static_cast<BYTE>(std::lround(opacity * 255.0));
+        if (const std::vector<std::string>* languages = enput::json::StringArray(object, "translationLanguages")) {
+            configuration.translationLanguages.clear();
+            for (const std::string& language : *languages) {
+                const std::wstring value = Utf8ToWide(language);
+                if (value.empty() || value.size() > 16) continue;
+                if (std::none_of(configuration.translationLanguages.begin(), configuration.translationLanguages.end(), [&value](const std::wstring& existing) { return _wcsicmp(existing.c_str(), value.c_str()) == 0; })) {
+                    configuration.translationLanguages.push_back(value);
+                }
+            }
+        }
+        configuration.translationWindowWidth = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "translationWindowWidth", configuration.translationWindowWidth))), 260, 1200);
+        configuration.translationWindowHeight = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "translationWindowHeight", configuration.translationWindowHeight))), 160, 900);
         configuration.theme = LoadTheme(enput::json::StringOr(object, "theme", "dark"));
     }
     configuration.shortcuts = LoadShortcutConfiguration();
@@ -533,22 +548,22 @@ bool ParseTranslationEntry(const enput::json::Value& value, TranslationEntry* en
     const enput::json::Value* text = enput::json::ObjectValue(value, "text");
     if (!text || text->type != enput::json::Value::Type::String) return false;
     TranslationEntry parsed;
-    parsed.text = enput::NormalizeEscapedLineBreaks(Utf8ToWide(text->string));
+    parsed.text = enput::NormalizeDictionaryText(Utf8ToWide(text->string));
     parsed.partsOfSpeech = JsonStrings(enput::json::ObjectValue(value, "partOfSpeech"));
-    for (std::wstring& part : parsed.partsOfSpeech) part = enput::NormalizeEscapedLineBreaks(std::move(part));
+    for (std::wstring& part : parsed.partsOfSpeech) part = enput::NormalizeDictionaryText(std::move(part));
     parsed.source = enput::NormalizeEscapedLineBreaks(Utf8ToWide(enput::json::ObjectValue(value, "source") && enput::json::ObjectValue(value, "source")->type == enput::json::Value::Type::String ? enput::json::ObjectValue(value, "source")->string : ""));
     const enput::json::Value* translations = enput::json::ObjectValue(value, "translations");
     if (translations && translations->type == enput::json::Value::Type::Object) {
         for (const auto& [language, meanings] : translations->object) {
             std::vector<std::wstring> normalizedMeanings = JsonStrings(&meanings);
-            for (std::wstring& meaning : normalizedMeanings) meaning = enput::NormalizeEscapedLineBreaks(std::move(meaning));
+            for (std::wstring& meaning : normalizedMeanings) meaning = enput::NormalizeDictionaryText(std::move(meaning));
             parsed.translations.emplace_back(Utf8ToWide(language), std::move(normalizedMeanings));
         }
     }
     const enput::json::Value* examples = enput::json::ObjectValue(value, "examples");
     if (examples && examples->type == enput::json::Value::Type::Array && !examples->array.empty()) {
         const enput::json::Value* example = enput::json::ObjectValue(examples->array.front(), "text");
-        if (example && example->type == enput::json::Value::Type::String) parsed.example = enput::NormalizeEscapedLineBreaks(Utf8ToWide(example->string));
+        if (example && example->type == enput::json::Value::Type::String) parsed.example = enput::NormalizeDictionaryText(Utf8ToWide(example->string));
     }
     if (parsed.text.empty()) return false;
     *entry = std::move(parsed);
@@ -1889,7 +1904,9 @@ private:
             ",\"padding\":" + std::to_string(theme.padding) + ",\"rowHeight\":" + std::to_string(theme.rowHeight) +
             ",\"translationBorderWidth\":" + std::to_string(theme.translationBorderWidth) + ",\"translationCornerRadius\":" + std::to_string(theme.translationCornerRadius) +
             ",\"translationPadding\":" + std::to_string(theme.translationPadding) + ",\"translationWidth\":" + std::to_string(theme.translationWidth) +
-            ",\"translationMaxHeight\":" + std::to_string(theme.translationMaxHeight) + "}";
+            ",\"translationMaxHeight\":" + std::to_string(theme.translationMaxHeight) +
+            ",\"translationWindowWidth\":" + std::to_string(configuration_.translationWindowWidth) +
+            ",\"translationWindowHeight\":" + std::to_string(configuration_.translationWindowHeight) + "}";
     }
 
     std::string TranslationOverlayMessage(const TranslationEntry& entry, const RECT& candidateBounds, std::uintptr_t ownerWindow, std::uint64_t stateId) const {
@@ -1901,6 +1918,10 @@ private:
             }
         }
         for (const auto& [language, meanings] : entry.translations) {
+            const bool enabled = std::any_of(configuration_.translationLanguages.begin(), configuration_.translationLanguages.end(), [&language](const std::wstring& configured) {
+                return _wcsicmp(configured.c_str(), language.c_str()) == 0;
+            });
+            if (!enabled || meanings.empty()) continue;
             if (!content.empty()) content += L'\n';
             content += language + L": ";
             for (size_t index = 0; index < meanings.size(); ++index) {
@@ -1913,11 +1934,7 @@ private:
             content += L"Example: ";
             content += entry.example;
         }
-        if (!entry.source.empty()) {
-            if (!content.empty()) content += L'\n';
-            content += L"Source: ";
-            content += entry.source;
-        }
+        if (content.empty()) content = L"No definition is available in the configured translation languages.";
         return "{\"type\":\"showTranslation\",\"clientId\":\"" + overlayClient_->ClientId() + "\",\"stateId\":" +
             std::to_string(stateId) + ",\"translation\":{\"title\":" + JsonString(entry.text) + ",\"content\":" + JsonString(content) +
             ",\"candidateRight\":" + std::to_string(candidateBounds.right) + ",\"candidateTop\":" + std::to_string(candidateBounds.top) + ",\"ownerWindow\":" + std::to_string(ownerWindow) +

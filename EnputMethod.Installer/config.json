@@ -8,5 +8,8 @@
   "fontFamily": "Segoe UI",
   "fontSize": 18,
   "opacity": 1.0,
+  "translationLanguages": ["en", "zh-CN"],
+  "translationWindowWidth": 380,
+  "translationWindowHeight": 280,
   "theme": "dark"
 }

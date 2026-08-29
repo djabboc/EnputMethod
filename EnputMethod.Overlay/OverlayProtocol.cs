@@ -106,6 +106,8 @@ internal sealed record OverlayTheme
     public int TranslationPadding { get; init; } = 8;
     public int TranslationWidth { get; init; } = 280;
     public int TranslationMaxHeight { get; init; } = 180;
+    public int TranslationWindowWidth { get; init; } = 380;
+    public int TranslationWindowHeight { get; init; } = 280;
 
     // The native configuration expresses point sizes; WPF measures font sizes in 96-DPI pixels.
     [JsonIgnore]
@@ -114,5 +116,6 @@ internal sealed record OverlayTheme
     [JsonIgnore]
     public bool IsValid => FontSize is >= 8 and <= 72 && Opacity is >= 32 and <= 255 &&
         BorderWidth is >= 0 and <= 8 && CornerRadius is >= 0 and <= 32 && Padding is >= 0 and <= 48 &&
-        RowHeight is >= 16 and <= 96 && TranslationWidth is >= 160 and <= 1000 && TranslationMaxHeight is >= 80 and <= 1200;
+        RowHeight is >= 16 and <= 96 && TranslationWidth is >= 160 and <= 1000 && TranslationMaxHeight is >= 80 and <= 1200 &&
+        TranslationWindowWidth is >= 260 and <= 1200 && TranslationWindowHeight is >= 160 and <= 900;
 }

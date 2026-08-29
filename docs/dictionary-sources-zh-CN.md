@@ -37,3 +37,11 @@ JSON 文件可能将非 BMP Emoji 序列化成 UTF-16 代理对，例如 `\\uD83
 - 用途：安装时将词典中英文定义反向建立为英文词形到中文词头的索引 `translations.cc-cedict.jsonl`，用于补充 ECDICT 缺失的中文义项；不替换用户自定义词条，也不替换 ECDICT 的英文定义。
 - 许可：CC BY-SA 4.0。每次成功安装都会在 `%LOCALAPPDATA%\Enput Method\CC-CEDICT-ATTRIBUTION.txt` 写入来源和许可链接。对包含此派生索引的分发版本必须保留署名并遵守相同方式共享义务。
 - 网络行为：首次缺失时下载；已有有效索引时复用。下载失败不会阻止安装，输入法继续使用用户词典与 ECDICT。
+
+词典记录中的 `source` 是内部溯源字段，不属于翻译正文。翻译窗口不显示它，以免将 JSON 片段或许可链接误当成释义；ECDICT 和 CC-CEDICT 的许可信息仍必须通过本文件、安装包许可和 `CC-CEDICT-ATTRIBUTION.txt` 保留。
+
+## JSONL 与 SQLite 决策（2026-08-29）
+
+当前 `translations.ecdict.jsonl` 与 `translations.cc-cedict.jsonl` 已按英文键排序，运行时对精确词形作二分查询；在仅显示当前候选词的场景下，性能仍可接受，因此本轮不迁移。
+
+SQLite 已成为下一阶段的数据层任务，触发范围包括多词典来源优先级、词形还原、模糊与全文检索、短语/句子语料、例句筛选、原子更新和索引版本迁移。迁移任务必须先实现统一 schema、离线导入器、许可与版本元数据、查询基准和 JSONL 回退，再用覆盖率与延迟数据决定默认后端；不得直接把现有用户 `translations.json` 删除或强制转换。

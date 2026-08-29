@@ -5,7 +5,7 @@ using System.Text;
 
 var tests = new (string Name, string Json, bool Expected)[]
 {
-    ("candidate view", """{"type":"showCandidates","clientId":"host-1","stateId":4,"candidates":{"x":120,"y":80,"items":["hello","help"],"page":0,"pageCount":1,"selectedIndex":0,"capsLock":true,"layout":"vertical"}}""", true),
+    ("candidate view", """{"type":"showCandidates","clientId":"host-1","stateId":4,"candidates":{"x":120,"y":80,"ownerWindow":42,"items":["hello","help"],"page":0,"pageCount":1,"selectedIndex":0,"capsLock":true,"layout":"vertical"}}""", true),
     ("candidate theme", """{"type":"showCandidates","clientId":"host-1","stateId":5,"candidates":{"x":120,"y":80,"items":["hello"],"page":0,"pageCount":1,"selectedIndex":0,"layout":"horizontal","theme":{"fontSize":16,"opacity":255,"borderWidth":1,"cornerRadius":8,"padding":10,"rowHeight":28,"translationWidth":380,"translationMaxHeight":240}}}""", true),
     ("translation hide", """{"type":"hide","clientId":"host-1","stateId":6,"surface":"translation"}""", true),
     ("internal presented event", """{"type":"presented","clientId":"host-1","stateId":7}""", false),

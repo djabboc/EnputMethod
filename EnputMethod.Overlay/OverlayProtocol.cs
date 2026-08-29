@@ -56,6 +56,7 @@ internal sealed record CandidateView
 {
     public int X { get; init; }
     public int Y { get; init; }
+    public long OwnerWindow { get; init; }
     public IReadOnlyList<string> Items { get; init; } = [];
     public int Page { get; init; }
     public int PageCount { get; init; }
@@ -75,6 +76,7 @@ internal sealed record TranslationView
     public string Content { get; init; } = "";
     public int CandidateRight { get; init; }
     public int CandidateTop { get; init; }
+    public long OwnerWindow { get; init; }
     public OverlayTheme? Theme { get; init; }
 
     [JsonIgnore]

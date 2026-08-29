@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Threading;
 using System.Collections.Generic;
 
 namespace EnputMethod.Overlay;
@@ -7,6 +8,15 @@ internal sealed class OverlayController
 {
     private readonly Dictionary<string, CandidateOverlayWindow> _candidateWindows = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TranslationOverlayWindow> _translationWindows = new(StringComparer.Ordinal);
+    private readonly DispatcherTimer _foregroundTimer;
+
+    public OverlayController()
+    {
+        _foregroundTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(75) };
+        _foregroundTimer.Tick += (_, _) => RefreshForegroundVisibility();
+        _foregroundTimer.Start();
+    }
+
 
     public void HandleHostMessage(OverlayMessage message, Func<OverlayMessage, Task> sendAction)
     {
@@ -26,6 +36,7 @@ internal sealed class OverlayController
                     if (message.Surface is not "candidates") HideTranslationWindow(message.ClientId);
                     break;
             }
+            RefreshForegroundVisibility();
         });
     }
     public void HandleClientDisconnected(string clientId)
@@ -52,6 +63,12 @@ internal sealed class OverlayController
         _translationWindows.Add(clientId, window);
         return window;
     }
+    private void RefreshForegroundVisibility()
+    {
+        foreach (CandidateOverlayWindow window in _candidateWindows.Values) window.RefreshForegroundVisibility();
+        foreach (TranslationOverlayWindow window in _translationWindows.Values) window.RefreshForegroundVisibility();
+    }
+
 
     private void HideCandidateWindow(string clientId)
     {

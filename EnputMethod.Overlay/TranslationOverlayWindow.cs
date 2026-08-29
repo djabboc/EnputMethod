@@ -19,6 +19,8 @@ internal sealed class TranslationOverlayWindow : Window
     private readonly StackPanel _panel;
     private readonly ScrollViewer _scrollViewer;
     private string? _clientId;
+    private long _ownerWindow;
+    private bool _hasTranslation;
 
     public TranslationOverlayWindow()
     {
@@ -47,11 +49,13 @@ internal sealed class TranslationOverlayWindow : Window
     public void ShowTranslation(string clientId, TranslationView view)
     {
         _clientId = clientId;
+        _ownerWindow = view.OwnerWindow;
+        _hasTranslation = true;
         OverlayTheme theme = view.Theme is { IsValid: true } configured ? configured : new OverlayTheme();
         ApplyTheme(theme);
         _title.Text = view.Title;
         _content.Text = view.Content;
-        if (!IsVisible) Show();
+        if (!IsVisible && OverlayFocus.IsForegroundWindow(_ownerWindow)) Show();
         Point position = OverlayPositioning.Constrain(this, view.CandidateRight + 8, view.CandidateTop);
         Left = position.X;
         Top = position.Y;
@@ -59,7 +63,19 @@ internal sealed class TranslationOverlayWindow : Window
 
     public void HideFor(string clientId)
     {
-        if (string.Equals(_clientId, clientId, StringComparison.Ordinal)) Hide();
+        if (!string.Equals(_clientId, clientId, StringComparison.Ordinal)) return;
+        _hasTranslation = false;
+        Hide();
+    }
+
+    public void RefreshForegroundVisibility()
+    {
+        if (!_hasTranslation) return;
+        if (OverlayFocus.IsForegroundWindow(_ownerWindow))
+        {
+            if (!IsVisible) Show();
+        }
+        else if (IsVisible) Hide();
     }
 
     private void ApplyTheme(OverlayTheme theme)

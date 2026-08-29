@@ -1724,10 +1724,10 @@ private:
         return changed ? RefreshCandidatesAtCurrentPosition(context, cookie) : S_OK;
     }
 
-    std::string CandidateOverlayMessage(const RECT& bounds, std::uint64_t stateId) const {
+    std::string CandidateOverlayMessage(const RECT& bounds, std::uintptr_t ownerWindow, std::uint64_t stateId) const {
         std::string message = "{\"type\":\"showCandidates\",\"clientId\":\"" + overlayClient_->ClientId() +
             "\",\"stateId\":" + std::to_string(stateId) + ",\"candidates\":{\"x\":" + std::to_string(bounds.left) +
-            ",\"y\":" + std::to_string(bounds.top) + ",\"items\":[";
+            ",\"y\":" + std::to_string(bounds.top) + ",\"ownerWindow\":" + std::to_string(ownerWindow) + ",\"items\":[";
         for (size_t index = 0; index < candidates_.size(); ++index) {
             if (index) message += ',';
             std::wstring visible = candidates_[index];
@@ -1763,7 +1763,7 @@ private:
             ",\"translationMaxHeight\":" + std::to_string(theme.translationMaxHeight) + "}";
     }
 
-    std::string TranslationOverlayMessage(const TranslationEntry& entry, const RECT& candidateBounds, std::uint64_t stateId) const {
+    std::string TranslationOverlayMessage(const TranslationEntry& entry, const RECT& candidateBounds, std::uintptr_t ownerWindow, std::uint64_t stateId) const {
         std::wstring content;
         if (!entry.partsOfSpeech.empty()) {
             for (size_t index = 0; index < entry.partsOfSpeech.size(); ++index) {
@@ -1791,7 +1791,7 @@ private:
         }
         return "{\"type\":\"showTranslation\",\"clientId\":\"" + overlayClient_->ClientId() + "\",\"stateId\":" +
             std::to_string(stateId) + ",\"translation\":{\"title\":" + JsonString(entry.text) + ",\"content\":" + JsonString(content) +
-            ",\"candidateRight\":" + std::to_string(candidateBounds.right) + ",\"candidateTop\":" + std::to_string(candidateBounds.top) +
+            ",\"candidateRight\":" + std::to_string(candidateBounds.right) + ",\"candidateTop\":" + std::to_string(candidateBounds.top) + ",\"ownerWindow\":" + std::to_string(ownerWindow) +
             ",\"theme\":" + OverlayThemeJson() + "}}";
     }
 
@@ -1812,6 +1812,8 @@ private:
             return;
         }
         RECT textBounds{};
+        HWND ownerWindow{};
+        view->GetWnd(&ownerWindow);
         BOOL clipped{};
         const HRESULT boundsHr = view->GetTextExt(cookie, range, &textBounds, &clipped);
         view->Release();
@@ -1822,8 +1824,8 @@ private:
         RECT candidateBounds{ textBounds.left, textBounds.bottom + 2, textBounds.right, textBounds.bottom };
         const TranslationEntry* translation = translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr;
         const std::uint64_t stateId = ++overlayStateId_;
-        std::vector<std::string> messages{ CandidateOverlayMessage(candidateBounds, stateId) };
-        if (translation) messages.push_back(TranslationOverlayMessage(*translation, candidateBounds, stateId));
+        std::vector<std::string> messages{ CandidateOverlayMessage(candidateBounds, reinterpret_cast<std::uintptr_t>(ownerWindow), stateId) };
+        if (translation) messages.push_back(TranslationOverlayMessage(*translation, candidateBounds, reinterpret_cast<std::uintptr_t>(ownerWindow), stateId));
         else messages.push_back("{\"type\":\"hide\",\"clientId\":\"" + overlayClient_->ClientId() + "\",\"stateId\":" + std::to_string(stateId) + ",\"surface\":\"translation\"}");
         if (!overlayClient_->PublishBatch(std::move(messages))) {
             enput::WriteOverlayDiagnostic("candidate.skipped", "publish-failed");

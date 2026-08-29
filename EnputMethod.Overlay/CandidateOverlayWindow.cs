@@ -19,6 +19,8 @@ internal sealed class CandidateOverlayWindow : Window
     private string? _clientId;
     private long _stateId;
     private Func<OverlayMessage, Task>? _sendAction;
+    private long _ownerWindow;
+    private bool _hasCandidates;
 
     public CandidateOverlayWindow()
     {
@@ -54,6 +56,8 @@ internal sealed class CandidateOverlayWindow : Window
         _clientId = clientId;
         _stateId = stateId;
         _sendAction = sendAction;
+        _ownerWindow = view.OwnerWindow;
+        _hasCandidates = true;
         OverlayTheme theme = view.Theme is { IsValid: true } configured ? configured : new OverlayTheme();
         ApplyTheme(theme);
         FontFamily candidateFont = new(view.ModeMarker == "EMOJI" ? "Segoe UI Emoji" : theme.FontFamily);
@@ -95,7 +99,7 @@ internal sealed class CandidateOverlayWindow : Window
         if (!string.IsNullOrWhiteSpace(view.ModeMarker)) footer.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(8, 3, 0, 3), Text = view.ModeMarker });
         _content.Children.Add(footer);
 
-        if (!IsVisible) Show();
+        if (!IsVisible && OverlayFocus.IsForegroundWindow(_ownerWindow)) Show();
         Point position = OverlayPositioning.Constrain(this, view.X, view.Y);
         Left = position.X;
         Top = position.Y;
@@ -103,7 +107,19 @@ internal sealed class CandidateOverlayWindow : Window
 
     public void HideFor(string clientId)
     {
-        if (string.Equals(_clientId, clientId, StringComparison.Ordinal)) Hide();
+        if (!string.Equals(_clientId, clientId, StringComparison.Ordinal)) return;
+        _hasCandidates = false;
+        Hide();
+    }
+
+    public void RefreshForegroundVisibility()
+    {
+        if (!_hasCandidates) return;
+        if (OverlayFocus.IsForegroundWindow(_ownerWindow))
+        {
+            if (!IsVisible) Show();
+        }
+        else if (IsVisible) Hide();
     }
 
     private void ApplyTheme(OverlayTheme theme)

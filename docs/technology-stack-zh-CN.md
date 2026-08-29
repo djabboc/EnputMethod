@@ -165,4 +165,4 @@ WPF 的字号单位是 DIP，而配置的 `fontSize` 是 pt。Overlay 固定使�
 
 安装时需要管理员权限：原生 TSF 注册函数把 DLL 复制为 `C:\Program Files\Enput Method\EnputMethod.Tsf.<build-id>.dll` 并写入 HKLM；WPF 安装器把 Overlay 与静态资源部署到同一产品根。静态 SQLite、主题、词表、Emoji 资源和归属文件都在 `C:\Program Files\Enput Method\Resources` 或 `Overlay`，不再放入 AppData。
 
-`%LOCALAPPDATA%\Enput Method\UserData` 是唯一的文件型用户状态边界，包含 `config.json`、`shortcut.json`、`install-verification.log`、`overlay-diagnostics.log`。这与 `HKCU\Software\Enput Method\CandidateFrequency` 的学习状态一起，在升级和默认卸载时保留。安装/卸载窗口使用 WPF `ProgressBar` 和后台 `Task`，使复制、SQLite 初始化、注册与删除期间 UI 保持响应。
+`%LOCALAPPDATA%\Enput Method\UserData` 是唯一的文件型用户状态边界，包含 `config.json`、`shortcut.json`、`install-verification.log`、`overlay-diagnostics.log`。这与 `HKCU\Software\Enput Method\CandidateFrequency` 的学习状态一起，在升级和默认卸载时保留。安装/卸载窗口使用 WPF `ProgressBar` 和后台 `Task`，使复制、SQLite 初始化、注册与注销期间 UI 保持响应。

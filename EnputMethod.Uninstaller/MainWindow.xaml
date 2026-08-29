@@ -12,7 +12,7 @@
         </Grid.RowDefinitions>
         <TextBlock Text="Enput Method" FontSize="24" FontWeight="SemiBold"/>
         <TextBlock Grid.Row="1" Margin="0,16,0,0"
-                   Text="从 Windows 中文输入法组中移除 Enput Method。&#x0a;已安装的静态资源将从 Program Files 清理，用户配置默认保留。"
+                   Text="从 Windows 中文输入法组中移除 Enput Method。&#x0a;仅移除 Windows 注册；DLL、静态资源和用户配置都会保留，以支持安全重装。"
                    TextWrapping="Wrap" FontSize="14"/>
         <StackPanel Grid.Row="2" Margin="0,18,0,0">
             <TextBlock x:Name="StatusText" Text="准备卸载。" TextWrapping="Wrap" MinHeight="20" Margin="0,0,0,6"/>

@@ -5,9 +5,6 @@ namespace EnputMethod.Uninstaller;
 
 internal static class ProductLayout
 {
-    internal static string InstallDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Enput Method");
-
     internal static string UserDataDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Enput Method", "UserData");
 

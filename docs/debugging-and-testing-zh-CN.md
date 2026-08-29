@@ -177,7 +177,7 @@ dotnet --info
 
 前者必须通过安装器的 `--verify-package`，后者生成的 ZIP 解压后只允许有一个 `EnputMethod-<version>-win-x64` 顶层目录；安装器和卸载器必须直接位于其根目录，不能被额外的 `Release` 目录包住。验证 manifest 包含 `payload\Resources\themes\*.json`，主题误落在 Resources 根目录时会被拒绝。
 
-系统安装验证应使用 `run-regression.ps1` 或 `install-and-verify.ps1`。成功判据为已注册 DLL、Overlay 和静态 `enput.db` 位于 `C:\Program Files\Enput Method`，用户配置/日志位于 `%LOCALAPPDATA%\Enput Method\UserData`。升级前后对 UserData 的 `config.json` 与 `shortcut.json` 计算 hash，必须保持相同；AppData 根目录不应重新生成静态数据库、主题或发布词表。卸载后 Program Files 产品目录应不存在，而 UserData 与频率学习应保留。
+系统安装验证应使用 `run-regression.ps1` 或 `install-and-verify.ps1`。成功判据为已注册 DLL、Overlay 和静态 `enput.db` 位于 `C:\Program Files\Enput Method`，用户配置/日志位于 `%LOCALAPPDATA%\Enput Method\UserData`。升级前后对 UserData 的 `config.json` 与 `shortcut.json` 计算 hash，必须保持相同；AppData 根目录不应重新生成静态数据库、主题或发布词表。卸载后 Enput 的 TSF Profile、分类和 COM 注册必须不存在；Program Files 产品目录、DLL、Overlay 和静态词库应保留，UserData 与频率学习也应保留。
 
 包完整性、原生逻辑、协议和受控 WPF 自动化不等于真实输入法已被目标应用选中。系统安装会显示 UAC，真实宿主仍需关闭重开并在语言栏确认 Enput。
 
@@ -187,7 +187,7 @@ dotnet --info
 
 `0x80004002` 是 `E_NOINTERFACE`。当前 TSF DLL 会把失败阶段一并写入安装结果：Program Files 部署、TSF profile manager、服务注册、中文 profile 添加/启用、TSF category manager、键盘分类或 immersive 分类。排查时先关闭所有使用 Enput 的应用、重启 Windows，再从新的 `artifacts\local\Release` 包以管理员权限运行安装器；读取 `install-verification.log` 中的 HRESULT 与阶段，不要只记录 UI 的首行。
 
-卸载前，Enput 可能已被 Explorer、编辑器、浏览器或聊天客户端作为进程内 DLL 加载。注销 Profile 可以完成，但 `C:\Program Files\Enput Method` 的递归删除会被这些句柄阻止。新卸载器会把实际持有模块的进程写入提示和 `uninstall-verification.log`。关闭这些进程后重试；若 Explorer 或大量应用仍持有 DLL，重启 Windows 后再运行卸载器。不要用“文件不完整”解释这种情况。
+卸载前，Enput 可能已被 Explorer、编辑器、浏览器或聊天客户端作为进程内 DLL 加载。常规卸载只注销 Profile、分类和 COM 注册，不删除 `C:\Program Files\Enput Method` 中的 DLL、Overlay 或资源；已打开宿主因而始终保有依赖，新应用也不能再激活 Enput。卸载不需要关闭应用或重启；遗留运行文件会由后续安装复用。
 
 若需要立即恢复中文输入，先注销 **Enput 自己** 的 CLSID/Profile，并将默认输入法设为 Microsoft Pinyin 的 `0804:{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}{FA550B04-5AD7-411F-A5AC-CA038EC515D7}`。这不修改微软拼音的注册。随后重启 Windows，使所有仍映射旧 Enput DLL 的进程卸载模块。
 ## 13. 安装事务、退出码与词库占用（2026-08-29）
@@ -197,3 +197,8 @@ dotnet --info
 安装全程持有 `Local\EnputMethod.Installer.Installation.v1` 互斥锁。第二个安装器不得与第一个并发操作 `Program Files\Enput Method\Resources`；应明确提示正在安装，而不是碰撞固定的 `enput.db.pending`。数据库临时文件使用带 GUID 的私有名称。
 
 顺序必须是：停止/部署 Overlay，初始化用户配置，准备静态 SQLite 词库，最后注册 TSF。若先注册 TSF，已运行宿主可能立即拉起 Overlay 并占用 `enput.db`，使词库替换失败。升级遇到无 `enput.db.ready` 但可验证的既有数据库时，仅补完成标记并保留数据库；已含 ECDICT 或 CC-CEDICT 来源的数据不得重复联网下载。2026-08-29 的 UAC 安装验证已通过。
+## 14. 无感卸载与立即重装验证（2026-08-29）
+
+常规卸载的完成条件是 Enput 的 TSF Profile、分类和 COM 注册已经移除，不是删除安装目录。输入法 DLL 以进程内方式加载；保留版本化 DLL、Overlay 和 `Resources` 可避免已打开宿主在退出前丢失数据库或 UI 依赖。保留的文件不会被新应用激活，因为 COM/Profile 入口已移除。
+
+卸载器支持 `--uninstall-and-verify` 无界面验证：必须以非零退出码报告注销失败，并写入 `uninstall-verification.log`。2026-08-29 已执行真实 UAC 链路：注销后确认 DLL、Overlay、`enput.db` 仍在、Enput CLSID 已删除、Microsoft Pinyin 默认项不变；随后不重启直接运行 `install-and-verify.ps1`，安装和 SQLite 验证通过。

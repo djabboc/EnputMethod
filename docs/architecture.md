@@ -66,4 +66,4 @@ While a typed prefix has not been committed or selected, the TSF service keeps i
 
 安装器从 `payload` 部署静态资源与 Overlay 到 `C:\Program Files\Enput Method`，并由 TSF 的本机注册函数将版本化 `EnputMethod.Tsf.<build-id>.dll` 注册在该目录。运行时通过已加载 TSF 模块的真实路径定位 `Resources` 和 `Overlay`，因此不依赖发布 ZIP 的解压位置。主题在 `Resources\themes`，SQLite 词库在 `Resources\enput.db`。
 
-`%LOCALAPPDATA%\Enput Method\UserData` 只保存用户配置、快捷键和诊断/安装日志；候选学习频率继续在 HKCU。安装只初始化缺失的用户配置文件，升级不覆盖已有值；卸载删除 Program Files 产品目录和 TSF 注册，但保留用户数据。旧 AppData 根目录下的 `config.json`、`shortcut.json` 及静态词库会按各自边界一次性迁移。
+`%LOCALAPPDATA%\Enput Method\UserData` 只保存用户配置、快捷键和诊断/安装日志；候选学习频率继续在 HKCU。安装只初始化缺失的用户配置文件，升级不覆盖已有值；卸载只删除 TSF Profile、分类和 COM 注册；Program Files 的版本化 DLL、Overlay 和静态资源保留，以兼容已打开宿主并支持立即重装。旧 AppData 根目录下的 `config.json`、`shortcut.json` 及静态词库会按各自边界一次性迁移。

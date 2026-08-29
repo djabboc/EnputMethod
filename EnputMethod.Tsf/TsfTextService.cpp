@@ -2540,7 +2540,9 @@ HRESULT RemoveProfile() {
     const LONG machineStatus = RegDeleteTreeW(HKEY_LOCAL_MACHINE, ClassKey().c_str());
     if (machineStatus != ERROR_SUCCESS && machineStatus != ERROR_FILE_NOT_FOUND) return HRESULT_FROM_WIN32(machineStatus);
     if (userStatus != ERROR_SUCCESS && userStatus != ERROR_FILE_NOT_FOUND) return HRESULT_FROM_WIN32(userStatus);
-    std::wstring path; if (SUCCEEDED(InstalledDllPath(&path))) DeleteFileW(path.c_str()); return S_OK;
+    // Keep the versioned DLL and shared resources for already running TSF hosts.
+    // Registry removal prevents new activations; a later installation may reuse them.
+    return S_OK;
 }
 }
 

@@ -18,6 +18,15 @@ namespace {
 
 constexpr wchar_t kPipePath[] = L"\\\\.\\pipe\\EnputMethod.Overlay.v1";
 std::atomic<unsigned long> g_nextClientOrdinal = 0;
+constexpr wchar_t kOverlayUpdateMutexName[] = L"Local\\EnputMethod.Overlay.Updating.v1";
+
+bool IsOverlayUpdateInProgress() {
+    HANDLE mutex = OpenMutexW(SYNCHRONIZE, FALSE, kOverlayUpdateMutexName);
+    if (!mutex) return false;
+    CloseHandle(mutex);
+    return true;
+}
+
 
 std::string MakeClientId() {
     return "host-" + std::to_string(GetCurrentProcessId()) + "-" +
@@ -84,6 +93,11 @@ public:
 
         while (WaitForSingleObject(stopEvent_, 0) == WAIT_TIMEOUT) {
             if (pipe == INVALID_HANDLE_VALUE) {
+                if (IsOverlayUpdateInProgress()) {
+                    WaitForSingleObject(stopEvent_, 250);
+                    continue;
+                }
+
                 pipe = CreateFileW(kPipePath, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
                 if (pipe == INVALID_HANDLE_VALUE) {
                     const ULONGLONG now = GetTickCount64();

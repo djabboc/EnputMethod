@@ -72,10 +72,30 @@ public partial class MainWindow : Window
     {
         string source = Path.Combine(AppContext.BaseDirectory, "Overlay");
         string destination = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Enput Method", "Overlay");
-        Directory.CreateDirectory(destination);
-        foreach (string file in Directory.EnumerateFiles(source))
+        using var updateMutex = new Mutex(false, @"Local\EnputMethod.Overlay.Updating.v1");
+        bool lockTaken = false;
+        try
         {
-            CopyOverlayFile(file, destination);
+            try
+            {
+                lockTaken = updateMutex.WaitOne(TimeSpan.FromSeconds(5));
+            }
+            catch (AbandonedMutexException)
+            {
+                lockTaken = true;
+            }
+
+            if (!lockTaken) throw new IOException("Another Overlay update is already in progress.");
+
+            Directory.CreateDirectory(destination);
+            foreach (string file in Directory.EnumerateFiles(source))
+            {
+                CopyOverlayFile(file, destination);
+            }
+        }
+        finally
+        {
+            if (lockTaken) updateMutex.ReleaseMutex();
         }
     }
 

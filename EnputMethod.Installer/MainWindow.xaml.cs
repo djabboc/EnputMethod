@@ -60,6 +60,7 @@ public partial class MainWindow : Window
         Directory.CreateDirectory(destinationDirectory);
         MigrateLegacyConfiguration(destinationDirectory);
         CopyDefaultFile("config.json", destinationDirectory);
+        MigrateDefaultFontSize(destinationDirectory);
         CopyDefaultFile("shortcut.json", destinationDirectory);
         CopyDefaultFile("dictionary.txt", destinationDirectory);
         CopyDefaultFile("suggestions.json", destinationDirectory);
@@ -188,6 +189,26 @@ public partial class MainWindow : Window
         }
     }
 
+    private static void MigrateDefaultFontSize(string destinationDirectory)
+    {
+        string configuration = Path.Combine(destinationDirectory, "config.json");
+        try
+        {
+            JsonObject? settings = JsonNode.Parse(File.ReadAllText(configuration)) as JsonObject;
+            if (settings?["fontSize"] is not JsonValue value || !value.TryGetValue<int>(out int fontSize) || fontSize != 16) return;
+            settings["fontSize"] = 18;
+            File.WriteAllText(configuration, settings.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (JsonException)
+        {
+            // Keep a user's malformed configuration untouched.
+        }
+        catch (IOException)
+        {
+            // Configuration can be held briefly while the text service starts.
+        }
+    }
+
     private static void MergeDefaultEmojiDictionary(string destinationDirectory)
     {
         string source = Path.Combine(AppContext.BaseDirectory, "emoji.json");
@@ -240,6 +261,7 @@ public partial class MainWindow : Window
                     continue;
                 }
                 changed |= MergeEmojiKeywords(installedEntry, bundledEntry);
+                changed |= MergeEmojiPriority(installedEntry, bundledEntry);
             }
 
             if (changed) File.WriteAllText(destination, installed.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
@@ -275,6 +297,15 @@ public partial class MainWindow : Window
         }
         return changed;
     }
+
+    private static bool MergeEmojiPriority(JsonObject installedEntry, JsonObject bundledEntry)
+    {
+        if (bundledEntry["priority"] is not JsonValue bundledValue || !bundledValue.TryGetValue<int>(out int bundledPriority)) return false;
+        if (installedEntry["priority"] is JsonValue installedValue && installedValue.TryGetValue<int>(out int installedPriority) && installedPriority >= bundledPriority) return false;
+        installedEntry["priority"] = bundledPriority;
+        return true;
+    }
+
     private static void MergeDefaultTranslations(string destinationDirectory)
     {
         string source = Path.Combine(AppContext.BaseDirectory, "translations.json");

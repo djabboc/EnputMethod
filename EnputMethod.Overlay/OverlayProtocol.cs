@@ -95,7 +95,7 @@ internal sealed record OverlayTheme
     public string TranslationTitleForeground { get; init; } = "#ffffff";
     public string TranslationBorder { get; init; } = "#616f7e";
     public string FontFamily { get; init; } = "Segoe UI";
-    public int FontSize { get; init; } = 16;
+    public int FontSize { get; init; } = 18;
     public int Opacity { get; init; } = 255;
     public int BorderWidth { get; init; } = 1;
     public int CornerRadius { get; init; } = 4;

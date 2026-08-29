@@ -18,4 +18,14 @@ if ($process.ExitCode -ne 0)
     $diagnostic = if (Test-Path -LiteralPath $verificationLog) { Get-Content -LiteralPath $verificationLog -Raw } else { "No verification log was written." }
     throw "Installation verification failed with exit code $($process.ExitCode).`n$diagnostic"
 }
+$configPath = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "Enput Method\config.json"
+$config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+if ($config.fontSize -ne 18) { throw "Installed default font size was not migrated to 18." }
+
+$emojiPath = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "Enput Method\emoji.json"
+$emoji = Get-Content -LiteralPath $emojiPath -Raw | ConvertFrom-Json
+foreach ($keyword in "fire", "water", "bucket", "cat", "dog") {
+    $preferred = @($emoji.entries | Where-Object { $_.priority -eq 100 -and $_.keywords -contains $keyword })
+    if ($preferred.Count -ne 1) { throw "Installed Emoji dictionary is missing the preferred '$keyword' entry." }
+}
 Write-Host "Installation and system verification passed."

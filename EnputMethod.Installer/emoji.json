@@ -5902,7 +5902,8 @@
         "cat",
         "cat face",
         "face"
-      ]
+      ],
+      "priority": 100
     },
     {
       "emoji": "🐲",
@@ -5944,7 +5945,8 @@
         "dog",
         "dog face",
         "face"
-      ]
+      ],
+      "priority": 100
     },
     {
       "emoji": "🐷",
@@ -7718,8 +7720,10 @@
     {
       "emoji": "💧",
       "keywords": [
-        "droplet"
-      ]
+        "droplet",
+        "water"
+      ],
+      "priority": 100
     },
     {
       "emoji": "💨",
@@ -8910,7 +8914,8 @@
       "emoji": "🔥",
       "keywords": [
         "fire"
-      ]
+      ],
+      "priority": 100
     },
     {
       "emoji": "🔦",
@@ -14237,7 +14242,8 @@
       "emoji": "🪣",
       "keywords": [
         "bucket"
-      ]
+      ],
+      "priority": 100
     },
     {
       "emoji": "🪤",

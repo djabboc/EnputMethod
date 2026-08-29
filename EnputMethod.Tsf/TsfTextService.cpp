@@ -146,7 +146,7 @@ struct RuntimeConfiguration {
     bool preserveCase = true;
     bool avoidScreenEdges = true;
     std::wstring fontFamily = L"Segoe UI";
-    int fontSize = 16;
+    int fontSize = 18;
     BYTE opacity = 255;
     ThemeStyle theme{};
     ShortcutConfiguration shortcuts{};
@@ -452,6 +452,7 @@ const std::vector<SuggestionEntry>& LoadSuggestionDictionary() {
 struct EmojiEntry {
     std::wstring emoji;
     std::vector<std::wstring> keywords;
+    int priority = 0;
 };
 
 std::wstring EmojiDictionaryPath() {
@@ -484,6 +485,9 @@ const std::vector<EmojiEntry>& LoadEmojiDictionary() {
             EmojiEntry entry;
             entry.emoji = Utf8ToWide(emoji->string);
             entry.keywords = JsonStrings(enput::json::ObjectValue(value, "keywords"));
+            if (const enput::json::Value* priority = enput::json::ObjectValue(value, "priority"); priority && priority->type == enput::json::Value::Type::Number) {
+                entry.priority = static_cast<int>(priority->number);
+            }
             if (!entry.emoji.empty() && !entry.keywords.empty()) entries.push_back(std::move(entry));
         }
     } else if (parsed && document.type == enput::json::Value::Type::Object) {
@@ -1712,20 +1716,35 @@ private:
     }
 
     static std::vector<std::wstring> FindEmojiCandidates(const std::wstring& typed) {
+        struct Match {
+            std::wstring emoji;
+            std::wstring candidate;
+            int priority = 0;
+            bool exactKeyword = false;
+        };
+
         const std::wstring lower = Lowercase(typed);
-        std::vector<std::wstring> matches;
+        std::vector<Match> matches;
         for (const EmojiEntry& entry : LoadEmojiDictionary()) {
             const bool matchesKeyword = std::any_of(entry.keywords.begin(), entry.keywords.end(), [&lower](const std::wstring& keyword) { return Lowercase(keyword).starts_with(lower); });
-            if (!matchesKeyword || std::any_of(matches.begin(), matches.end(), [&entry](const std::wstring& existing) { return existing.starts_with(entry.emoji); })) continue;
+            if (!matchesKeyword || std::any_of(matches.begin(), matches.end(), [&entry](const Match& existing) { return existing.emoji == entry.emoji; })) continue;
             std::wstring candidate = entry.emoji;
             candidate += static_cast<wchar_t>(0x1F);
             for (size_t index = 0; index < entry.keywords.size(); ++index) {
                 if (index) candidate += L", ";
                 candidate += entry.keywords[index];
             }
-            matches.push_back(std::move(candidate));
+            const bool exactKeyword = std::any_of(entry.keywords.begin(), entry.keywords.end(), [&lower](const std::wstring& keyword) { return Lowercase(keyword) == lower; });
+            matches.push_back({ entry.emoji, std::move(candidate), entry.priority, exactKeyword });
         }
-        return matches;
+        std::stable_sort(matches.begin(), matches.end(), [](const Match& left, const Match& right) {
+            if (left.priority != right.priority) return left.priority > right.priority;
+            return left.exactKeyword && !right.exactKeyword;
+        });
+        std::vector<std::wstring> candidates;
+        candidates.reserve(matches.size());
+        for (Match& match : matches) candidates.push_back(std::move(match.candidate));
+        return candidates;
     }
 
     size_t PageCount() const {

@@ -40,7 +40,7 @@ try {
     $catalog = Get-Content -Raw -LiteralPath $EmojiDataPath | ConvertFrom-Json
     $entries = [System.Collections.Generic.List[object]]::new()
     $entriesByFile = @{}
-    function Add-EmojiEntry([string]$fileName, [string[]]$terms) {
+    function Add-EmojiEntry([string]$fileName, [string[]]$terms, [int]$priority = 0) {
         if ($entriesByFile.ContainsKey($fileName)) { return }
         $builder = [System.Text.StringBuilder]::new()
         foreach ($code in $fileName.Replace('.png', '').Split('-')) { [void]$builder.Append([char]::ConvertFromUtf32([Convert]::ToInt32($code, 16))) }
@@ -54,6 +54,7 @@ try {
         }
         [System.IO.Compression.ZipFileExtensions]::ExtractToFile($pngEntries[$fileName], (Join-Path $assetDirectory $fileName), $true)
         $entry = [ordered]@{ emoji = $builder.ToString(); keywords = @($keywords | Where-Object { ![string]::IsNullOrWhiteSpace($_) } | Sort-Object) }
+        if ($priority -gt 0) { $entry['priority'] = $priority }
         $entries.Add($entry)
         $entriesByFile[$fileName] = $entry
     }
@@ -64,6 +65,14 @@ try {
         '+1' = @('thumbsup', 'thumb', 'like', 'ok')
         '-1' = @('thumbsdown', 'dislike')
         'tada' = @('party', 'celebrate', 'congratulations')
+        'droplet' = @('water')
+    }
+    $preferredEmojiPriorities = @{
+        'fire' = 100
+        'droplet' = 100
+        'bucket' = 100
+        'cat' = 100
+        'dog' = 100
     }
     foreach ($record in $catalog) {
         if ([string]::IsNullOrWhiteSpace($record.unified)) { continue }
@@ -72,7 +81,8 @@ try {
         if (!$pngEntries.ContainsKey($fileName)) { continue }
         $terms = @($record.short_name) + @($record.short_names) + @($record.name)
         if ($commonAliases.ContainsKey($record.short_name)) { $terms += $commonAliases[$record.short_name] }
-        Add-EmojiEntry $fileName $terms
+        $priority = if ($preferredEmojiPriorities.ContainsKey($record.short_name)) { $preferredEmojiPriorities[$record.short_name] } else { 0 }
+        Add-EmojiEntry $fileName $terms $priority
     }
 
     $skinToneNames = @{
@@ -112,4 +122,4 @@ try {
 }
 finally {
     $archive.Dispose()
-}
+}

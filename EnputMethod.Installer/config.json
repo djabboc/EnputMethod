@@ -6,7 +6,7 @@
   "preserveCase": true,
   "avoidScreenEdges": true,
   "fontFamily": "Segoe UI",
-  "fontSize": 16,
+  "fontSize": 18,
   "opacity": 1.0,
   "theme": "dark"
 }

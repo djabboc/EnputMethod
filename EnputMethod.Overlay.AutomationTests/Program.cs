@@ -1,6 +1,8 @@
 using EnputMethod.Overlay;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Interop;
 
 namespace EnputMethod.Overlay.AutomationTests;
@@ -16,6 +18,7 @@ internal static class Program
             VerifyOwnerWindowProtocol();
             VerifyEmojiAssetNaming();
             VerifyEmojiCandidateUsesColorAsset();
+            VerifyPaginationLayoutAndHover();
             Console.WriteLine("Overlay foreground automation tests passed.");
             return 0;
         }
@@ -71,6 +74,35 @@ internal static class Program
             var row = (Border)candidates.Children[0];
             var content = (StackPanel)row.Child;
             Assert(content.Children.OfType<Image>().SingleOrDefault() is Image { Source: not null }, "Emoji candidates must render their bundled color image instead of a monochrome font glyph.");
+        }
+        finally
+        {
+            overlay.Close();
+        }
+    }
+    private static void VerifyPaginationLayoutAndHover()
+    {
+        var overlay = new CandidateOverlayWindow();
+        try
+        {
+            overlay.ShowCandidates("layout-test", 1, new CandidateView
+            {
+                Items = ["encyclopedia"],
+                Page = 0,
+                PageCount = 2,
+                SelectedIndex = 0,
+                Layout = "vertical",
+            }, _ => Task.CompletedTask);
+
+            var frame = (Border)overlay.Content;
+            var root = (StackPanel)frame.Child;
+            var footer = (StackPanel)root.Children[1];
+            Assert(footer.HorizontalAlignment == HorizontalAlignment.Left, "The pager must stay on the leading edge when candidates grow wider.");
+            var pager = (Grid)footer.Children[0];
+            Assert(pager.Width == 108 && pager.ColumnDefinitions.Count == 3, "The pager must reserve a stable width for both navigation buttons and the page label.");
+            var next = (Border)pager.Children[2];
+            next.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = Mouse.MouseEnterEvent });
+            Assert(next.Background is SolidColorBrush { Color: var color } && color == (Color)ColorConverter.ConvertFromString("#2c597a"), "An available navigation button must highlight on hover.");
         }
         finally
         {

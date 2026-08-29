@@ -15,6 +15,8 @@ internal sealed class CandidateOverlayWindow : Window
     private const long WsExToolWindow = 0x00000080L;
     private const int WmMouseActivate = 0x0021;
     private const int MaNoActivate = 3;
+    private const double FooterButtonWidth = 28;
+    private const double FooterPageWidth = 52;
     private readonly StackPanel _content = new();
     private readonly Border _frame;
     private string? _clientId;
@@ -87,10 +89,30 @@ internal sealed class CandidateOverlayWindow : Window
         }
         _content.Children.Add(candidates);
 
-        var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 4, 0, 0) };
-        footer.Children.Add(CreateFooterAction("<", "previousPage", clientId, stateId, sendAction, theme));
-        footer.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.Foreground, Brushes.LightGray), Margin = new Thickness(8, 3, 8, 3), Text = $"{view.Page + 1}/{view.PageCount}" });
-        footer.Children.Add(CreateFooterAction(">", "nextPage", clientId, stateId, sendAction, theme));
+        // Keep paging controls on the leading edge so long candidates expand only to the right.
+        var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 4, 0, 0) };
+        var pager = new Grid { Width = FooterButtonWidth * 2 + FooterPageWidth, Height = Math.Max(22, theme.RowHeight - 6) };
+        pager.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FooterButtonWidth) });
+        pager.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FooterPageWidth) });
+        pager.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FooterButtonWidth) });
+        var previous = CreateFooterAction("<", "previousPage", "Previous page", view.Page > 0, clientId, stateId, sendAction, theme);
+        Grid.SetColumn(previous, 0);
+        pager.Children.Add(previous);
+        var page = new TextBlock
+        {
+            FontFamily = new FontFamily(theme.FontFamily),
+            FontSize = theme.FontSize,
+            Foreground = Brush(theme.Foreground, Brushes.LightGray),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Text = $"{view.Page + 1}/{view.PageCount}",
+        };
+        Grid.SetColumn(page, 1);
+        pager.Children.Add(page);
+        var next = CreateFooterAction(">", "nextPage", "Next page", view.Page + 1 < view.PageCount, clientId, stateId, sendAction, theme);
+        Grid.SetColumn(next, 2);
+        pager.Children.Add(next);
+        footer.Children.Add(pager);
         if (view.CapsLock) footer.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(8, 3, 0, 3), Text = "CAPS" });
         if (!string.IsNullOrWhiteSpace(view.ModeMarker)) footer.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(8, 3, 0, 3), Text = view.ModeMarker });
         _content.Children.Add(footer);
@@ -192,15 +214,31 @@ internal sealed class CandidateOverlayWindow : Window
         });
         return content;
     }
-    private static Border CreateFooterAction(string label, string type, string clientId, long stateId, Func<OverlayMessage, Task> sendAction, OverlayTheme theme)
+    private static Border CreateFooterAction(string label, string type, string tooltip, bool enabled, string clientId, long stateId, Func<OverlayMessage, Task> sendAction, OverlayTheme theme)
     {
+        Brush regularBackground = Brushes.Transparent;
+        Brush hoverBackground = Brush(theme.SelectedBackground, Brushes.SteelBlue);
         var action = new Border
         {
-            Background = Brush(theme.Background, Brushes.DimGray),
-            Cursor = Cursors.Hand,
-            Padding = new Thickness(theme.Padding, 3, theme.Padding, 3),
-            Child = new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.Foreground, Brushes.White), Text = label },
+            Background = regularBackground,
+            Cursor = enabled ? Cursors.Hand : Cursors.Arrow,
+            Width = FooterButtonWidth,
+            Padding = new Thickness(2),
+            Opacity = enabled ? 1 : 0.45,
+            ToolTip = tooltip,
+            Child = new TextBlock
+            {
+                FontFamily = new FontFamily(theme.FontFamily),
+                FontSize = theme.FontSize,
+                Foreground = Brush(theme.Foreground, Brushes.White),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Text = label,
+            },
         };
+        if (!enabled) return action;
+        action.MouseEnter += (_, _) => action.Background = hoverBackground;
+        action.MouseLeave += (_, _) => action.Background = regularBackground;
         action.MouseLeftButtonUp += (_, _) => _ = sendAction(new OverlayMessage { Type = type, ClientId = clientId, StateId = stateId });
         return action;
     }

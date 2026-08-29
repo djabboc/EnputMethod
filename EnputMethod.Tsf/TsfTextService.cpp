@@ -3,6 +3,7 @@
 #include <dwrite.h>
 #include <textstor.h>
 #include <msctf.h>
+#include "CandidateSelection.h"
 #include "JsonObjectReader.h"
 #include "OverlayClient.h"
 #include "OverlayDiagnostics.h"
@@ -1393,9 +1394,9 @@ public:
         if (HasShortcut(configuration_.shortcuts.selectNext, key)) return MoveSelection(context, cookie, 1);
         if (key == VK_LEFT && cursor_ > 0) { --cursor_; return UpdateComposition(context, cookie); }
         if (key == VK_RIGHT && cursor_ < typed_.size()) { ++cursor_; return UpdateComposition(context, cookie); }
-        const int candidateIndex = CandidateIndex(key);
+        std::size_t candidateIndex{};
         const wchar_t selectionTrailing = configuration_.appendSpaceAfterSelection ? L' ' : L'\0';
-        if (candidateIndex >= 0 && candidateIndex < static_cast<int>(candidates_.size())) return CommitCandidate(context, cookie, candidates_[candidateIndex], selectionTrailing);
+        if (enput::TryGetCandidateIndex(key, candidates_.size(), &candidateIndex)) return CommitCandidate(context, cookie, candidates_[candidateIndex], selectionTrailing);
         if (HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size()) return CommitCandidate(context, cookie, candidates_[selectedIndex_], selectionTrailing);
         if (key == VK_SPACE && detachedSuggestionActive_) return CommitDetachedSuggestion(context, cookie, L"", L' ');
         if (key == VK_SPACE && IsSuggestionActive()) return FinishComposition(cookie, L"", L' ');
@@ -1523,7 +1524,7 @@ private:
             if (!hasModifier && key >= 'A' && key <= 'Z') return false;
             if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key) || key == VK_SPACE || HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key)) return false;
             if (HasShortcut(configuration_.shortcuts.selectPrevious, key) || HasShortcut(configuration_.shortcuts.selectNext, key)) return false;
-            if (CandidateIndex(key) >= 0 && CandidateIndex(key) < static_cast<int>(candidates_.size())) return false;
+            if (enput::TryGetCandidateIndex(key, candidates_.size(), nullptr)) return false;
             return !(HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size());
         }
         const bool hasModifier = GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0;
@@ -1536,7 +1537,7 @@ private:
         if (HasShortcut(configuration_.shortcuts.selectPrevious, key) || HasShortcut(configuration_.shortcuts.selectNext, key)) return false;
         if (key == VK_LEFT) return cursor_ == 0;
         if (key == VK_RIGHT) return cursor_ == typed_.size();
-        if (CandidateIndex(key) >= 0 && CandidateIndex(key) < static_cast<int>(candidates_.size())) return false;
+        if (enput::TryGetCandidateIndex(key, candidates_.size(), nullptr)) return false;
         return !(HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size());
     }
 
@@ -1554,12 +1555,6 @@ private:
                key == VK_CONTROL || key == VK_LCONTROL || key == VK_RCONTROL ||
                key == VK_MENU || key == VK_LMENU || key == VK_RMENU ||
                key == VK_LWIN || key == VK_RWIN || key == VK_CAPITAL;
-    }
-
-    static int CandidateIndex(WPARAM key) {
-        if (key >= '1' && key <= '9') return static_cast<int>(key - '1');
-        if (key >= VK_NUMPAD1 && key <= VK_NUMPAD9) return static_cast<int>(key - VK_NUMPAD1);
-        return -1;
     }
 
     static void ToLowerInPlace(std::wstring* text) {

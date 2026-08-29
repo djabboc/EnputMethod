@@ -94,9 +94,9 @@ internal sealed class CandidateOverlayWindow : Window
         _content.Children.Add(footer);
 
         if (!IsVisible) Show();
-        double scale = 96.0 / GetDpiForWindow(new WindowInteropHelper(this).Handle);
-        Left = view.X * scale;
-        Top = view.Y * scale;
+        Point position = OverlayPositioning.Constrain(this, view.X, view.Y);
+        Left = position.X;
+        Top = position.Y;
     }
 
     public void HideFor(string clientId)
@@ -147,6 +147,4 @@ internal sealed class CandidateOverlayWindow : Window
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
     private static extern IntPtr SetWindowLongPtr(IntPtr window, int index, IntPtr value);
 
-    [DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(IntPtr window);
 }

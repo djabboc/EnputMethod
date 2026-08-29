@@ -50,9 +50,9 @@ internal sealed class TranslationOverlayWindow : Window
         _title.Text = view.Title;
         _content.Text = view.Content;
         if (!IsVisible) Show();
-        double scale = 96.0 / GetDpiForWindow(new WindowInteropHelper(this).Handle);
-        Left = (view.CandidateRight + 8) * scale;
-        Top = view.CandidateTop * scale;
+        Point position = OverlayPositioning.Constrain(this, view.CandidateRight + 8, view.CandidateTop);
+        Left = position.X;
+        Top = position.Y;
     }
 
     public void HideFor(string clientId)
@@ -98,6 +98,4 @@ internal sealed class TranslationOverlayWindow : Window
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
     private static extern IntPtr SetWindowLongPtr(IntPtr window, int index, IntPtr value);
 
-    [DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(IntPtr window);
 }

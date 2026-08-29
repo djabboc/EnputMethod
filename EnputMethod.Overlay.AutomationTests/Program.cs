@@ -12,6 +12,7 @@ internal static class Program
         {
             VerifyForegroundOwnerArbitration();
             VerifyOwnerWindowProtocol();
+            VerifyEmojiAssetNaming();
             Console.WriteLine("Overlay foreground automation tests passed.");
             return 0;
         }
@@ -38,6 +39,14 @@ internal static class Program
         Assert(OverlayProtocol.TryParse(message, out OverlayMessage? parsed) && parsed?.Candidates?.OwnerWindow == 42, "The candidate owner window must survive protocol parsing.");
     }
 
+    private static void VerifyEmojiAssetNaming()
+    {
+        Assert(EmojiAssetResolver.FileNameFor("😀") == "1f600.png", "Grinning face must use its Twemoji asset name.");
+        Assert(EmojiAssetResolver.FileNameFor("❤️") == "2764.png", "Variation selectors must not appear in Twemoji asset names.");
+        Assert(EmojiAssetResolver.FileNameFor("👩‍💻") == "1f469-200d-1f4bb.png", "ZWJ Emoji must preserve all visible code points.");
+        Assert(EmojiAssetResolver.EmojiFromCandidate("❤️\u001Fheart, love") == "❤️", "Emoji candidate text must be separated from its keywords.");
+        Assert(EmojiAssetResolver.LabelFromCandidate("❤️\u001Fheart, love") == "heart, love", "Emoji candidate keyword labels must remain visible.");
+    }
     private static HwndSource CreateEditorWindow(string name)
     {
         return new HwndSource(new HwndSourceParameters(name)

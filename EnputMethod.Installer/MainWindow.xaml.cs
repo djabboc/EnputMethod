@@ -63,7 +63,7 @@ public partial class MainWindow : Window
         CopyDefaultFile("shortcut.json", destinationDirectory);
         CopyDefaultFile("dictionary.txt", destinationDirectory);
         CopyDefaultFile("suggestions.json", destinationDirectory);
-        CopyDefaultFile("emoji.json", destinationDirectory);
+        MergeDefaultEmojiDictionary(destinationDirectory);
         MergeDefaultTranslations(destinationDirectory);
         EnsureFullTranslationDictionary(destinationDirectory);
         CopyDefaultThemes(destinationDirectory);
@@ -89,9 +89,12 @@ public partial class MainWindow : Window
             if (!lockTaken) throw new IOException("Another Overlay update is already in progress.");
 
             Directory.CreateDirectory(destination);
-            foreach (string file in Directory.EnumerateFiles(source))
+            StopInstalledOverlay(destination);
+            foreach (string file in Directory.EnumerateFiles(source, "*", System.IO.SearchOption.AllDirectories))
             {
-                CopyOverlayFile(file, destination);
+                string relativePath = Path.GetRelativePath(source, file);
+                string destinationFile = Path.Combine(destination, relativePath);
+                CopyOverlayFile(file, destinationFile, destination);
             }
         }
         finally
@@ -100,19 +103,20 @@ public partial class MainWindow : Window
         }
     }
 
-    private static void CopyOverlayFile(string sourceFile, string destinationDirectory)
+    private static void CopyOverlayFile(string sourceFile, string destinationFile, string overlayDirectory)
     {
         const int attempts = 6;
+        Directory.CreateDirectory(Path.GetDirectoryName(destinationFile)!);
         for (int attempt = 0; attempt < attempts; ++attempt)
         {
-            StopInstalledOverlay(destinationDirectory);
             try
             {
-                File.Copy(sourceFile, Path.Combine(destinationDirectory, Path.GetFileName(sourceFile)), true);
+                File.Copy(sourceFile, destinationFile, true);
                 return;
             }
             catch (IOException) when (attempt + 1 < attempts)
             {
+                StopInstalledOverlay(overlayDirectory);
                 Thread.Sleep(100);
             }
         }
@@ -184,6 +188,93 @@ public partial class MainWindow : Window
         }
     }
 
+    private static void MergeDefaultEmojiDictionary(string destinationDirectory)
+    {
+        string source = Path.Combine(AppContext.BaseDirectory, "emoji.json");
+        string destination = Path.Combine(destinationDirectory, "emoji.json");
+        if (!File.Exists(destination))
+        {
+            File.Copy(source, destination);
+            return;
+        }
+
+        try
+        {
+            JsonObject? bundled = JsonNode.Parse(File.ReadAllText(source)) as JsonObject;
+            JsonArray? bundledEntries = bundled?["entries"] as JsonArray;
+            JsonNode? installedDocument = JsonNode.Parse(File.ReadAllText(destination));
+            if (bundledEntries is null || installedDocument is not JsonObject installed) return;
+
+            bool changed = false;
+            JsonArray? installedEntries = installed["entries"] as JsonArray;
+            if (installedEntries is null)
+            {
+                installedEntries = new JsonArray();
+                foreach ((string keyword, JsonNode? emojiValue) in installed)
+                {
+                    if (emojiValue is not JsonValue value || !value.TryGetValue<string>(out string? emoji) || string.IsNullOrWhiteSpace(keyword) || string.IsNullOrWhiteSpace(emoji)) continue;
+                    installedEntries.Add(new JsonObject { ["emoji"] = emoji, ["keywords"] = new JsonArray(keyword) });
+                }
+                if (installedEntries.Count == 0) return;
+                installed.Clear();
+                installed["entries"] = installedEntries;
+                changed = true;
+            }
+
+            var entriesByEmoji = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+            foreach (JsonNode? node in installedEntries)
+            {
+                if (node is not JsonObject entry || EmojiValue(entry) is not string emoji || string.IsNullOrWhiteSpace(emoji)) continue;
+                entriesByEmoji.TryAdd(emoji, entry);
+            }
+
+            foreach (JsonNode? node in bundledEntries)
+            {
+                if (node is not JsonObject bundledEntry || EmojiValue(bundledEntry) is not string emoji || string.IsNullOrWhiteSpace(emoji)) continue;
+                if (!entriesByEmoji.TryGetValue(emoji, out JsonObject? installedEntry))
+                {
+                    JsonObject copy = (JsonObject)bundledEntry.DeepClone();
+                    installedEntries.Add(copy);
+                    entriesByEmoji.Add(emoji, copy);
+                    changed = true;
+                    continue;
+                }
+                changed |= MergeEmojiKeywords(installedEntry, bundledEntry);
+            }
+
+            if (changed) File.WriteAllText(destination, installed.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (JsonException)
+        {
+            // Leave a user's malformed custom dictionary untouched.
+        }
+        catch (IOException)
+        {
+            // The input method can hold the file briefly while it starts.
+        }
+    }
+
+    private static string? EmojiValue(JsonObject entry) => entry["emoji"] is JsonValue value && value.TryGetValue<string>(out string? emoji) ? emoji : null;
+
+    private static bool MergeEmojiKeywords(JsonObject installedEntry, JsonObject bundledEntry)
+    {
+        if (bundledEntry["keywords"] is not JsonArray bundledKeywords) return false;
+        JsonArray installedKeywords = installedEntry["keywords"] as JsonArray ?? new JsonArray();
+        bool changed = !ReferenceEquals(installedEntry["keywords"], installedKeywords);
+        if (changed) installedEntry["keywords"] = installedKeywords;
+        var existingKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (JsonNode? keywordNode in installedKeywords)
+        {
+            if (keywordNode is JsonValue keywordValue && keywordValue.TryGetValue<string>(out string? keyword) && !string.IsNullOrWhiteSpace(keyword)) existingKeywords.Add(keyword);
+        }
+        foreach (JsonNode? keywordNode in bundledKeywords)
+        {
+            if (keywordNode is not JsonValue keywordValue || !keywordValue.TryGetValue<string>(out string? keyword) || string.IsNullOrWhiteSpace(keyword) || !existingKeywords.Add(keyword)) continue;
+            installedKeywords.Add(keyword);
+            changed = true;
+        }
+        return changed;
+    }
     private static void MergeDefaultTranslations(string destinationDirectory)
     {
         string source = Path.Combine(AppContext.BaseDirectory, "translations.json");

@@ -8,4 +8,11 @@
     <PlatformTarget>x64</PlatformTarget>
     <AssemblyName>EnputMethod.Overlay</AssemblyName>
   </PropertyGroup>
-</Project>
+  <ItemGroup>
+    <Content Include="EmojiAssets\**\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="TWEMOJI-LICENSE.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup></Project>

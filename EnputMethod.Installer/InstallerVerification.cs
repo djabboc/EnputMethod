@@ -18,7 +18,7 @@ internal static class InstallerVerifier
     private static readonly string[] RequiredPackageFiles =
     [
         "EnputMethod.Tsf.dll", "config.json", "shortcut.json", "dictionary.txt", "suggestions.json", "emoji.json", "translations.json",
-        "Overlay\\EnputMethod.Overlay.exe", "Overlay\\EnputMethod.Overlay.dll", "Overlay\\EnputMethod.Overlay.deps.json", "Overlay\\EnputMethod.Overlay.runtimeconfig.json",
+        "Overlay\\EnputMethod.Overlay.exe", "Overlay\\EnputMethod.Overlay.dll", "Overlay\\EnputMethod.Overlay.deps.json", "Overlay\\EnputMethod.Overlay.runtimeconfig.json", "Overlay\\EmojiAssets\\1f600.png", "Overlay\\EmojiAssets\\2764.png", "Overlay\\TWEMOJI-LICENSE.txt",
         "themes\\dark.json", "themes\\eye-care.json", "themes\\light.json", "themes\\paper.json",
     ];
 
@@ -50,12 +50,13 @@ internal static class InstallerVerifier
 
         string sourceOverlay = Path.Combine(packageDirectory, "Overlay");
         string installedOverlay = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Enput Method", "Overlay");
-        foreach (string sourceFile in Directory.EnumerateFiles(sourceOverlay))
+        foreach (string sourceFile in Directory.EnumerateFiles(sourceOverlay, "*", SearchOption.AllDirectories))
         {
-            string destinationFile = Path.Combine(installedOverlay, Path.GetFileName(sourceFile));
+            string relativePath = Path.GetRelativePath(sourceOverlay, sourceFile);
+            string destinationFile = Path.Combine(installedOverlay, relativePath);
             if (!File.Exists(destinationFile) || !FilesMatch(sourceFile, destinationFile))
             {
-                return InstallerVerification.Failure($"Installed Overlay file does not match the package: {Path.GetFileName(sourceFile)}");
+                return InstallerVerification.Failure($"Installed Overlay file does not match the package: {relativePath}");
             }
         }
 

@@ -2168,7 +2168,7 @@ HRESULT RegisterComServer() {
     std::wstring path; HRESULT hr = InstalledDllPath(&path); if (FAILED(hr)) return hr;
     if (_wcsicmp(source, path.c_str()) != 0 && !CopyFileW(source, path.c_str(), FALSE)) {
         const DWORD error = GetLastError();
-        if (error != ERROR_FILE_EXISTS || !FilesEqual(source, path)) return HRESULT_FROM_WIN32(error);
+        if ((error != ERROR_FILE_EXISTS && error != ERROR_SHARING_VIOLATION) || !FilesEqual(source, path)) return HRESULT_FROM_WIN32(error);
     }
     // Older builds registered the service per-user. HKCR gives that stale entry precedence over this machine-wide entry.
     RegDeleteTreeW(HKEY_CURRENT_USER, ClassKey().c_str());

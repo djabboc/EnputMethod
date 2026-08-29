@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace EnputMethod.Overlay;
 
@@ -60,7 +61,8 @@ internal sealed class CandidateOverlayWindow : Window
         _hasCandidates = true;
         OverlayTheme theme = view.Theme is { IsValid: true } configured ? configured : new OverlayTheme();
         ApplyTheme(theme);
-        FontFamily candidateFont = new(view.ModeMarker == "EMOJI" ? "Segoe UI Emoji" : theme.FontFamily);
+        bool emojiMode = view.ModeMarker == "EMOJI";
+        FontFamily candidateFont = new(emojiMode ? "Segoe UI Emoji" : theme.FontFamily);
         _content.Children.Clear();
         var candidates = new StackPanel { Orientation = view.Layout == "horizontal" ? Orientation.Horizontal : Orientation.Vertical };
         for (int index = 0; index < view.Items.Count; ++index)
@@ -138,6 +140,64 @@ internal sealed class CandidateOverlayWindow : Window
         _frame.Padding = new Thickness(theme.Padding);
     }
 
+    private static FrameworkElement CreateCandidateContent(int index, string candidate, bool emojiMode, FontFamily font, OverlayTheme theme, bool isSelected)
+    {
+        Brush foreground = isSelected ? Brush(theme.SelectedForeground, Brushes.White) : Brush(theme.Foreground, Brushes.White);
+        if (!emojiMode) return new TextBlock
+        {
+            FontFamily = font,
+            FontSize = theme.FontSize,
+            Foreground = foreground,
+            Text = $"{index + 1}  {candidate}",
+        };
+
+        string emoji = EmojiAssetResolver.EmojiFromCandidate(candidate);
+        string label = EmojiAssetResolver.LabelFromCandidate(candidate);
+        var content = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        content.Children.Add(new TextBlock
+        {
+            FontFamily = new FontFamily(theme.FontFamily),
+            FontSize = theme.FontSize,
+            Foreground = foreground,
+            Text = $"{index + 1}",
+            Width = Math.Ceiling(theme.FontSize * 1.8),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+
+        BitmapImage? image = EmojiAssetResolver.Load(emoji);
+        if (image is not null)
+        {
+            content.Children.Add(new Image
+            {
+                Source = image,
+                Width = Math.Max(20, theme.RowHeight - 6),
+                Height = Math.Max(20, theme.RowHeight - 6),
+                Margin = new Thickness(0, 0, 6, 0),
+                Stretch = Stretch.Uniform,
+            });
+        }
+        else
+        {
+            content.Children.Add(new TextBlock
+            {
+                FontFamily = font,
+                FontSize = theme.FontSize,
+                Foreground = foreground,
+                Text = emoji,
+                Margin = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+        }
+        content.Children.Add(new TextBlock
+        {
+            FontFamily = new FontFamily(theme.FontFamily),
+            FontSize = theme.FontSize,
+            Foreground = foreground,
+            Text = label,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        return content;
+    }
     private static Border CreateFooterAction(string label, string type, string clientId, long stateId, Func<OverlayMessage, Task> sendAction, OverlayTheme theme)
     {
         var action = new Border

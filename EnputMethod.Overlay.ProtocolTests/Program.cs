@@ -27,6 +27,7 @@ Console.WriteLine($"{tests.Length} protocol cases passed.");
 if (args.Contains("--protocol-only", StringComparer.Ordinal)) return;
 
 var received = new ConcurrentBag<OverlayMessage>();
+string pipeName = $"EnputMethod.Overlay.ProtocolTests.{Guid.NewGuid():N}";
 using (var server = new OverlayPipeServer((message, sendAction) =>
 {
     received.Add(message);
@@ -37,11 +38,11 @@ using (var server = new OverlayPipeServer((message, sendAction) =>
         StateId = message.StateId,
         CandidateIndex = message.ClientId == "host-one" ? 0 : 1,
     }).GetAwaiter().GetResult();
-}))
+}, pipeName: pipeName))
 {
     server.Start();
-    await AssertRoutedActionAsync("host-one", 11);
-    await AssertRoutedActionAsync("host-two", 12);
+    await AssertRoutedActionAsync(pipeName, "host-one", 11);
+    await AssertRoutedActionAsync(pipeName, "host-two", 12);
 }
 
 if (received.Count != 2 || !received.Any(message => message.ClientId == "host-one" && message.StateId == 11) || !received.Any(message => message.ClientId == "host-two" && message.StateId == 12))
@@ -51,9 +52,9 @@ if (received.Count != 2 || !received.Any(message => message.ClientId == "host-on
 
 Console.WriteLine("Multi-host pipe test passed.");
 
-static async Task AssertRoutedActionAsync(string clientId, long stateId)
+static async Task AssertRoutedActionAsync(string pipeName, string clientId, long stateId)
 {
-    using var pipe = new NamedPipeClientStream(".", "EnputMethod.Overlay.v1", PipeDirection.InOut, PipeOptions.Asynchronous);
+    using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
     await pipe.ConnectAsync(3000);
     using var reader = new StreamReader(pipe, new UTF8Encoding(false), false, 4096, true);
     using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, true) { AutoFlush = true };

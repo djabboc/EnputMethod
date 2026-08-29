@@ -19,7 +19,7 @@ public partial class App : Application
             Shutdown();
             return;
         }
-        _pipeServer = new OverlayPipeServer(_controller.HandleHostMessage);
+        _pipeServer = new OverlayPipeServer(_controller.HandleHostMessage, _controller.HandleClientDisconnected);
         _pipeServer.Start();
     }
 

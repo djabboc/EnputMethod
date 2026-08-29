@@ -11,11 +11,15 @@ internal sealed class OverlayPipeServer : IDisposable
     private readonly CancellationTokenSource _cancellation = new();
     private readonly ConcurrentDictionary<string, PipeConnection> _connections = new(StringComparer.Ordinal);
     private readonly Action<OverlayMessage, Func<OverlayMessage, Task>> _messageHandler;
+    private readonly Action<string>? _clientDisconnected;
+    private readonly string _pipeName;
     private Task? _listener;
 
-    public OverlayPipeServer(Action<OverlayMessage, Func<OverlayMessage, Task>> messageHandler)
+    public OverlayPipeServer(Action<OverlayMessage, Func<OverlayMessage, Task>> messageHandler, Action<string>? clientDisconnected = null, string? pipeName = null)
     {
         _messageHandler = messageHandler;
+        _clientDisconnected = clientDisconnected;
+        _pipeName = string.IsNullOrWhiteSpace(pipeName) ? OverlayProtocol.PipeName : pipeName;
     }
 
     public void Start()
@@ -30,7 +34,7 @@ internal sealed class OverlayPipeServer : IDisposable
             try
             {
                 var pipe = new NamedPipeServerStream(
-                    OverlayProtocol.PipeName,
+                    _pipeName,
                     PipeDirection.InOut,
                     NamedPipeServerStream.MaxAllowedServerInstances,
                     PipeTransmissionMode.Byte,
@@ -97,6 +101,7 @@ internal sealed class OverlayPipeServer : IDisposable
                 _connections.TryRemove(connection.ClientId, out _);
                 OverlayDiagnostics.Write("pipe.disconnected", connection.ClientId);
             }
+            if (connection is not null) _clientDisconnected?.Invoke(connection.ClientId);
         }
         }
     }

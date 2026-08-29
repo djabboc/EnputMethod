@@ -125,6 +125,16 @@ internal sealed class CandidateOverlayWindow : Window
         Top = position.Y;
     }
 
+    internal void WarmUp()
+    {
+        if (new WindowInteropHelper(this).Handle != IntPtr.Zero) return;
+        Opacity = 0;
+        Left = -32000;
+        Top = -32000;
+        Show();
+        Hide();
+        Opacity = 1;
+    }
     internal Rect? ScreenBoundsFor(string clientId)
     {
         if (!string.Equals(_clientId, clientId, StringComparison.Ordinal) || !_hasCandidates) return null;

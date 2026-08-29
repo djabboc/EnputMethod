@@ -21,6 +21,7 @@ public partial class App : Application
         }
         _pipeServer = new OverlayPipeServer(_controller.HandleHostMessage, _controller.HandleClientDisconnected);
         _pipeServer.Start();
+        _controller.WarmUp();
     }
 
     protected override void OnExit(ExitEventArgs e)

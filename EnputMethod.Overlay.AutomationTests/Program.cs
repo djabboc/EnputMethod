@@ -18,6 +18,7 @@ internal static class Program
             VerifyOwnerWindowProtocol();
             VerifyEmojiAssetNaming();
             VerifyEmojiCandidateUsesColorAsset();
+            VerifyCandidateWindowWarmup();
             VerifyPointFontSizeUsesWpfDips();
             VerifyPaginationLayoutAndHover();
             Console.WriteLine("Overlay foreground automation tests passed.");
@@ -75,6 +76,20 @@ internal static class Program
             var row = (Border)candidates.Children[0];
             var content = (StackPanel)row.Child;
             Assert(content.Children.OfType<Image>().SingleOrDefault() is Image { Source: not null }, "Emoji candidates must render their bundled color image instead of a monochrome font glyph.");
+        }
+        finally
+        {
+            overlay.Close();
+        }
+    }
+    private static void VerifyCandidateWindowWarmup()
+    {
+        var overlay = new CandidateOverlayWindow();
+        try
+        {
+            overlay.WarmUp();
+            Assert(new WindowInteropHelper(overlay).Handle != IntPtr.Zero, "Warmup must create the native window before the first candidate arrives.");
+            Assert(!overlay.IsVisible, "Warmup must not leave a visible candidate window on screen.");
         }
         finally
         {

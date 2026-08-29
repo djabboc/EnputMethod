@@ -105,7 +105,7 @@ public:
                         LaunchOverlay();
                         lastLaunch = now;
                     }
-                    WaitForSingleObject(stopEvent_, 250);
+                    WaitForSingleObject(stopEvent_, 25);
                     continue;
                 }
                 DWORD mode = PIPE_READMODE_BYTE;

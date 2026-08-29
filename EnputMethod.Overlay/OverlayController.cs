@@ -9,6 +9,7 @@ internal sealed class OverlayController
     private readonly Dictionary<string, CandidateOverlayWindow> _candidateWindows = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TranslationOverlayWindow> _translationWindows = new(StringComparer.Ordinal);
     private readonly DispatcherTimer _foregroundTimer;
+    private CandidateOverlayWindow? _warmCandidateWindow;
 
     public OverlayController()
     {
@@ -18,6 +19,16 @@ internal sealed class OverlayController
     }
 
 
+    internal void WarmUp()
+    {
+        Application.Current.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+        {
+            if (_warmCandidateWindow is not null) return;
+            _warmCandidateWindow = new CandidateOverlayWindow();
+            _warmCandidateWindow.WarmUp();
+            OverlayDiagnostics.Write("candidate.warmed");
+        }));
+    }
     public void HandleHostMessage(OverlayMessage message, Func<OverlayMessage, Task> sendAction)
     {
         Application.Current.Dispatcher.BeginInvoke(() =>
@@ -53,7 +64,8 @@ internal sealed class OverlayController
     private CandidateOverlayWindow CandidateWindowFor(string clientId)
     {
         if (_candidateWindows.TryGetValue(clientId, out CandidateOverlayWindow? window)) return window;
-        window = new CandidateOverlayWindow();
+        window = _warmCandidateWindow ?? new CandidateOverlayWindow();
+        _warmCandidateWindow = null;
         _candidateWindows.Add(clientId, window);
         return window;
     }

@@ -1473,11 +1473,7 @@ private:
         }
 
         if (!overlayClient_ || event.clientId != overlayClient_->ClientId() || event.stateId != overlayStateId_) return;
-        if (event.action == "presented") {
-            overlayActive_ = true;
-            enput::WriteOverlayDiagnostic("candidate.presented", "state=" + std::to_string(event.stateId));
-        }
-        else if (event.action == "selectCandidate") HandleCandidateWindowAction(event.candidateIndex);
+        if (event.action == "selectCandidate") HandleCandidateWindowAction(event.candidateIndex);
         else if (event.action == "previousPage") HandleCandidateWindowAction(-1);
         else if (event.action == "nextPage") HandleCandidateWindowAction(-2);
         else if (event.action == "dismiss") HandleCandidateWindowAction(-3);

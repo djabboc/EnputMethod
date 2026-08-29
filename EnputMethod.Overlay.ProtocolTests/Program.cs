@@ -8,7 +8,7 @@ var tests = new (string Name, string Json, bool Expected)[]
     ("candidate view", """{"type":"showCandidates","clientId":"host-1","stateId":4,"candidates":{"x":120,"y":80,"items":["hello","help"],"page":0,"pageCount":1,"selectedIndex":0,"capsLock":true,"layout":"vertical"}}""", true),
     ("candidate theme", """{"type":"showCandidates","clientId":"host-1","stateId":5,"candidates":{"x":120,"y":80,"items":["hello"],"page":0,"pageCount":1,"selectedIndex":0,"layout":"horizontal","theme":{"fontSize":16,"opacity":255,"borderWidth":1,"cornerRadius":8,"padding":10,"rowHeight":28,"translationWidth":380,"translationMaxHeight":240}}}""", true),
     ("translation hide", """{"type":"hide","clientId":"host-1","stateId":6,"surface":"translation"}""", true),
-    ("candidate presented", """{"type":"presented","clientId":"host-1","stateId":7}""", true),
+    ("internal presented event", """{"type":"presented","clientId":"host-1","stateId":7}""", false),
     ("missing candidates", """{"type":"showCandidates","clientId":"host-1","stateId":8}""", false),
     ("invalid page", """{"type":"showCandidates","clientId":"host-1","stateId":9,"candidates":{"x":0,"y":0,"items":["hello"],"page":1,"pageCount":1,"selectedIndex":0,"layout":"vertical"}}""", false),
     ("invalid surface", """{"type":"hide","clientId":"host-1","stateId":10,"surface":"unknown"}""", false),
@@ -39,8 +39,8 @@ using (var server = new OverlayPipeServer((message, sendAction) =>
 }))
 {
     server.Start();
-    await AssertAcceptedAsync("host-one", 11);
-    await AssertAcceptedAsync("host-two", 12);
+    await AssertRoutedActionAsync("host-one", 11);
+    await AssertRoutedActionAsync("host-two", 12);
 }
 
 if (received.Count != 2 || !received.Any(message => message.ClientId == "host-one" && message.StateId == 11) || !received.Any(message => message.ClientId == "host-two" && message.StateId == 12))
@@ -50,7 +50,7 @@ if (received.Count != 2 || !received.Any(message => message.ClientId == "host-on
 
 Console.WriteLine("Multi-host pipe test passed.");
 
-static async Task AssertAcceptedAsync(string clientId, long stateId)
+static async Task AssertRoutedActionAsync(string clientId, long stateId)
 {
     using var pipe = new NamedPipeClientStream(".", "EnputMethod.Overlay.v1", PipeDirection.InOut, PipeOptions.Asynchronous);
     await pipe.ConnectAsync(3000);
@@ -59,10 +59,8 @@ static async Task AssertAcceptedAsync(string clientId, long stateId)
     string? ready = await reader.ReadLineAsync();
     if (ready is null || !ready.Contains("\"ready\"", StringComparison.Ordinal)) throw new InvalidOperationException("Missing pipe ready message.");
     await writer.WriteLineAsync($"{{\"type\":\"showCandidates\",\"clientId\":\"{clientId}\",\"stateId\":{stateId},\"candidates\":{{\"x\":1,\"y\":1,\"items\":[\"hello\"],\"page\":0,\"pageCount\":1,\"selectedIndex\":0,\"layout\":\"vertical\"}}}}");
-    string? first = await reader.ReadLineAsync();
-    string? second = await reader.ReadLineAsync();
-    string[] responses = [first ?? "", second ?? ""];
-    if (!responses.Any(line => line.Contains($"\"stateId\":{stateId}", StringComparison.Ordinal) && line.Contains("\"accepted\"", StringComparison.Ordinal))) throw new InvalidOperationException($"Host {clientId} did not receive its acceptance.");
+    string? response = await reader.ReadLineAsync();
+    if (response is null) throw new InvalidOperationException($"Host {clientId} did not receive a routed action.");
     int candidateIndex = clientId == "host-one" ? 0 : 1;
-    if (!responses.Any(line => line.Contains("\"selectCandidate\"", StringComparison.Ordinal) && line.Contains($"\"clientId\":\"{clientId}\"", StringComparison.Ordinal) && line.Contains($"\"candidateIndex\":{candidateIndex}", StringComparison.Ordinal))) throw new InvalidOperationException($"Host {clientId} received an incorrect routed action.");
+    if (!response.Contains("\"selectCandidate\"", StringComparison.Ordinal) || !response.Contains($"\"clientId\":\"{clientId}\"", StringComparison.Ordinal) || !response.Contains($"\"candidateIndex\":{candidateIndex}", StringComparison.Ordinal)) throw new InvalidOperationException($"Host {clientId} received an incorrect routed action.");
 }

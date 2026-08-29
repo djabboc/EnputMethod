@@ -84,7 +84,6 @@ internal sealed class OverlayPipeServer : IDisposable
 
                 OverlayDiagnostics.Write("pipe.received", $"{message.Type} state={message.StateId} client={message.ClientId}");
                 _messageHandler(message, SendActionAsync);
-                await connection.SendAsync(JsonSerializer.Serialize(new { type = "accepted", stateId = message.StateId }, OverlayProtocol.JsonOptions), cancellationToken);
             }
         }
         catch (IOException)

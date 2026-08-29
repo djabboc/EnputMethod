@@ -16,7 +16,7 @@ internal sealed class CandidateOverlayWindow : Window
     private const int WmMouseActivate = 0x0021;
     private const int MaNoActivate = 3;
     private const double FooterButtonWidth = 28;
-    private const double FooterPageWidth = 52;
+
     private readonly StackPanel _content = new();
     private readonly Border _frame;
     private string? _clientId;
@@ -89,15 +89,20 @@ internal sealed class CandidateOverlayWindow : Window
         }
         _content.Children.Add(candidates);
 
-        // Keep paging controls on the leading edge so long candidates expand only to the right.
-        var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 4, 0, 0) };
-        var pager = new Grid { Width = FooterButtonWidth * 2 + FooterPageWidth, Height = Math.Max(22, theme.RowHeight - 6) };
-        pager.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FooterButtonWidth) });
-        pager.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FooterPageWidth) });
-        pager.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FooterButtonWidth) });
+        // Span the candidate width: page controls remain at opposing edges while the page label stays centered.
+        var footer = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 4, 0, 0), Height = Math.Max(22, theme.RowHeight - 6) };
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FooterButtonWidth) });
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FooterButtonWidth) });
         var previous = CreateFooterAction("<", "previousPage", "Previous page", view.Page > 0, clientId, stateId, sendAction, theme);
         Grid.SetColumn(previous, 0);
-        pager.Children.Add(previous);
+        footer.Children.Add(previous);
+        var indicators = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        if (view.CapsLock) indicators.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(6, 0, 0, 0), Text = "CAPS" });
+        if (!string.IsNullOrWhiteSpace(view.ModeMarker)) indicators.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(6, 0, 0, 0), Text = view.ModeMarker });
+        Grid.SetColumn(indicators, 1);
+        footer.Children.Add(indicators);
         var page = new TextBlock
         {
             FontFamily = new FontFamily(theme.FontFamily),
@@ -107,14 +112,11 @@ internal sealed class CandidateOverlayWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Text = $"{view.Page + 1}/{view.PageCount}",
         };
-        Grid.SetColumn(page, 1);
-        pager.Children.Add(page);
+        Grid.SetColumn(page, 2);
+        footer.Children.Add(page);
         var next = CreateFooterAction(">", "nextPage", "Next page", view.Page + 1 < view.PageCount, clientId, stateId, sendAction, theme);
-        Grid.SetColumn(next, 2);
-        pager.Children.Add(next);
-        footer.Children.Add(pager);
-        if (view.CapsLock) footer.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(8, 3, 0, 3), Text = "CAPS" });
-        if (!string.IsNullOrWhiteSpace(view.ModeMarker)) footer.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(8, 3, 0, 3), Text = view.ModeMarker });
+        Grid.SetColumn(next, 3);
+        footer.Children.Add(next);
         _content.Children.Add(footer);
 
         if (!IsVisible && OverlayFocus.IsForegroundWindow(_ownerWindow)) Show();

@@ -96,11 +96,12 @@ internal static class Program
 
             var frame = (Border)overlay.Content;
             var root = (StackPanel)frame.Child;
-            var footer = (StackPanel)root.Children[1];
-            Assert(footer.HorizontalAlignment == HorizontalAlignment.Left, "The pager must stay on the leading edge when candidates grow wider.");
-            var pager = (Grid)footer.Children[0];
-            Assert(pager.Width == 108 && pager.ColumnDefinitions.Count == 3, "The pager must reserve a stable width for both navigation buttons and the page label.");
-            var next = (Border)pager.Children[2];
+            var footer = (Grid)root.Children[1];
+            Assert(footer.HorizontalAlignment == HorizontalAlignment.Stretch && double.IsNaN(footer.Width), "The pager must span the candidate width instead of using a fixed control group.");
+            Assert(footer.ColumnDefinitions.Count == 4, "The pager must reserve opposing edge columns for both navigation buttons.");
+            var previous = (Border)footer.Children[0];
+            var next = (Border)footer.Children[^1];
+            Assert(Grid.GetColumn(previous) == 0 && Grid.GetColumn(next) == 3, "Previous and next controls must stay at opposite candidate-frame edges.");
             next.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = Mouse.MouseEnterEvent });
             Assert(next.Background is SolidColorBrush { Color: var color } && color == (Color)ColorConverter.ConvertFromString("#2c597a"), "An available navigation button must highlight on hover.");
         }

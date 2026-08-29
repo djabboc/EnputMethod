@@ -155,7 +155,7 @@ public:
             *wasConnected = true;
             return;
         }
-        if (type->string != "selectCandidate" && type->string != "previousPage" && type->string != "nextPage" && type->string != "dismiss") return;
+        if (type->string != "presented" && type->string != "selectCandidate" && type->string != "previousPage" && type->string != "nextPage" && type->string != "dismiss") return;
         const enput::json::Value* clientId = Member(message, "clientId", enput::json::Value::Type::String);
         const enput::json::Value* stateId = Member(message, "stateId", enput::json::Value::Type::Number);
         if (!clientId || !stateId || clientId->string != clientId_ || stateId->number <= 0) return;

@@ -1466,7 +1466,12 @@ private:
             return;
         }
         if (!overlayClient_ || event.clientId != overlayClient_->ClientId() || event.stateId != overlayStateId_) return;
-        if (event.action == "selectCandidate") HandleCandidateWindowAction(event.candidateIndex);
+        if (event.action == "presented") {
+            overlayActive_ = true;
+            candidateWindow_.Hide();
+            translationWindow_.Hide();
+        }
+        else if (event.action == "selectCandidate") HandleCandidateWindowAction(event.candidateIndex);
         else if (event.action == "previousPage") HandleCandidateWindowAction(-1);
         else if (event.action == "nextPage") HandleCandidateWindowAction(-2);
         else if (event.action == "dismiss") HandleCandidateWindowAction(-3);
@@ -1789,9 +1794,6 @@ private:
         if (translation) messages.push_back(TranslationOverlayMessage(*translation, candidateBounds, stateId));
         else messages.push_back("{\"type\":\"hide\",\"clientId\":\"" + overlayClient_->ClientId() + "\",\"stateId\":" + std::to_string(stateId) + ",\"surface\":\"translation\"}");
         if (!overlayClient_->PublishBatch(std::move(messages))) return;
-        overlayActive_ = true;
-        candidateWindow_.Hide();
-        translationWindow_.Hide();
     }
 
     HRESULT UpdateComposition(ITfContext* context, TfEditCookie cookie) {

@@ -44,6 +44,7 @@ internal sealed record OverlayMessage
         "showCandidates" => HasClientId && StateId > 0 && Candidates is not null && Candidates.IsValid,
         "showTranslation" => HasClientId && StateId > 0 && Translation is not null && Translation.IsValid,
         "hide" => HasClientId && StateId > 0 && (Surface is null or "all" or "candidates" or "translation"),
+        "presented" => HasClientId && StateId > 0,
         "selectCandidate" => HasClientId && StateId > 0 && CandidateIndex is >= 0,
         "previousPage" or "nextPage" or "dismiss" => HasClientId && StateId > 0,
         _ => false,

@@ -29,7 +29,9 @@ internal sealed class OverlayController
                     OverlayDiagnostics.Write("candidate.presented", $"state={message.StateId} client={message.ClientId}");
                     break;
                 case "showTranslation" when message.Translation is not null:
-                    TranslationWindowFor(message.ClientId).ShowTranslation(message.ClientId, message.Translation);
+                    CandidateOverlayWindow? candidateWindow = _candidateWindows.GetValueOrDefault(message.ClientId);
+                    TranslationWindowFor(message.ClientId).ShowTranslation(message.ClientId, message.Translation,
+                        candidateWindow?.ScreenBoundsFor(message.ClientId));
                     break;
                 case "hide":
                     if (message.Surface is not "translation") HideCandidateWindow(message.ClientId);

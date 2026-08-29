@@ -28,6 +28,44 @@ internal static class OverlayPositioning
         return new Point(x * scale, y * scale);
     }
 
+    internal static Rect? ScreenBounds(Window window)
+    {
+        IntPtr handle = new WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero || !window.IsVisible) return null;
+        double scale = 96.0 / GetDpiForWindow(handle);
+        window.UpdateLayout();
+        double width = window.ActualWidth / scale;
+        double height = window.ActualHeight / scale;
+        if (width <= 0 || height <= 0) return null;
+        return new Rect(window.Left / scale, window.Top / scale, width, height);
+    }
+    internal static Point Adjacent(Window window, Rect candidateBounds)
+    {
+        IntPtr handle = new WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero) return new Point(candidateBounds.Right + 12, candidateBounds.Top);
+        double scale = 96.0 / GetDpiForWindow(handle);
+        window.UpdateLayout();
+        int width = Math.Max(1, (int)Math.Ceiling(window.ActualWidth / scale));
+        int height = Math.Max(1, (int)Math.Ceiling(window.ActualHeight / scale));
+        int x = (int)Math.Ceiling(candidateBounds.Right) + 12;
+        int y = (int)Math.Floor(candidateBounds.Top);
+        IntPtr monitor = MonitorFromPoint(new NativePoint(x, y), MonitorDefaultToNearest);
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (monitor != IntPtr.Zero && GetMonitorInfo(monitor, ref info))
+        {
+            bool rightFits = x + width <= info.WorkArea.Right;
+            bool leftFits = candidateBounds.Left - 12 - width >= info.WorkArea.Left;
+            if (!rightFits && leftFits) x = (int)Math.Floor(candidateBounds.Left) - 12 - width;
+            else if (!rightFits)
+            {
+                x = (int)Math.Floor(candidateBounds.Left);
+                if (candidateBounds.Bottom + 12 + height <= info.WorkArea.Bottom) y = (int)Math.Ceiling(candidateBounds.Bottom) + 12;
+                else y = (int)Math.Floor(candidateBounds.Top) - 12 - height;
+            }
+        }
+        return Constrain(window, x, y);
+    }
+
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr window);
 

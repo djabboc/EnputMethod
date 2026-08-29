@@ -475,7 +475,8 @@ const std::vector<EmojiEntry>& LoadEmojiDictionary() {
     std::vector<EmojiEntry> entries;
     enput::json::Value document;
     const std::string contents = available ? ReadUtf8File(path) : std::string{};
-    const enput::json::Value* values = enput::json::ReadDocument(contents, &document) ? enput::json::ObjectValue(document, "entries") : nullptr;
+    const bool parsed = enput::json::ReadDocument(contents, &document);
+    const enput::json::Value* values = parsed ? enput::json::ObjectValue(document, "entries") : nullptr;
     if (values && values->type == enput::json::Value::Type::Array) {
         for (const enput::json::Value& value : values->array) {
             const enput::json::Value* emoji = enput::json::ObjectValue(value, "emoji");
@@ -484,6 +485,14 @@ const std::vector<EmojiEntry>& LoadEmojiDictionary() {
             entry.emoji = Utf8ToWide(emoji->string);
             entry.keywords = JsonStrings(enput::json::ObjectValue(value, "keywords"));
             if (!entry.emoji.empty() && !entry.keywords.empty()) entries.push_back(std::move(entry));
+        }
+    } else if (parsed && document.type == enput::json::Value::Type::Object) {
+        for (const auto& [keyword, emoji] : document.object) {
+            if (emoji.type != enput::json::Value::Type::String || keyword.empty()) continue;
+            EmojiEntry entry;
+            entry.emoji = Utf8ToWide(emoji.string);
+            entry.keywords.push_back(Utf8ToWide(keyword));
+            if (!entry.emoji.empty() && !entry.keywords.front().empty()) entries.push_back(std::move(entry));
         }
     }
     cache.attributes = attributes;

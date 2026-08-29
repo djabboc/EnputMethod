@@ -105,6 +105,12 @@ internal sealed class CandidateOverlayWindow : Window
         Top = position.Y;
     }
 
+    internal Rect? ScreenBoundsFor(string clientId)
+    {
+        if (!string.Equals(_clientId, clientId, StringComparison.Ordinal) || !_hasCandidates) return null;
+        return OverlayPositioning.ScreenBounds(this);
+    }
+
     public void HideFor(string clientId)
     {
         if (!string.Equals(_clientId, clientId, StringComparison.Ordinal)) return;

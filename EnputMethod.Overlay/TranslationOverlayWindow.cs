@@ -46,7 +46,7 @@ internal sealed class TranslationOverlayWindow : Window
         Content = _frame;
     }
 
-    public void ShowTranslation(string clientId, TranslationView view)
+    public void ShowTranslation(string clientId, TranslationView view, Rect? candidateBounds)
     {
         _clientId = clientId;
         _ownerWindow = view.OwnerWindow;
@@ -56,7 +56,9 @@ internal sealed class TranslationOverlayWindow : Window
         _title.Text = view.Title;
         _content.Text = view.Content;
         if (!IsVisible && OverlayFocus.IsForegroundWindow(_ownerWindow)) Show();
-        Point position = OverlayPositioning.Constrain(this, view.CandidateRight + 8, view.CandidateTop);
+        Point position = candidateBounds is Rect bounds
+            ? OverlayPositioning.Adjacent(this, bounds)
+            : OverlayPositioning.Constrain(this, view.CandidateRight + 8, view.CandidateTop);
         Left = position.X;
         Top = position.Y;
     }

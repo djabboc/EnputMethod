@@ -90,7 +90,7 @@ internal sealed class CandidateOverlayWindow : Window
         _content.Children.Add(candidates);
 
         // Span the candidate width: page controls remain at opposing edges while the page label stays centered.
-        var footer = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 4, 0, 0), Height = Math.Max(22, theme.RowHeight - 6) };
+        var footer = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 4, 0, 0), Height = Math.Max(theme.WpfFontSize + 6, theme.RowHeight - 6) };
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(FooterButtonWidth) });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -99,14 +99,14 @@ internal sealed class CandidateOverlayWindow : Window
         Grid.SetColumn(previous, 0);
         footer.Children.Add(previous);
         var indicators = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        if (view.CapsLock) indicators.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(6, 0, 0, 0), Text = "CAPS" });
-        if (!string.IsNullOrWhiteSpace(view.ModeMarker)) indicators.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.FontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(6, 0, 0, 0), Text = view.ModeMarker });
+        if (view.CapsLock) indicators.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.WpfFontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(6, 0, 0, 0), Text = "CAPS" });
+        if (!string.IsNullOrWhiteSpace(view.ModeMarker)) indicators.Children.Add(new TextBlock { FontFamily = new FontFamily(theme.FontFamily), FontSize = theme.WpfFontSize, Foreground = Brush(theme.SelectedForeground, Brushes.LightSkyBlue), Margin = new Thickness(6, 0, 0, 0), Text = view.ModeMarker });
         Grid.SetColumn(indicators, 1);
         footer.Children.Add(indicators);
         var page = new TextBlock
         {
             FontFamily = new FontFamily(theme.FontFamily),
-            FontSize = theme.FontSize,
+            FontSize = theme.WpfFontSize,
             Foreground = Brush(theme.Foreground, Brushes.LightGray),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
@@ -164,7 +164,7 @@ internal sealed class CandidateOverlayWindow : Window
         if (!emojiMode) return new TextBlock
         {
             FontFamily = font,
-            FontSize = theme.FontSize,
+            FontSize = theme.WpfFontSize,
             Foreground = foreground,
             Text = $"{index + 1}  {candidate}",
         };
@@ -175,10 +175,10 @@ internal sealed class CandidateOverlayWindow : Window
         content.Children.Add(new TextBlock
         {
             FontFamily = new FontFamily(theme.FontFamily),
-            FontSize = theme.FontSize,
+            FontSize = theme.WpfFontSize,
             Foreground = foreground,
             Text = $"{index + 1}",
-            Width = Math.Ceiling(theme.FontSize * 1.8),
+            Width = Math.Ceiling(theme.WpfFontSize * 1.8),
             VerticalAlignment = VerticalAlignment.Center,
         });
 
@@ -199,7 +199,7 @@ internal sealed class CandidateOverlayWindow : Window
             content.Children.Add(new TextBlock
             {
                 FontFamily = font,
-                FontSize = theme.FontSize,
+                FontSize = theme.WpfFontSize,
                 Foreground = foreground,
                 Text = emoji,
                 Margin = new Thickness(0, 0, 6, 0),
@@ -209,7 +209,7 @@ internal sealed class CandidateOverlayWindow : Window
         content.Children.Add(new TextBlock
         {
             FontFamily = new FontFamily(theme.FontFamily),
-            FontSize = theme.FontSize,
+            FontSize = theme.WpfFontSize,
             Foreground = foreground,
             Text = label,
             VerticalAlignment = VerticalAlignment.Center,
@@ -231,7 +231,7 @@ internal sealed class CandidateOverlayWindow : Window
             Child = new TextBlock
             {
                 FontFamily = new FontFamily(theme.FontFamily),
-                FontSize = theme.FontSize,
+                FontSize = theme.WpfFontSize,
                 Foreground = Brush(theme.Foreground, Brushes.White),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,

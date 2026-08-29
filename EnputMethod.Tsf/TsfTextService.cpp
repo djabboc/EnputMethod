@@ -8,6 +8,7 @@
 #include "JsonObjectReader.h"
 #include "OverlayClient.h"
 #include "OverlayDiagnostics.h"
+#include "TranslationText.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -528,17 +529,22 @@ bool ParseTranslationEntry(const enput::json::Value& value, TranslationEntry* en
     const enput::json::Value* text = enput::json::ObjectValue(value, "text");
     if (!text || text->type != enput::json::Value::Type::String) return false;
     TranslationEntry parsed;
-    parsed.text = Utf8ToWide(text->string);
+    parsed.text = enput::NormalizeEscapedLineBreaks(Utf8ToWide(text->string));
     parsed.partsOfSpeech = JsonStrings(enput::json::ObjectValue(value, "partOfSpeech"));
-    parsed.source = Utf8ToWide(enput::json::ObjectValue(value, "source") && enput::json::ObjectValue(value, "source")->type == enput::json::Value::Type::String ? enput::json::ObjectValue(value, "source")->string : "");
+    for (std::wstring& part : parsed.partsOfSpeech) part = enput::NormalizeEscapedLineBreaks(std::move(part));
+    parsed.source = enput::NormalizeEscapedLineBreaks(Utf8ToWide(enput::json::ObjectValue(value, "source") && enput::json::ObjectValue(value, "source")->type == enput::json::Value::Type::String ? enput::json::ObjectValue(value, "source")->string : ""));
     const enput::json::Value* translations = enput::json::ObjectValue(value, "translations");
     if (translations && translations->type == enput::json::Value::Type::Object) {
-        for (const auto& [language, meanings] : translations->object) parsed.translations.emplace_back(Utf8ToWide(language), JsonStrings(&meanings));
+        for (const auto& [language, meanings] : translations->object) {
+            std::vector<std::wstring> normalizedMeanings = JsonStrings(&meanings);
+            for (std::wstring& meaning : normalizedMeanings) meaning = enput::NormalizeEscapedLineBreaks(std::move(meaning));
+            parsed.translations.emplace_back(Utf8ToWide(language), std::move(normalizedMeanings));
+        }
     }
     const enput::json::Value* examples = enput::json::ObjectValue(value, "examples");
     if (examples && examples->type == enput::json::Value::Type::Array && !examples->array.empty()) {
         const enput::json::Value* example = enput::json::ObjectValue(examples->array.front(), "text");
-        if (example && example->type == enput::json::Value::Type::String) parsed.example = Utf8ToWide(example->string);
+        if (example && example->type == enput::json::Value::Type::String) parsed.example = enput::NormalizeEscapedLineBreaks(Utf8ToWide(example->string));
     }
     if (parsed.text.empty()) return false;
     *entry = std::move(parsed);

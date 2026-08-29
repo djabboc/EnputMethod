@@ -1,6 +1,7 @@
 #include "../EnputMethod.Tsf/CandidateRanking.h"
 #include "../EnputMethod.Tsf/CandidateSelection.h"
 #include "../EnputMethod.Tsf/JsonObjectReader.h"
+#include "../EnputMethod.Tsf/TranslationText.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -45,6 +46,11 @@ void VerifyEmojiJsonEscapes() {
     const enput::json::Value* emoji = enput::json::ObjectValue(document, "emoji");
     Expect(emoji && emoji->type == enput::json::Value::Type::String && emoji->string == "\xF0\x9F\x94\xA5", "A JSON surrogate pair must decode to the UTF-8 fire Emoji.");
 }
+
+void VerifyTranslationLineBreaks() {
+    const std::wstring normalized = enput::NormalizeEscapedLineBreaks(L"First\\nSecond\\r\\nThird\\rFourth");
+    Expect(normalized == L"First\nSecond\nThird\nFourth", "Escaped dictionary line breaks must render as actual lines.");
+}
 void VerifyFrequencyRanking() {
     std::vector<std::wstring> candidates{ L"hello", L"help", L"helium", L"hero" };
     enput::CandidateFrequencyMap frequencies;
@@ -65,6 +71,7 @@ void VerifyFrequencyRanking() {
 int main() {
     VerifyDigitMappings();
     VerifyEmojiJsonEscapes();
+    VerifyTranslationLineBreaks();
     VerifyFrequencyRanking();
     VerifyCandidateBounds();
     std::cout << "TSF candidate selection tests passed.\n";

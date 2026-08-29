@@ -91,10 +91,10 @@ internal sealed class TranslationOverlayWindow : Window
         _panel.Width = theme.TranslationWidth;
         _scrollViewer.MaxHeight = theme.TranslationMaxHeight;
         _title.FontFamily = new FontFamily(theme.FontFamily);
-        _title.FontSize = theme.FontSize;
+        _title.FontSize = theme.WpfFontSize;
         _title.Foreground = Brush(theme.TranslationTitleForeground, Brushes.White);
         _content.FontFamily = new FontFamily(theme.FontFamily);
-        _content.FontSize = theme.FontSize;
+        _content.FontSize = theme.WpfFontSize;
         _content.Foreground = Brush(theme.TranslationForeground, Brushes.WhiteSmoke);
     }
 

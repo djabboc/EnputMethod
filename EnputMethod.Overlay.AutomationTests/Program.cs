@@ -18,6 +18,7 @@ internal static class Program
             VerifyOwnerWindowProtocol();
             VerifyEmojiAssetNaming();
             VerifyEmojiCandidateUsesColorAsset();
+            VerifyPointFontSizeUsesWpfDips();
             VerifyPaginationLayoutAndHover();
             Console.WriteLine("Overlay foreground automation tests passed.");
             return 0;
@@ -74,6 +75,32 @@ internal static class Program
             var row = (Border)candidates.Children[0];
             var content = (StackPanel)row.Child;
             Assert(content.Children.OfType<Image>().SingleOrDefault() is Image { Source: not null }, "Emoji candidates must render their bundled color image instead of a monochrome font glyph.");
+        }
+        finally
+        {
+            overlay.Close();
+        }
+    }
+    private static void VerifyPointFontSizeUsesWpfDips()
+    {
+        var overlay = new CandidateOverlayWindow();
+        try
+        {
+            overlay.ShowCandidates("font-test", 1, new CandidateView
+            {
+                Items = ["hello"],
+                Page = 0,
+                PageCount = 1,
+                SelectedIndex = 0,
+                Layout = "vertical",
+                Theme = new OverlayTheme { FontSize = 18 },
+            }, _ => Task.CompletedTask);
+
+            var frame = (Border)overlay.Content;
+            var root = (StackPanel)frame.Child;
+            var candidates = (StackPanel)root.Children[0];
+            var row = (Border)candidates.Children[0];
+            Assert(row.Child is TextBlock { FontSize: 24 }, "An 18pt native font must render as 24 WPF DIPs.");
         }
         finally
         {

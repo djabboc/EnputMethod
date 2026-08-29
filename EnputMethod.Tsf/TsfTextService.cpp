@@ -4,6 +4,7 @@
 #include <textstor.h>
 #include <msctf.h>
 #include <winsqlite/winsqlite3.h>
+#include "ApproximateMatch.h"
 #include "CandidateRanking.h"
 #include "CandidateSelection.h"
 #include "JsonObjectReader.h"
@@ -120,6 +121,10 @@ struct ThemeStyle {
     COLORREF translationBackground = RGB(31, 41, 55);
     COLORREF translationForeground = RGB(243, 244, 246);
     COLORREF translationTitleForeground = RGB(255, 255, 255);
+    COLORREF translationPartForeground = RGB(147, 197, 253);
+    COLORREF translationLabelForeground = RGB(165, 243, 252);
+    COLORREF translationExampleForeground = RGB(196, 181, 253);
+    COLORREF translationExampleBackground = RGB(49, 46, 75);
     COLORREF translationBorder = RGB(75, 85, 99);
     COLORREF translationScrollbarTrack = RGB(75, 85, 99);
     COLORREF translationScrollbarThumb = RGB(96, 165, 250);
@@ -265,6 +270,10 @@ ThemeStyle LoadTheme(const std::string& name) {
     theme.translationBackground = ColorOr(object, "translationBackground", theme.background);
     theme.translationForeground = ColorOr(object, "translationForeground", theme.foreground);
     theme.translationTitleForeground = ColorOr(object, "translationTitleForeground", theme.selectedForeground);
+    theme.translationPartForeground = ColorOr(object, "translationPartForeground", theme.selectedBorder);
+    theme.translationLabelForeground = ColorOr(object, "translationLabelForeground", theme.selectedForeground);
+    theme.translationExampleForeground = ColorOr(object, "translationExampleForeground", theme.foreground);
+    theme.translationExampleBackground = ColorOr(object, "translationExampleBackground", theme.background);
     theme.translationBorder = ColorOr(object, "translationBorder", theme.border);
     theme.translationScrollbarTrack = ColorOr(object, "translationScrollbarTrack", theme.border);
     theme.translationScrollbarThumb = ColorOr(object, "translationScrollbarThumb", theme.selectedBorder);
@@ -735,6 +744,20 @@ std::vector<std::wstring> QueryWords(const std::wstring& prefix) {
     return results;
 }
 
+std::vector<std::wstring> QueryApproximateWords(const std::wstring& queryText) {
+    if (queryText.size() < 3) return {};
+    SqliteStatement query(Lexicon().Open(), L"SELECT text, normalized FROM words WHERE normalized >= ?2 AND normalized < ?3 AND normalized LIKE ?1 ESCAPE '\\' ORDER BY ordinal LIMIT 96;");
+    if (!query) return {};
+    const std::wstring firstCharacter(1, queryText.front());
+    query.Bind(1, enput::LikeOrderedSubsequencePattern(queryText)); query.Bind(2, firstCharacter); query.Bind(3, PrefixLimit(firstCharacter));
+    std::vector<std::wstring> results;
+    while (query.Next()) {
+        const std::wstring normalized = query.Text(1);
+        if (enput::IsOrderedSubsequence(queryText, normalized)) results.push_back(query.Text(0));
+    }
+    return results;
+}
+
 struct StoredSuggestion { std::wstring trigger; std::wstring candidate; int kind = 0; };
 
 std::vector<StoredSuggestion> QuerySuggestionPrefixes(const std::wstring& prefix) {
@@ -755,7 +778,8 @@ std::vector<StoredSuggestion> QuerySuggestions(const std::wstring& trigger) {
     return results;
 }
 
-struct StoredEmoji { std::wstring emoji; std::vector<std::wstring> keywords; int priority = 0; bool exactKeyword = false; };
+enum class EmojiMatchKind { Approximate, Prefix, Exact };
+struct StoredEmoji { std::wstring emoji; std::vector<std::wstring> keywords; int priority = 0; EmojiMatchKind matchKind = EmojiMatchKind::Approximate; };
 
 std::vector<StoredEmoji> QueryEmoji(const std::wstring& prefix) {
     SqliteStatement query(Lexicon().Open(), L"SELECT k.emoji, k.keyword, k.normalized, e.priority FROM emoji_keyword k JOIN emoji e ON e.emoji = k.emoji WHERE k.emoji IN (SELECT emoji FROM emoji_keyword WHERE normalized >= ?1 AND normalized < ?2) ORDER BY e.priority DESC, k.emoji, k.normalized;");
@@ -765,9 +789,25 @@ std::vector<StoredEmoji> QueryEmoji(const std::wstring& prefix) {
     while (query.Next()) {
         const std::wstring emoji = query.Text(0);
         auto entry = std::find_if(results.begin(), results.end(), [&emoji](const StoredEmoji& value) { return value.emoji == emoji; });
-        if (entry == results.end()) { results.push_back({ emoji, {}, query.Int(3), false }); entry = std::prev(results.end()); }
+        if (entry == results.end()) { results.push_back({ emoji, {}, query.Int(3), EmojiMatchKind::Prefix }); entry = std::prev(results.end()); }
         entry->keywords.push_back(query.Text(1));
-        if (query.Text(2) == prefix) entry->exactKeyword = true;
+        if (query.Text(2) == prefix) entry->matchKind = EmojiMatchKind::Exact;
+    }
+    return results;
+}
+
+std::vector<StoredEmoji> QueryApproximateEmoji(const std::wstring& queryText) {
+    if (queryText.size() < 3) return {};
+    SqliteStatement query(Lexicon().Open(), L"SELECT k.emoji, k.keyword, k.normalized, e.priority FROM emoji_keyword k JOIN emoji e ON e.emoji = k.emoji WHERE k.emoji IN (SELECT emoji FROM emoji_keyword WHERE normalized >= ?2 AND normalized < ?3 AND normalized LIKE ?1 ESCAPE '\\') ORDER BY e.priority DESC, k.emoji, k.normalized;");
+    if (!query) return {};
+    const std::wstring firstCharacter(1, queryText.front());
+    query.Bind(1, enput::LikeOrderedSubsequencePattern(queryText)); query.Bind(2, firstCharacter); query.Bind(3, PrefixLimit(firstCharacter));
+    std::vector<StoredEmoji> results;
+    while (query.Next()) {
+        const std::wstring emoji = query.Text(0);
+        auto entry = std::find_if(results.begin(), results.end(), [&emoji](const StoredEmoji& value) { return value.emoji == emoji; });
+        if (entry == results.end()) { results.push_back({ emoji, {}, query.Int(3), EmojiMatchKind::Approximate }); entry = std::prev(results.end()); }
+        entry->keywords.push_back(query.Text(1));
     }
     return results;
 }
@@ -1762,6 +1802,8 @@ private:
     bool ShouldHandleKey(WPARAM key) const {
         if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key)) return true;
         if (HasShortcut(configuration_.shortcuts.toggleEmojiMode, key)) return true;
+        if (emojiMode_ && !allCandidates_.empty() &&
+            (HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key))) return true;
         if (emojiMode_ && key == VK_ESCAPE && typed_.empty()) return true;
         if (IsSuggestionActive() || detachedSuggestionActive_) return !IsModifierKey(key);
         if (!typed_.empty()) return !IsModifierKey(key);
@@ -1853,9 +1895,11 @@ private:
         std::vector<std::wstring> exactMatches;
         std::vector<std::wstring> continuationMatches;
         std::vector<std::wstring> prefixMatches;
+        std::vector<std::wstring> approximateMatches;
         std::unordered_set<std::wstring> exactKeys;
         std::unordered_set<std::wstring> continuationKeys;
         std::unordered_set<std::wstring> prefixKeys;
+        std::unordered_set<std::wstring> approximateKeys;
         const auto appendUnique = [](std::vector<std::wstring>* candidates, std::unordered_set<std::wstring>* keys, const std::wstring& candidate) {
             const std::wstring lowerCandidate = Lowercase(candidate);
             if (keys->insert(lowerCandidate).second) candidates->push_back(candidate);
@@ -1877,14 +1921,21 @@ private:
                 appendUnique(&prefixMatches, &prefixKeys, entry.candidate);
             }
         }
+        for (const std::wstring& word : QueryApproximateWords(lower)) {
+            const std::wstring normalized = Lowercase(word);
+            if (!normalized.starts_with(lower) && enput::IsOrderedSubsequence(lower, normalized)) {
+                appendUnique(&approximateMatches, &approximateKeys, word);
+            }
+        }
         std::vector<std::wstring> matches;
         if (configuration_.adaptiveCandidateRanking) {
             const enput::CandidateFrequencyMap& frequencies = CandidateFrequencies();
             enput::RankCandidatesByFrequency(&exactMatches, frequencies);
             enput::RankCandidatesByFrequency(&continuationMatches, frequencies);
             enput::RankCandidatesByFrequency(&prefixMatches, frequencies);
+            enput::RankCandidatesByFrequency(&approximateMatches, frequencies);
         }
-        matches.reserve(exactMatches.size() + continuationMatches.size() + prefixMatches.size());
+        matches.reserve(exactMatches.size() + continuationMatches.size() + prefixMatches.size() + approximateMatches.size());
         std::unordered_set<std::wstring> matchKeys;
         const auto appendMatches = [&matches, &matchKeys](const std::vector<std::wstring>& source) {
             for (const std::wstring& candidate : source) {
@@ -1894,6 +1945,7 @@ private:
         appendMatches(exactMatches);
         appendMatches(continuationMatches);
         appendMatches(prefixMatches);
+        appendMatches(approximateMatches);
         return matches;
     }
     std::vector<std::wstring> FindAssociatedCandidates(const std::wstring& committedText) {
@@ -1924,23 +1976,31 @@ private:
             std::wstring emoji;
             std::wstring candidate;
             int priority = 0;
-            bool exactKeyword = false;
+            EmojiMatchKind matchKind = EmojiMatchKind::Approximate;
         };
 
         const std::wstring lower = Lowercase(typed);
         std::vector<Match> matches;
-        for (const StoredEmoji& entry : QueryEmoji(lower)) {
+        const auto appendEntry = [&matches](const StoredEmoji& entry) {
             std::wstring candidate = entry.emoji;
             candidate += static_cast<wchar_t>(0x1F);
             for (size_t index = 0; index < entry.keywords.size(); ++index) {
                 if (index) candidate += L", ";
                 candidate += entry.keywords[index];
             }
-            matches.push_back({ entry.emoji, std::move(candidate), entry.priority, entry.exactKeyword });
+            matches.push_back({ entry.emoji, std::move(candidate), entry.priority, entry.matchKind });
+        };
+        std::unordered_set<std::wstring> emojiKeys;
+        for (const StoredEmoji& entry : QueryEmoji(lower)) {
+            if (emojiKeys.insert(entry.emoji).second) appendEntry(entry);
+        }
+        for (const StoredEmoji& entry : QueryApproximateEmoji(lower)) {
+            if (emojiKeys.insert(entry.emoji).second) appendEntry(entry);
         }
         std::stable_sort(matches.begin(), matches.end(), [](const Match& left, const Match& right) {
+            if (left.matchKind != right.matchKind) return left.matchKind > right.matchKind;
             if (left.priority != right.priority) return left.priority > right.priority;
-            return left.exactKeyword && !right.exactKeyword;
+            return left.emoji < right.emoji;
         });
         std::vector<std::wstring> candidates;
         candidates.reserve(matches.size());
@@ -2024,7 +2084,10 @@ private:
             ",\"border\":" + ColorJson(theme.border) + ",\"selectedBackground\":" + ColorJson(theme.selectedBackground) +
             ",\"selectedForeground\":" + ColorJson(theme.selectedForeground) + ",\"translationBackground\":" + ColorJson(theme.translationBackground) +
             ",\"translationForeground\":" + ColorJson(theme.translationForeground) + ",\"translationTitleForeground\":" + ColorJson(theme.translationTitleForeground) +
-            ",\"translationBorder\":" + ColorJson(theme.translationBorder) + ",\"fontFamily\":" + JsonString(configuration_.fontFamily) +
+            ",\"translationPartForeground\":" + ColorJson(theme.translationPartForeground) + ",\"translationLabelForeground\":" + ColorJson(theme.translationLabelForeground) +
+            ",\"translationExampleForeground\":" + ColorJson(theme.translationExampleForeground) + ",\"translationExampleBackground\":" + ColorJson(theme.translationExampleBackground) +
+            ",\"translationBorder\":" + ColorJson(theme.translationBorder) + ",\"translationScrollbarTrack\":" + ColorJson(theme.translationScrollbarTrack) +
+            ",\"translationScrollbarThumb\":" + ColorJson(theme.translationScrollbarThumb) + ",\"fontFamily\":" + JsonString(configuration_.fontFamily) +
             ",\"fontSize\":" + std::to_string(configuration_.fontSize) + ",\"opacity\":" + std::to_string(configuration_.opacity) +
             ",\"borderWidth\":" + std::to_string(theme.borderWidth) + ",\"cornerRadius\":" + std::to_string(theme.cornerRadius) +
             ",\"padding\":" + std::to_string(theme.padding) + ",\"rowHeight\":" + std::to_string(theme.rowHeight) +

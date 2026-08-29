@@ -1,6 +1,7 @@
 using EnputMethod.Overlay;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -171,6 +172,10 @@ internal static class Program
             var content = (RichTextBox)panel.Children[1];
             Assert(content.Document.Blocks.Count == 4, "Translation content must be rendered as structured FlowDocument paragraphs.");
             Assert(content.Document.Blocks.OfType<Paragraph>().Any(paragraph => paragraph.Inlines.OfType<Run>().Any(run => run.Text == "zh-CN: ")), "Language labels must remain semantic rich-text runs.");
+            Assert(content.IsReadOnly && content.IsDocumentEnabled && content.IsHitTestVisible && content.ContextMenu is not null, "Translation rich text must remain mouse-selectable and expose a copy command.");
+            Assert(content.Resources[typeof(ScrollBar)] is Style, "Translation scrollbar styling must come from the supplied theme.");
+            content.SelectAll();
+            Assert(content.Selection.Text.Contains("牙套", StringComparison.Ordinal), "Translation selection must include rendered rich text.");
             overlay.Width = 520;
             overlay.Height = 360;
             overlay.ShowTranslation("translation-test", new TranslationView

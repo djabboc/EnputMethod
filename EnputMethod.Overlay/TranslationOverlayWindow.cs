@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -32,8 +33,8 @@ internal sealed class TranslationOverlayWindow : Window
     private readonly RichTextBox _content = new()
     {
         IsReadOnly = true,
-        IsDocumentEnabled = false,
-        Focusable = false,
+        IsDocumentEnabled = true,
+        Focusable = true,
         BorderThickness = new Thickness(0),
         Background = Brushes.Transparent,
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -67,6 +68,10 @@ internal sealed class TranslationOverlayWindow : Window
         Topmost = true;
         WindowStyle = WindowStyle.None;
         _content.Document = new FlowDocument { PagePadding = new Thickness(0) };
+        var copy = new MenuItem { Header = "Copy" };
+        copy.Click += (_, _) => CopySelection();
+        _content.ContextMenu = new ContextMenu();
+        _content.ContextMenu.Items.Add(copy);
         _panel = new Grid();
         _panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -150,6 +155,10 @@ internal sealed class TranslationOverlayWindow : Window
             _content.FontFamily = new FontFamily(theme.FontFamily);
             _content.FontSize = theme.WpfFontSize;
             _content.Foreground = Brush(theme.TranslationForeground, Brushes.WhiteSmoke);
+            var scrollBarStyle = new Style(typeof(ScrollBar));
+            scrollBarStyle.Setters.Add(new Setter(Control.BackgroundProperty, Brush(theme.TranslationScrollbarTrack, Brushes.DimGray)));
+            scrollBarStyle.Setters.Add(new Setter(Control.ForegroundProperty, Brush(theme.TranslationScrollbarThumb, Brushes.SteelBlue)));
+            _content.Resources[typeof(ScrollBar)] = scrollBarStyle;
             _content.Document.PageWidth = Math.Max(1, Width - (_frame.Padding.Left + _frame.Padding.Right + _frame.BorderThickness.Left + _frame.BorderThickness.Right));
         }
         finally
@@ -174,13 +183,35 @@ internal sealed class TranslationOverlayWindow : Window
             var paragraph = new Paragraph { Margin = new Thickness(0, firstLine ? 6 : 3, 0, 0) };
             if (rawLine.StartsWith("Example: ", StringComparison.Ordinal))
             {
-                paragraph.Inlines.Add(new Run("Example: ") { FontWeight = FontWeights.SemiBold });
-                paragraph.Inlines.Add(new Run(rawLine["Example: ".Length..]) { FontStyle = FontStyles.Italic });
+                paragraph.Inlines.Add(new Run("Example: ")
+                {
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = Brush(theme.TranslationLabelForeground, Brushes.LightSkyBlue),
+                });
+                paragraph.Inlines.Add(new Run(rawLine["Example: ".Length..])
+                {
+                    FontStyle = FontStyles.Italic,
+                    Foreground = Brush(theme.TranslationExampleForeground, Brushes.Plum),
+                    Background = Brush(theme.TranslationExampleBackground, Brushes.Transparent),
+                });
             }
             else if (TrySplitLanguageLabel(rawLine, out string? label, out string? meaning))
             {
-                paragraph.Inlines.Add(new Run($"{label}: ") { FontWeight = FontWeights.SemiBold });
-                paragraph.Inlines.Add(new Run(meaning));
+                paragraph.Inlines.Add(new Run($"{label}: ")
+                {
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = Brush(theme.TranslationLabelForeground, Brushes.LightSkyBlue),
+                });
+                paragraph.Inlines.Add(new Run(meaning) { Foreground = Brush(theme.TranslationForeground, Brushes.WhiteSmoke) });
+            }
+            else if (IsPartOfSpeechLine(rawLine))
+            {
+                paragraph.Inlines.Add(new Run(rawLine)
+                {
+                    FontWeight = FontWeights.SemiBold,
+                    FontStyle = FontStyles.Italic,
+                    Foreground = Brush(theme.TranslationPartForeground, Brushes.LightSkyBlue),
+                });
             }
             else
             {
@@ -203,6 +234,20 @@ internal sealed class TranslationOverlayWindow : Window
         label = candidate;
         meaning = line[(separator + 2)..];
         return true;
+    }
+
+    private static bool IsPartOfSpeechLine(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line) || line.Contains(": ", StringComparison.Ordinal)) return false;
+        string[] parts = line.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return false;
+        return parts.All(part => part.TrimEnd('.').ToLowerInvariant() is "n" or "noun" or "v" or "verb" or "vt" or "vi" or "adj" or "adjective" or "adv" or "adverb" or "pron" or "pronoun" or "prep" or "preposition" or "conj" or "conjunction" or "interj" or "interjection");
+    }
+
+    private void CopySelection()
+    {
+        string selected = _content.Selection.Text;
+        if (!string.IsNullOrWhiteSpace(selected)) Clipboard.SetText(selected);
     }
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs eventArgs)

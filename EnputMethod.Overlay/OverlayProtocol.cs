@@ -93,7 +93,13 @@ internal sealed record OverlayTheme
     public string TranslationBackground { get; init; } = "#1f262e";
     public string TranslationForeground { get; init; } = "#f5f5f5";
     public string TranslationTitleForeground { get; init; } = "#ffffff";
+    public string TranslationPartForeground { get; init; } = "#93c5fd";
+    public string TranslationLabelForeground { get; init; } = "#a5f3fc";
+    public string TranslationExampleForeground { get; init; } = "#c4b5fd";
+    public string TranslationExampleBackground { get; init; } = "#312e4b";
     public string TranslationBorder { get; init; } = "#616f7e";
+    public string TranslationScrollbarTrack { get; init; } = "#374151";
+    public string TranslationScrollbarThumb { get; init; } = "#60a5fa";
     public string FontFamily { get; init; } = "Segoe UI";
     public int FontSize { get; init; } = 18;
     public int Opacity { get; init; } = 255;

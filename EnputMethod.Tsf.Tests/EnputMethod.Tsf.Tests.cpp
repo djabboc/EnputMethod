@@ -1,5 +1,6 @@
 #include "../EnputMethod.Tsf/CandidateRanking.h"
 #include "../EnputMethod.Tsf/CandidateSelection.h"
+#include "../EnputMethod.Tsf/ApproximateMatch.h"
 #include "../EnputMethod.Tsf/JsonObjectReader.h"
 #include "../EnputMethod.Tsf/TranslationText.h"
 
@@ -79,6 +80,14 @@ void VerifyTranslationTextNormalization() {
     Expect(enput::NormalizeDictionaryText(L"n. already punctuated") == L"n. already punctuated", "Existing POS punctuation must not be removed or duplicated.");
 }
 
+void VerifyOrderedSubsequenceMatching() {
+    Expect(enput::IsOrderedSubsequence(L"hpy", L"happy"), "Ordered incomplete input must match happy.");
+    Expect(enput::IsOrderedSubsequence(L"pignose", L"pig_nose", true), "Emoji keyword separators must be ignored for ordered matching.");
+    Expect(enput::IsOrderedSubsequence(L"pno", L"pig_nose", true), "Emoji ordered matching must preserve non-adjacent characters.");
+    Expect(!enput::IsOrderedSubsequence(L"pyh", L"happy"), "Ordered matching must reject reversed character order.");
+    Expect(enput::LikeOrderedSubsequencePattern(L"hpy") == L"%h%p%y%", "SQLite LIKE fallback pattern must preserve order.");
+}
+
 }
 
 int main() {
@@ -86,6 +95,7 @@ int main() {
     VerifyEmojiJsonEscapes();
     VerifyTranslationLineBreaks();
     VerifyTranslationTextNormalization();
+    VerifyOrderedSubsequenceMatching();
     VerifyFrequencyRanking();
     VerifyCandidateBounds();
     std::cout << "TSF candidate selection tests passed.\n";

@@ -91,6 +91,8 @@ internal static class LexiconDatabaseBuilder
         if (database.ScalarInt("SELECT COUNT(*) FROM words WHERE normalized >= 'he' AND normalized < 'he' || char(65535);") < 3) throw new InvalidOperationException("Word prefix lookup validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE trigger = 'can' AND candidate = 'can i help you?';") != 1) throw new InvalidOperationException("Phrase suggestion validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'fire';") < 1 || database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'saw';") < 1) throw new InvalidOperationException("Emoji lookup validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM words WHERE normalized >= 'h' AND normalized < ('h' || char(65535)) AND normalized LIKE '%h%p%y%';") < 1) throw new InvalidOperationException("Ordered word subsequence validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized >= 'p' AND normalized < ('p' || char(65535)) AND normalized LIKE '%p%i%g%n%o%s%e%';") < 1) throw new InvalidOperationException("Ordered Emoji subsequence validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM translation_entry WHERE key IN ('braces', 'hug');") < 2) throw new InvalidOperationException("Translation lookup validation failed.");
         foreach (string legacyName in new[] { "suggestions.json", "emoji.json", "translations.json", "translations.ecdict.jsonl", "translations.cc-cedict.jsonl" })
         {

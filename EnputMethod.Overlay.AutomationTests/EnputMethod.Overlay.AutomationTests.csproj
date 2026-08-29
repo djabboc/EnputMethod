@@ -9,8 +9,15 @@
     <AssemblyName>EnputMethod.Overlay.AutomationTests</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\EnputMethod.Overlay\CandidateOverlayWindow.cs" Link="CandidateOverlayWindow.cs" />
     <Compile Include="..\EnputMethod.Overlay\OverlayFocus.cs" Link="OverlayFocus.cs" />
+    <Compile Include="..\EnputMethod.Overlay\OverlayPositioning.cs" Link="OverlayPositioning.cs" />
     <Compile Include="..\EnputMethod.Overlay\OverlayProtocol.cs" Link="OverlayProtocol.cs" />
     <Compile Include="..\EnputMethod.Overlay\EmojiAssetResolver.cs" Link="EmojiAssetResolver.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\EnputMethod.Overlay\EmojiAssets\1f600.png" Link="EmojiAssets\1f600.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>

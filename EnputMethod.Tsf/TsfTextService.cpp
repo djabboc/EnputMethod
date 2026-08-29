@@ -1782,9 +1782,7 @@ private:
             ",\"y\":" + std::to_string(bounds.top) + ",\"ownerWindow\":" + std::to_string(ownerWindow) + ",\"items\":[";
         for (size_t index = 0; index < candidates_.size(); ++index) {
             if (index) message += ',';
-            std::wstring visible = candidates_[index];
-            std::replace(visible.begin(), visible.end(), static_cast<wchar_t>(0x1F), L' ');
-            message += JsonString(visible);
+            message += JsonString(candidates_[index]);
         }
         message += "],\"page\":" + std::to_string(currentPage_) + ",\"pageCount\":" + std::to_string(PageCount()) +
             ",\"selectedIndex\":" + std::to_string(selectedIndex_) + ",\"capsLock\":" + ((GetKeyState(VK_CAPITAL) & 1) != 0 ? "true" : "false") +

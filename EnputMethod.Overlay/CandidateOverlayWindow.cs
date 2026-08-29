@@ -78,13 +78,7 @@ internal sealed class CandidateOverlayWindow : Window
                 Margin = new Thickness(0, 1, view.Layout == "horizontal" ? 6 : 0, 1),
                 MinHeight = theme.RowHeight,
                 Padding = new Thickness(theme.Padding, 3, theme.Padding, 3),
-                Child = new TextBlock
-                {
-                    FontFamily = candidateFont,
-                    FontSize = theme.FontSize,
-                    Foreground = index == view.SelectedIndex ? Brush(theme.SelectedForeground, Brushes.White) : Brush(theme.Foreground, Brushes.White),
-                    Text = $"{index + 1}  {view.Items[index]}",
-                },
+                Child = CreateCandidateContent(index, view.Items[index], emojiMode, candidateFont, theme, isSelected),
             };
             row.MouseEnter += (_, _) => row.Background = activeBackground;
             row.MouseLeave += (_, _) => row.Background = isSelected ? activeBackground : regularBackground;

@@ -1,4 +1,6 @@
 using EnputMethod.Overlay;
+using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
 
 namespace EnputMethod.Overlay.AutomationTests;
@@ -13,6 +15,7 @@ internal static class Program
             VerifyForegroundOwnerArbitration();
             VerifyOwnerWindowProtocol();
             VerifyEmojiAssetNaming();
+            VerifyEmojiCandidateUsesColorAsset();
             Console.WriteLine("Overlay foreground automation tests passed.");
             return 0;
         }
@@ -46,6 +49,33 @@ internal static class Program
         Assert(EmojiAssetResolver.FileNameFor("👩‍💻") == "1f469-200d-1f4bb.png", "ZWJ Emoji must preserve all visible code points.");
         Assert(EmojiAssetResolver.EmojiFromCandidate("❤️\u001Fheart, love") == "❤️", "Emoji candidate text must be separated from its keywords.");
         Assert(EmojiAssetResolver.LabelFromCandidate("❤️\u001Fheart, love") == "heart, love", "Emoji candidate keyword labels must remain visible.");
+    }
+    private static void VerifyEmojiCandidateUsesColorAsset()
+    {
+        var overlay = new CandidateOverlayWindow();
+        try
+        {
+            overlay.ShowCandidates("emoji-test", 1, new CandidateView
+            {
+                Items = ["😀\u001Fgrinning, smile"],
+                Page = 0,
+                PageCount = 1,
+                SelectedIndex = 0,
+                Layout = "vertical",
+                ModeMarker = "EMOJI",
+            }, _ => Task.CompletedTask);
+
+            var frame = (Border)overlay.Content;
+            var root = (StackPanel)frame.Child;
+            var candidates = (StackPanel)root.Children[0];
+            var row = (Border)candidates.Children[0];
+            var content = (StackPanel)row.Child;
+            Assert(content.Children.OfType<Image>().SingleOrDefault() is Image { Source: not null }, "Emoji candidates must render their bundled color image instead of a monochrome font glyph.");
+        }
+        finally
+        {
+            overlay.Close();
+        }
     }
     private static HwndSource CreateEditorWindow(string name)
     {

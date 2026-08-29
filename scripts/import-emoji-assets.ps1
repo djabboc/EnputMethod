@@ -39,16 +39,13 @@ try {
     Get-ChildItem -LiteralPath $assetDirectory -Filter '*.png' -File | Remove-Item -Force
     $catalog = Get-Content -Raw -LiteralPath $EmojiDataPath | ConvertFrom-Json
     $entries = [System.Collections.Generic.List[object]]::new()
-    foreach ($record in $catalog) {
-        if ([string]::IsNullOrWhiteSpace($record.unified)) { continue }
-        $codes = @($record.unified.Split('-') | Where-Object { $_ -ne 'FE0F' })
-        $fileName = (($codes -join '-').ToLowerInvariant() + '.png')
-        if (!$pngEntries.ContainsKey($fileName)) { continue }
-
+    $entriesByFile = @{}
+    function Add-EmojiEntry([string]$fileName, [string[]]$terms) {
+        if ($entriesByFile.ContainsKey($fileName)) { return }
         $builder = [System.Text.StringBuilder]::new()
-        foreach ($code in $record.unified.Split('-')) { [void]$builder.Append([char]::ConvertFromUtf32([Convert]::ToInt32($code, 16))) }
+        foreach ($code in $fileName.Replace('.png', '').Split('-')) { [void]$builder.Append([char]::ConvertFromUtf32([Convert]::ToInt32($code, 16))) }
         $keywords = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-        foreach ($term in @($record.short_name) + @($record.short_names) + @($record.name)) {
+        foreach ($term in $terms) {
             if ([string]::IsNullOrWhiteSpace($term)) { continue }
             $normalized = $term.ToLowerInvariant().Replace('_', ' ') -replace '[^a-z0-9 ]+', ' '
             [void]$keywords.Add($term.ToLowerInvariant())
@@ -56,9 +53,45 @@ try {
             foreach ($word in $normalized.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)) { [void]$keywords.Add($word) }
         }
         [System.IO.Compression.ZipFileExtensions]::ExtractToFile($pngEntries[$fileName], (Join-Path $assetDirectory $fileName), $true)
-        $entries.Add([ordered]@{ emoji = $builder.ToString(); keywords = @($keywords | Where-Object { ![string]::IsNullOrWhiteSpace($_) } | Sort-Object) })
+        $entry = [ordered]@{ emoji = $builder.ToString(); keywords = @($keywords | Where-Object { ![string]::IsNullOrWhiteSpace($_) } | Sort-Object) }
+        $entries.Add($entry)
+        $entriesByFile[$fileName] = $entry
     }
 
+    $commonAliases = @{
+        'grinning' = @('smile', 'happy', 'grin')
+        'heart' = @('love')
+        '+1' = @('thumbsup', 'thumb', 'like', 'ok')
+        '-1' = @('thumbsdown', 'dislike')
+        'tada' = @('party', 'celebrate', 'congratulations')
+    }
+    foreach ($record in $catalog) {
+        if ([string]::IsNullOrWhiteSpace($record.unified)) { continue }
+        $codes = @($record.unified.Split('-') | Where-Object { $_ -ne 'FE0F' })
+        $fileName = (($codes -join '-').ToLowerInvariant() + '.png')
+        if (!$pngEntries.ContainsKey($fileName)) { continue }
+        $terms = @($record.short_name) + @($record.short_names) + @($record.name)
+        if ($commonAliases.ContainsKey($record.short_name)) { $terms += $commonAliases[$record.short_name] }
+        Add-EmojiEntry $fileName $terms
+    }
+
+    $skinToneNames = @{
+        '1f3fb' = 'light skin tone'
+        '1f3fc' = 'medium light skin tone'
+        '1f3fd' = 'medium skin tone'
+        '1f3fe' = 'medium dark skin tone'
+        '1f3ff' = 'dark skin tone'
+    }
+    foreach ($fileName in $pngEntries.Keys | Sort-Object) {
+        if ($entriesByFile.ContainsKey($fileName)) { continue }
+        $codes = @($fileName.Replace('.png', '').Split('-'))
+        $skinCodes = @($codes | Where-Object { $skinToneNames.ContainsKey($_) })
+        if ($skinCodes.Count -eq 0) { continue }
+        $baseFileName = ((@($codes | Where-Object { !$skinToneNames.ContainsKey($_) }) -join '-') + '.png')
+        if (!$entriesByFile.ContainsKey($baseFileName)) { continue }
+        $terms = @($entriesByFile[$baseFileName].keywords) + @('skin tone') + @($skinCodes | ForEach-Object { $skinToneNames[$_] })
+        Add-EmojiEntry $fileName $terms
+    }
     [ordered]@{
         source = 'emoji-data v15.1.2; color artwork from Twemoji v14.1.2 (CC-BY 4.0)'
         entries = @($entries)

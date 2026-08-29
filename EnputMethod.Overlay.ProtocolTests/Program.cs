@@ -23,7 +23,17 @@ foreach ((string name, string json, bool expected) in tests)
 Console.WriteLine($"{tests.Length} protocol cases passed.");
 
 var received = new ConcurrentBag<OverlayMessage>();
-using (var server = new OverlayPipeServer((message, _) => received.Add(message)))
+using (var server = new OverlayPipeServer((message, sendAction) =>
+{
+    received.Add(message);
+    sendAction(new OverlayMessage
+    {
+        Type = "selectCandidate",
+        ClientId = message.ClientId,
+        StateId = message.StateId,
+        CandidateIndex = message.ClientId == "host-one" ? 0 : 1,
+    }).GetAwaiter().GetResult();
+}))
 {
     server.Start();
     await AssertAcceptedAsync("host-one", 11);
@@ -46,6 +56,10 @@ static async Task AssertAcceptedAsync(string clientId, long stateId)
     string? ready = await reader.ReadLineAsync();
     if (ready is null || !ready.Contains("\"ready\"", StringComparison.Ordinal)) throw new InvalidOperationException("Missing pipe ready message.");
     await writer.WriteLineAsync($"{{\"type\":\"showCandidates\",\"clientId\":\"{clientId}\",\"stateId\":{stateId},\"candidates\":{{\"x\":1,\"y\":1,\"items\":[\"hello\"],\"page\":0,\"pageCount\":1,\"selectedIndex\":0,\"layout\":\"vertical\"}}}}");
-    string? accepted = await reader.ReadLineAsync();
-    if (accepted is null || !accepted.Contains($"\"stateId\":{stateId}", StringComparison.Ordinal)) throw new InvalidOperationException($"Host {clientId} did not receive its acceptance.");
+    string? first = await reader.ReadLineAsync();
+    string? second = await reader.ReadLineAsync();
+    string[] responses = [first ?? "", second ?? ""];
+    if (!responses.Any(line => line.Contains($"\"stateId\":{stateId}", StringComparison.Ordinal) && line.Contains("\"accepted\"", StringComparison.Ordinal))) throw new InvalidOperationException($"Host {clientId} did not receive its acceptance.");
+    int candidateIndex = clientId == "host-one" ? 0 : 1;
+    if (!responses.Any(line => line.Contains("\"selectCandidate\"", StringComparison.Ordinal) && line.Contains($"\"clientId\":\"{clientId}\"", StringComparison.Ordinal) && line.Contains($"\"candidateIndex\":{candidateIndex}", StringComparison.Ordinal))) throw new InvalidOperationException($"Host {clientId} received an incorrect routed action.");
 }

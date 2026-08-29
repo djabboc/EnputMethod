@@ -1,4 +1,7 @@
 using EnputMethod.Overlay;
+using System.Collections.Concurrent;
+using System.IO.Pipes;
+using System.Text;
 
 var tests = new (string Name, string Json, bool Expected)[]
 {
@@ -18,3 +21,31 @@ foreach ((string name, string json, bool expected) in tests)
 }
 
 Console.WriteLine($"{tests.Length} protocol cases passed.");
+
+var received = new ConcurrentBag<OverlayMessage>();
+using (var server = new OverlayPipeServer((message, _) => received.Add(message)))
+{
+    server.Start();
+    await AssertAcceptedAsync("host-one", 11);
+    await AssertAcceptedAsync("host-two", 12);
+}
+
+if (received.Count != 2 || !received.Any(message => message.ClientId == "host-one" && message.StateId == 11) || !received.Any(message => message.ClientId == "host-two" && message.StateId == 12))
+{
+    throw new InvalidOperationException("Pipe server did not preserve independent host messages.");
+}
+
+Console.WriteLine("Multi-host pipe test passed.");
+
+static async Task AssertAcceptedAsync(string clientId, long stateId)
+{
+    using var pipe = new NamedPipeClientStream(".", "EnputMethod.Overlay.v1", PipeDirection.InOut, PipeOptions.Asynchronous);
+    await pipe.ConnectAsync(3000);
+    using var reader = new StreamReader(pipe, new UTF8Encoding(false), false, 4096, true);
+    using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
+    string? ready = await reader.ReadLineAsync();
+    if (ready is null || !ready.Contains("\"ready\"", StringComparison.Ordinal)) throw new InvalidOperationException("Missing pipe ready message.");
+    await writer.WriteLineAsync($"{{\"type\":\"showCandidates\",\"clientId\":\"{clientId}\",\"stateId\":{stateId},\"candidates\":{{\"x\":1,\"y\":1,\"items\":[\"hello\"],\"page\":0,\"pageCount\":1,\"selectedIndex\":0,\"layout\":\"vertical\"}}}}");
+    string? accepted = await reader.ReadLineAsync();
+    if (accepted is null || !accepted.Contains($"\"stateId\":{stateId}", StringComparison.Ordinal)) throw new InvalidOperationException($"Host {clientId} did not receive its acceptance.");
+}

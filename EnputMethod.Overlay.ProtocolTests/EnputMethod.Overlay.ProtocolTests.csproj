@@ -8,5 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\EnputMethod.Overlay\OverlayProtocol.cs" Link="OverlayProtocol.cs" />
+    <Compile Include="..\EnputMethod.Overlay\OverlayPipeServer.cs" Link="OverlayPipeServer.cs" />
   </ItemGroup>
 </Project>

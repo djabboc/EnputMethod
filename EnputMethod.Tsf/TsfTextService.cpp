@@ -1290,6 +1290,7 @@ public:
         if (!threadManager) return E_INVALIDARG;
         Deactivate();
         threadManager_ = threadManager; threadManager_->AddRef(); clientId_ = clientId;
+        isFocused_ = true;
         CreateOverlayActionWindow();
         overlayClient_ = std::make_unique<enput::OverlayClient>(OverlayExecutablePath(), [this](enput::OverlayEvent event) { PostOverlayEvent(std::move(event)); });
         overlayClient_->Start();
@@ -1322,7 +1323,18 @@ public:
         return S_OK;
     }
 
-    STDMETHODIMP OnSetFocus(BOOL) override { return S_OK; }
+    STDMETHODIMP OnSetFocus(BOOL foreground) override {
+        isFocused_ = foreground != FALSE;
+        if (!isFocused_) {
+            HideOverlay();
+            candidateWindow_.Hide();
+            translationWindow_.Hide();
+            return S_OK;
+        }
+
+        RequestOverlayRefresh();
+        return S_OK;
+    }
     STDMETHODIMP OnTestKeyDown(ITfContext*, WPARAM key, LPARAM, BOOL* eaten) override { if (!eaten) return E_INVALIDARG; *eaten = ShouldHandleKey(key); return S_OK; }
     STDMETHODIMP OnTestKeyUp(ITfContext*, WPARAM, LPARAM, BOOL* eaten) override { if (!eaten) return E_INVALIDARG; *eaten = FALSE; return S_OK; }
     STDMETHODIMP OnKeyDown(ITfContext* context, WPARAM key, LPARAM, BOOL* eaten) override;
@@ -1468,7 +1480,7 @@ private:
         }
         if (event.type == enput::OverlayEventType::Connected) {
             enput::WriteOverlayDiagnostic("overlay.connected", candidates_.empty() ? "no-candidates" : "refresh-current-state");
-            if (!candidates_.empty()) RequestOverlayRefresh();
+            if (isFocused_ && !candidates_.empty()) RequestOverlayRefresh();
             return;
         }
 
@@ -1784,6 +1796,7 @@ private:
     }
 
     void PresentCandidates(ITfContext* context, TfEditCookie cookie, ITfRange* range) {
+        if (!isFocused_) return;
         overlayActive_ = false;
         if (candidates_.empty()) {
             HideOverlay();
@@ -1969,6 +1982,7 @@ private:
     bool emojiMode_ = false;
     bool translationEnabled_ = false;
     bool detachedSuggestionActive_ = false;
+    bool isFocused_ = true;
     bool keepCandidateWindowPosition_ = false;
     bool overlayActive_ = false;
     std::uint64_t overlayStateId_ = 0;
@@ -2014,7 +2028,7 @@ public:
     STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&refs_); }
     STDMETHODIMP_(ULONG) Release() override { const auto refs = InterlockedDecrement(&refs_); if (!refs) delete this; return refs; }
     STDMETHODIMP DoEditSession(TfEditCookie cookie) override {
-        if (service_->candidates_.empty() || (context_ != service_->compositionContext_ && context_ != service_->detachedSuggestionContext_)) return S_OK;
+        if (!service_->isFocused_ || service_->candidates_.empty() || (context_ != service_->compositionContext_ && context_ != service_->detachedSuggestionContext_)) return S_OK;
         return service_->RefreshCandidates(context_, cookie);
     }
 private:

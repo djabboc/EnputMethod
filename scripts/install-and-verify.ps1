@@ -39,3 +39,8 @@ $translationPath = Join-Path ([Environment]::GetFolderPath([Environment+SpecialF
 $translations = Get-Content -LiteralPath $translationPath -Raw | ConvertFrom-Json
 $braces = @($translations.entries | Where-Object { $_.text -ieq "braces" })
 if ($braces.Count -ne 1 -or -not ($braces[0].translations.'zh-CN' -contains "牙套；牙齿矫正器")) { throw "Installed translation dictionary is missing the braces dental-appliance sense." }
+$ccCedictIndexPath = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "Enput Method\translations.cc-cedict.jsonl"
+if (-not (Test-Path -LiteralPath $ccCedictIndexPath) -or (Get-Item -LiteralPath $ccCedictIndexPath).Length -le 1024) { throw "CC-CEDICT supplemental translation index was not installed." }
+if (-not (Select-String -LiteralPath $ccCedictIndexPath -SimpleMatch '"key":"braces"' -Quiet)) { throw "CC-CEDICT supplemental translation index is missing braces." }
+$ccCedictAttributionPath = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "Enput Method\CC-CEDICT-ATTRIBUTION.txt"
+if (-not (Test-Path -LiteralPath $ccCedictAttributionPath) -or -not ((Get-Content -LiteralPath $ccCedictAttributionPath -Raw) -match 'CC BY-SA 4.0')) { throw "CC-CEDICT attribution file is missing." }

@@ -30,3 +30,10 @@ JSON 文件可能将非 BMP Emoji 序列化成 UTF-16 代理对，例如 `\\uD83
 `translations.json` 也可存放对 ECDICT 缺失义项的补充；运行时优先使用它。例如 `braces` 补充“牙套；牙齿矫正器”、背带、支撑物和花括号等义项。安装器会迁移早期 `{ "word": { ... } }` 的用户词典格式到 `entries` 数组，再合并内置条目，保留原有释义。
 
 这两类内置补充数据只覆盖高频场景，不能替代受许可约束的大规模语料或词典。ECDICT 的中文释义质量和覆盖范围仍受其上游数据限制。
+## CC-CEDICT 英中补充索引（2026-08-29）
+
+- 数据集：CC-CEDICT 1.0，下载自 MDBG 官方导出。
+- 上游地址：`https://www.mdbg.net/chinese/dictionary?page=cc-cedict`
+- 用途：安装时将词典中英文定义反向建立为英文词形到中文词头的索引 `translations.cc-cedict.jsonl`，用于补充 ECDICT 缺失的中文义项；不替换用户自定义词条，也不替换 ECDICT 的英文定义。
+- 许可：CC BY-SA 4.0。每次成功安装都会在 `%LOCALAPPDATA%\Enput Method\CC-CEDICT-ATTRIBUTION.txt` 写入来源和许可链接。对包含此派生索引的分发版本必须保留署名并遵守相同方式共享义务。
+- 网络行为：首次缺失时下载；已有有效索引时复用。下载失败不会阻止安装，输入法继续使用用户词典与 ECDICT。

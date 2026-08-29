@@ -524,6 +524,10 @@ std::wstring FullTranslationDictionaryPath() {
     return directory.empty() ? std::wstring{} : directory + L"\\translations.ecdict.jsonl";
 }
 
+std::wstring CcCedictTranslationDictionaryPath() {
+    const std::wstring directory = UserDataDirectory();
+    return directory.empty() ? std::wstring{} : directory + L"\\translations.cc-cedict.jsonl";
+}
 bool ParseTranslationEntry(const enput::json::Value& value, TranslationEntry* entry) {
     if (!entry) return false;
     const enput::json::Value* text = enput::json::ObjectValue(value, "text");
@@ -566,8 +570,7 @@ const std::vector<TranslationEntry>& LoadTranslationDictionary() {
     return entries;
 }
 
-const TranslationEntry* FindFullTranslation(const std::wstring& lower) {
-    const std::wstring path = FullTranslationDictionaryPath();
+const TranslationEntry* FindTranslationInJsonLines(const std::wstring& path, const std::wstring& lower) {
     std::error_code error;
     const uintmax_t fileSize = std::filesystem::file_size(path, error);
     if (error || fileSize == 0) return nullptr;
@@ -611,11 +614,48 @@ const TranslationEntry* FindFullTranslation(const std::wstring& lower) {
     return nullptr;
 }
 
+void MergeTranslationEntry(TranslationEntry* target, const TranslationEntry& source) {
+    if (!target) return;
+    if (target->text.empty()) target->text = source.text;
+    const auto appendUnique = [](std::vector<std::wstring>* values, const std::wstring& value) {
+        if (!values || value.empty()) return;
+        if (std::none_of(values->begin(), values->end(), [&value](const std::wstring& existing) { return Lowercase(existing) == Lowercase(value); })) values->push_back(value);
+    };
+    for (const std::wstring& part : source.partsOfSpeech) appendUnique(&target->partsOfSpeech, part);
+    for (const auto& [language, meanings] : source.translations) {
+        auto existing = std::find_if(target->translations.begin(), target->translations.end(), [&language](const auto& value) { return value.first == language; });
+        if (existing == target->translations.end()) {
+            target->translations.emplace_back(language, std::vector<std::wstring>{});
+            existing = std::prev(target->translations.end());
+        }
+        for (const std::wstring& meaning : meanings) appendUnique(&existing->second, meaning);
+    }
+    if (target->example.empty()) target->example = source.example;
+    if (!source.source.empty() && target->source.find(source.source) == std::wstring::npos) {
+        if (!target->source.empty()) target->source += L"; ";
+        target->source += source.source;
+    }
+}
+
 const TranslationEntry* FindTranslation(const std::wstring& text) {
     const std::wstring lower = Lowercase(text);
+    TranslationEntry merged;
+    bool found = false;
+    const auto merge = [&merged, &found](const TranslationEntry* entry) {
+        if (!entry) return;
+        MergeTranslationEntry(&merged, *entry);
+        found = true;
+    };
+
     const std::vector<TranslationEntry>& entries = LoadTranslationDictionary();
-    const auto entry = std::find_if(entries.begin(), entries.end(), [&lower](const TranslationEntry& value) { return Lowercase(value.text) == lower; });
-    return entry == entries.end() ? FindFullTranslation(lower) : &*entry;
+    const auto customEntry = std::find_if(entries.begin(), entries.end(), [&lower](const TranslationEntry& value) { return Lowercase(value.text) == lower; });
+    if (customEntry != entries.end()) merge(&*customEntry);
+    merge(FindTranslationInJsonLines(FullTranslationDictionaryPath(), lower));
+    merge(FindTranslationInJsonLines(CcCedictTranslationDictionaryPath(), lower));
+    if (!found) return nullptr;
+    static TranslationEntry result;
+    result = std::move(merged);
+    return &result;
 }
 
 class KeyEditSession;

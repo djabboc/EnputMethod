@@ -1,10 +1,12 @@
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Windows;
 using Microsoft.VisualBasic.FileIO;
 
@@ -13,6 +15,8 @@ namespace EnputMethod.Installer;
 public partial class MainWindow : Window
 {
     private const string EcdictUrl = "https://raw.githubusercontent.com/skywind3000/ECDICT/master/ecdict.csv";
+    private const string CcCedictUrl = "https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz";
+    private static readonly Regex EnglishWordPattern = new(@"[A-Za-z][A-Za-z'-]*", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate int InstallInputMethodDelegate();
@@ -68,6 +72,7 @@ public partial class MainWindow : Window
         MergeDefaultEmojiDictionary(destinationDirectory);
         MergeDefaultTranslations(destinationDirectory);
         EnsureFullTranslationDictionary(destinationDirectory);
+        EnsureCcCedictEnglishIndex(destinationDirectory);
         CopyDefaultThemes(destinationDirectory);
     }
 
@@ -445,6 +450,107 @@ public partial class MainWindow : Window
         installed.Clear();
         installed["entries"] = entries;
         return true;
+    }
+    private static void EnsureCcCedictEnglishIndex(string destinationDirectory)
+    {
+        string destination = Path.Combine(destinationDirectory, "translations.cc-cedict.jsonl");
+        if (File.Exists(destination) && new FileInfo(destination).Length > 1024)
+        {
+            try
+            {
+                WriteCcCedictAttribution(destinationDirectory);
+            }
+            catch (IOException)
+            {
+                // The completed index remains usable when the attribution file is held briefly.
+            }
+            return;
+        }
+
+        string downloadedArchive = destination + ".download.gz";
+        string pendingIndex = destination + ".pending";
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+            using Stream source = client.GetStreamAsync(CcCedictUrl).GetAwaiter().GetResult();
+            using (var target = new FileStream(downloadedArchive, FileMode.Create, FileAccess.Write, FileShare.None)) source.CopyTo(target);
+            ConvertCcCedictToEnglishIndex(downloadedArchive, pendingIndex);
+            File.Move(pendingIndex, destination, true);
+            WriteCcCedictAttribution(destinationDirectory);
+        }
+        catch (HttpRequestException)
+        {
+            // ECDICT and the user dictionary remain available when the supplemental download fails.
+        }
+        catch (InvalidDataException)
+        {
+            // Keep a previously completed index intact when an upstream archive is malformed.
+        }
+        catch (IOException)
+        {
+            // Keep any existing dictionary intact when another input-method process holds a file.
+        }
+        finally
+        {
+            if (File.Exists(downloadedArchive)) File.Delete(downloadedArchive);
+            if (File.Exists(pendingIndex)) File.Delete(pendingIndex);
+        }
+    }
+
+    private static void ConvertCcCedictToEnglishIndex(string sourcePath, string destinationPath)
+    {
+        var index = new SortedDictionary<string, SortedSet<string>>(StringComparer.Ordinal);
+        using var compressed = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var decompressed = new GZipStream(compressed, CompressionMode.Decompress);
+        using var reader = new StreamReader(decompressed, new UTF8Encoding(false, true));
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
+        {
+            if (line.Length == 0 || line[0] == '#') continue;
+            int firstSpace = line.IndexOf(' ');
+            int pinyinStart = firstSpace < 0 ? -1 : line.IndexOf(" [", firstSpace + 1, StringComparison.Ordinal);
+            int definitionsStart = pinyinStart < 0 ? -1 : line.IndexOf("] /", pinyinStart, StringComparison.Ordinal);
+            if (firstSpace <= 0 || pinyinStart <= firstSpace || definitionsStart < 0) continue;
+            string chinese = line.Substring(firstSpace + 1, pinyinStart - firstSpace - 1);
+            if (string.IsNullOrWhiteSpace(chinese)) continue;
+            foreach (Match match in EnglishWordPattern.Matches(line.AsSpan(definitionsStart + 3).ToString()))
+            {
+                string key = match.Value.ToLowerInvariant();
+                if (key.Length < 3) continue;
+                if (!index.TryGetValue(key, out SortedSet<string>? translations))
+                {
+                    translations = new SortedSet<string>(StringComparer.Ordinal);
+                    index.Add(key, translations);
+                }
+                if (translations.Count < 8) translations.Add(chinese);
+            }
+        }
+
+        using var output = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var writer = new Utf8JsonWriter(output, new JsonWriterOptions { Indented = false });
+        foreach ((string key, SortedSet<string> translations) in index)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("key", key);
+            writer.WriteString("text", key);
+            writer.WritePropertyName("translations");
+            writer.WriteStartObject();
+            writer.WriteStartArray("zh-CN");
+            foreach (string translation in translations) writer.WriteStringValue(translation);
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+            writer.WriteString("source", "CC-CEDICT 1.0 (CC BY-SA 4.0; https://www.mdbg.net/chinese/dictionary?page=cc-cedict)");
+            writer.WriteEndObject();
+            writer.Flush();
+            output.WriteByte((byte)'\n');
+            writer.Reset();
+        }
+    }
+
+    private static void WriteCcCedictAttribution(string destinationDirectory)
+    {
+        string attribution = Path.Combine(destinationDirectory, "CC-CEDICT-ATTRIBUTION.txt");
+        File.WriteAllText(attribution, "This product includes a derived English-to-Chinese lookup index from CC-CEDICT 1.0.\nSource: https://www.mdbg.net/chinese/dictionary?page=cc-cedict\nLicense: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/).\n");
     }
     private static void EnsureFullTranslationDictionary(string destinationDirectory)
     {

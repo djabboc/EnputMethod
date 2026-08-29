@@ -116,16 +116,31 @@ private:
             case 'u':
                 if (position_ + 4 > text_.size()) return false;
                 {
+                    const auto readHexCodeUnit = [this](unsigned int* codeUnit) {
+                        if (!codeUnit || position_ + 4 > text_.size()) return false;
+                        *codeUnit = 0;
+                        for (int index = 0; index < 4; ++index) {
+                            const char hex = text_[position_++];
+                            const int digit = hex >= '0' && hex <= '9' ? hex - '0' : hex >= 'a' && hex <= 'f' ? hex - 'a' + 10 : hex >= 'A' && hex <= 'F' ? hex - 'A' + 10 : -1;
+                            if (digit < 0) return false;
+                            *codeUnit = (*codeUnit << 4) | static_cast<unsigned int>(digit);
+                        }
+                        return true;
+                    };
                     unsigned int codePoint = 0;
-                    for (int index = 0; index < 4; ++index) {
-                        const char hex = text_[position_++];
-                        const int digit = hex >= '0' && hex <= '9' ? hex - '0' : hex >= 'a' && hex <= 'f' ? hex - 'a' + 10 : hex >= 'A' && hex <= 'F' ? hex - 'A' + 10 : -1;
-                        if (digit < 0) return false;
-                        codePoint = (codePoint << 4) | static_cast<unsigned int>(digit);
+                    if (!readHexCodeUnit(&codePoint)) return false;
+                    if (codePoint >= 0xD800 && codePoint <= 0xDBFF) {
+                        if (position_ + 6 > text_.size() || text_[position_++] != '\\' || text_[position_++] != 'u') return false;
+                        unsigned int lowSurrogate = 0;
+                        if (!readHexCodeUnit(&lowSurrogate) || lowSurrogate < 0xDC00 || lowSurrogate > 0xDFFF) return false;
+                        codePoint = 0x10000 + ((codePoint - 0xD800) << 10) + (lowSurrogate - 0xDC00);
+                    } else if (codePoint >= 0xDC00 && codePoint <= 0xDFFF) {
+                        return false;
                     }
                     if (codePoint < 0x80) value->push_back(static_cast<char>(codePoint));
                     else if (codePoint < 0x800) { value->push_back(static_cast<char>(0xC0 | (codePoint >> 6))); value->push_back(static_cast<char>(0x80 | (codePoint & 0x3F))); }
-                    else { value->push_back(static_cast<char>(0xE0 | (codePoint >> 12))); value->push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F))); value->push_back(static_cast<char>(0x80 | (codePoint & 0x3F))); }
+                    else if (codePoint < 0x10000) { value->push_back(static_cast<char>(0xE0 | (codePoint >> 12))); value->push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F))); value->push_back(static_cast<char>(0x80 | (codePoint & 0x3F))); }
+                    else { value->push_back(static_cast<char>(0xF0 | (codePoint >> 18))); value->push_back(static_cast<char>(0x80 | ((codePoint >> 12) & 0x3F))); value->push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F))); value->push_back(static_cast<char>(0x80 | (codePoint & 0x3F))); }
                 }
                 break;
             default: return false;
@@ -279,16 +294,31 @@ private:
             case 'u':
                 if (position_ + 4 > text_.size()) return false;
                 {
+                    const auto readHexCodeUnit = [this](unsigned int* codeUnit) {
+                        if (!codeUnit || position_ + 4 > text_.size()) return false;
+                        *codeUnit = 0;
+                        for (int index = 0; index < 4; ++index) {
+                            const char hex = text_[position_++];
+                            const int digit = hex >= '0' && hex <= '9' ? hex - '0' : hex >= 'a' && hex <= 'f' ? hex - 'a' + 10 : hex >= 'A' && hex <= 'F' ? hex - 'A' + 10 : -1;
+                            if (digit < 0) return false;
+                            *codeUnit = (*codeUnit << 4) | static_cast<unsigned int>(digit);
+                        }
+                        return true;
+                    };
                     unsigned int codePoint = 0;
-                    for (int index = 0; index < 4; ++index) {
-                        const char hex = text_[position_++];
-                        const int digit = hex >= '0' && hex <= '9' ? hex - '0' : hex >= 'a' && hex <= 'f' ? hex - 'a' + 10 : hex >= 'A' && hex <= 'F' ? hex - 'A' + 10 : -1;
-                        if (digit < 0) return false;
-                        codePoint = (codePoint << 4) | static_cast<unsigned int>(digit);
+                    if (!readHexCodeUnit(&codePoint)) return false;
+                    if (codePoint >= 0xD800 && codePoint <= 0xDBFF) {
+                        if (position_ + 6 > text_.size() || text_[position_++] != '\\' || text_[position_++] != 'u') return false;
+                        unsigned int lowSurrogate = 0;
+                        if (!readHexCodeUnit(&lowSurrogate) || lowSurrogate < 0xDC00 || lowSurrogate > 0xDFFF) return false;
+                        codePoint = 0x10000 + ((codePoint - 0xD800) << 10) + (lowSurrogate - 0xDC00);
+                    } else if (codePoint >= 0xDC00 && codePoint <= 0xDFFF) {
+                        return false;
                     }
                     if (codePoint < 0x80) value->push_back(static_cast<char>(codePoint));
                     else if (codePoint < 0x800) { value->push_back(static_cast<char>(0xC0 | (codePoint >> 6))); value->push_back(static_cast<char>(0x80 | (codePoint & 0x3F))); }
-                    else { value->push_back(static_cast<char>(0xE0 | (codePoint >> 12))); value->push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F))); value->push_back(static_cast<char>(0x80 | (codePoint & 0x3F))); }
+                    else if (codePoint < 0x10000) { value->push_back(static_cast<char>(0xE0 | (codePoint >> 12))); value->push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F))); value->push_back(static_cast<char>(0x80 | (codePoint & 0x3F))); }
+                    else { value->push_back(static_cast<char>(0xF0 | (codePoint >> 18))); value->push_back(static_cast<char>(0x80 | ((codePoint >> 12) & 0x3F))); value->push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F))); value->push_back(static_cast<char>(0x80 | (codePoint & 0x3F))); }
                 }
                 break;
             default: return false;

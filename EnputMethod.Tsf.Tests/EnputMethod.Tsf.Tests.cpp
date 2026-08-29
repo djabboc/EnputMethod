@@ -1,5 +1,6 @@
 #include "../EnputMethod.Tsf/CandidateRanking.h"
 #include "../EnputMethod.Tsf/CandidateSelection.h"
+#include "../EnputMethod.Tsf/JsonObjectReader.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -38,6 +39,12 @@ void VerifyCandidateBounds() {
     Expect(!enput::TryGetCandidateIndex('1', 0, nullptr), "No digit can select when no candidates are visible.");
 }
 
+void VerifyEmojiJsonEscapes() {
+    enput::json::Value document;
+    Expect(enput::json::ReadDocument(R"({"emoji":"\uD83D\uDD25"})", &document), "Emoji JSON with a surrogate pair must parse.");
+    const enput::json::Value* emoji = enput::json::ObjectValue(document, "emoji");
+    Expect(emoji && emoji->type == enput::json::Value::Type::String && emoji->string == "\xF0\x9F\x94\xA5", "A JSON surrogate pair must decode to the UTF-8 fire Emoji.");
+}
 void VerifyFrequencyRanking() {
     std::vector<std::wstring> candidates{ L"hello", L"help", L"helium", L"hero" };
     enput::CandidateFrequencyMap frequencies;
@@ -57,6 +64,7 @@ void VerifyFrequencyRanking() {
 
 int main() {
     VerifyDigitMappings();
+    VerifyEmojiJsonEscapes();
     VerifyFrequencyRanking();
     VerifyCandidateBounds();
     std::cout << "TSF candidate selection tests passed.\n";

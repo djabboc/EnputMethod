@@ -87,6 +87,7 @@ internal sealed class OverlayPipeServer : IDisposable
                 }
 
                 OverlayDiagnostics.Write("pipe.received", $"{message.Type} state={message.StateId} client={message.ClientId}");
+                if (message.Candidates is not null) OverlayDiagnostics.Write("candidate.view", $"state={message.StateId} client={message.ClientId} fontSize={message.Candidates.Theme?.FontSize} emojiMode={message.Candidates.ModeMarker == "EMOJI"} page={message.Candidates.Page + 1}/{message.Candidates.PageCount}");
                 _messageHandler(message, SendActionAsync);
             }
         }

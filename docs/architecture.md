@@ -32,5 +32,5 @@ Suggestions are sourced from the ordered user dictionary. The bundled dictionary
 ## Current Limits
 
 - The service is x64-only, so x86 applications need a matching x86 TSF DLL before they can use it.
-- The candidate window supports both keyboard and non-activating mouse selection. Candidate ranking preserves exact-match priority and dictionary order for unseen words; selections are learned locally under `HKCU\\Software\\Enput Method\\CandidateFrequency`. Delete that registry key to reset learned ranking.
+- The candidate window supports both keyboard and non-activating mouse selection. Candidate ranking preserves exact-match priority and dictionary order for unseen words; selections are learned locally under `HKCU\\Software\\Enput Method\\CandidateFrequency`. Set `adaptiveCandidateRanking` to `false` in `config.json` to disable both ranking and new learning records; delete that registry key to reset learned ranking.
 - Windows owns global profile switching. Enput is placed in the Chinese group so the user's existing `Ctrl + Shift` behavior can include it; it does not capture `Ctrl + Space` system-wide.

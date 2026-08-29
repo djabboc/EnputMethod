@@ -17,8 +17,8 @@ inline std::wstring CandidateFrequencyKey(const std::wstring& candidate) {
     return key;
 }
 
-inline void RankCandidatesByFrequency(std::vector<std::wstring>* candidates, const CandidateFrequencyMap& frequencies) {
-    if (!candidates || candidates->size() < 2 || frequencies.empty()) return;
+inline void RankCandidatesByFrequency(std::vector<std::wstring>* candidates, const CandidateFrequencyMap& frequencies, bool enabled = true) {
+    if (!enabled || !candidates || candidates->size() < 2 || frequencies.empty()) return;
 
     struct RankedCandidate {
         std::wstring text;

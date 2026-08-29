@@ -48,6 +48,9 @@ void VerifyFrequencyRanking() {
     Expect(candidates[1] == L"hero", "Second-most frequently selected candidate must follow.");
     Expect(candidates[2] == L"hello", "Unselected candidates must keep dictionary order.");
     Expect(candidates[3] == L"helium", "Unselected candidates must keep dictionary order.");
+    std::vector<std::wstring> disabledCandidates{ L"hello", L"help", L"helium", L"hero" };
+    enput::RankCandidatesByFrequency(&disabledCandidates, frequencies, false);
+    Expect(disabledCandidates == std::vector<std::wstring>{ L"hello", L"help", L"helium", L"hero" }, "Disabled frequency ranking must preserve dictionary order.");
 }
 
 }

@@ -142,6 +142,7 @@ struct RuntimeConfiguration {
     int candidateCount = 9;
     bool horizontal = false;
     bool appendSpaceAfterSelection = true;
+    bool adaptiveCandidateRanking = true;
     bool preserveCase = true;
     bool avoidScreenEdges = true;
     std::wstring fontFamily = L"Segoe UI";
@@ -277,6 +278,7 @@ RuntimeConfiguration LoadRuntimeConfiguration() {
         configuration.candidateCount = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "candidateCount", configuration.candidateCount))), 1, 9);
         configuration.horizontal = enput::json::StringOr(object, "layout", "vertical") == "horizontal";
         configuration.appendSpaceAfterSelection = enput::json::BooleanOr(object, "appendSpaceAfterSelection", configuration.appendSpaceAfterSelection);
+        configuration.adaptiveCandidateRanking = enput::json::BooleanOr(object, "adaptiveCandidateRanking", configuration.adaptiveCandidateRanking);
         configuration.preserveCase = enput::json::BooleanOr(object, "preserveCase", configuration.preserveCase);
         configuration.avoidScreenEdges = enput::json::BooleanOr(object, "avoidScreenEdges", configuration.avoidScreenEdges);
         configuration.fontFamily = Utf8ToWide(enput::json::StringOr(object, "fontFamily", "Segoe UI"));
@@ -1634,7 +1636,7 @@ private:
         return display;
     }
 
-    static std::vector<std::wstring> FindCandidates(const std::wstring& typed) {
+    std::vector<std::wstring> FindCandidates(const std::wstring& typed) {
         if (typed.empty()) return {};
         std::wstring lower = typed;
         ToLowerInPlace(&lower);
@@ -1664,16 +1666,18 @@ private:
             }
         }
         std::vector<std::wstring> matches;
-        const enput::CandidateFrequencyMap& frequencies = CandidateFrequencies();
-        enput::RankCandidatesByFrequency(&exactMatches, frequencies);
-        enput::RankCandidatesByFrequency(&prefixMatches, frequencies);
+        if (configuration_.adaptiveCandidateRanking) {
+            const enput::CandidateFrequencyMap& frequencies = CandidateFrequencies();
+            enput::RankCandidatesByFrequency(&exactMatches, frequencies);
+            enput::RankCandidatesByFrequency(&prefixMatches, frequencies);
+        }
         matches.reserve(exactMatches.size() + prefixMatches.size());
         matches.insert(matches.end(), exactMatches.begin(), exactMatches.end());
         matches.insert(matches.end(), prefixMatches.begin(), prefixMatches.end());
         return matches;
     }
 
-    static std::vector<std::wstring> FindAssociatedCandidates(const std::wstring& committedText) {
+    std::vector<std::wstring> FindAssociatedCandidates(const std::wstring& committedText) {
         const std::wstring lower = Lowercase(committedText);
         const std::wstring phrasePrefix = lower + L" ";
         std::vector<std::wstring> matches;
@@ -1694,7 +1698,7 @@ private:
             static const std::vector<std::wstring> fallback{ L"the", L"to", L"and", L"a", L"is", L"of", L"for", L"in", L"that" };
             matches = fallback;
         }
-        enput::RankCandidatesByFrequency(&matches, CandidateFrequencies());
+        if (configuration_.adaptiveCandidateRanking) enput::RankCandidatesByFrequency(&matches, CandidateFrequencies());
         return matches;
     }
 
@@ -1997,7 +2001,7 @@ private:
     HRESULT CommitCandidate(ITfContext* context, TfEditCookie cookie, const std::wstring& candidate, wchar_t trailing) {
         const size_t separator = candidate.find(static_cast<wchar_t>(0x1F));
         const std::wstring committed = separator == std::wstring::npos ? candidate : candidate.substr(0, separator);
-        if (separator == std::wstring::npos) RecordCandidateSelection(committed);
+        if (separator == std::wstring::npos && configuration_.adaptiveCandidateRanking) RecordCandidateSelection(committed);
         return detachedSuggestionActive_ ? CommitDetachedSuggestion(context, cookie, committed, trailing) : FinishWithSuggestions(context, cookie, committed, trailing);
     }
 

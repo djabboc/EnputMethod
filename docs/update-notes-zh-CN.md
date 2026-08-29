@@ -23,6 +23,7 @@
   "candidateCount": 9,
   "layout": "vertical",
   "appendSpaceAfterSelection": true,
+  "adaptiveCandidateRanking": true,
   "fontFamily": "Segoe UI",
   "fontSize": 16,
   "opacity": 1.0,
@@ -34,6 +35,7 @@
 
 - `layout`：`vertical` 为竖排，`horizontal` 为横排。
 - `appendSpaceAfterSelection`：数字键或 `Tab` 选词后是否自动添加空格。
+- `adaptiveCandidateRanking`：是否根据当前用户的历史选词频率调整候选排序。默认 `true`；设为 `false` 后保持词典顺序，且不再记录新的选择频率。
 - `fontFamily` 与 `fontSize`：候选窗字体与像素字号。
 - `opacity`：范围为 `0.2` 到 `1.0`。
 - `theme`：`dark`、`light`、`eye-care` 或 `paper`。

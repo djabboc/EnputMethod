@@ -19,11 +19,11 @@ Installation performs these operations:
 
 The installer explicitly loads the TSF DLL adjacent to its executable, copies it to a filename derived from its timestamp and size, then registers that installed path. The versioned deployment filename allows an update to complete when an earlier DLL remains mapped in a running application. Reinstalling the same DLL reuses an identical deployed file. The installer and uninstaller can therefore be kept or moved as complete output folders after installation. Use the uninstaller before manually deleting an installed DLL.
 
-The installer creates `%LOCALAPPDATA%\Enput Method\config.json`, `shortcut.json`, `dictionary.txt`, and four JSON themes from bundled defaults when those files are missing. `conf.json` from older releases is migrated without overwriting custom content. On theme updates it adds only fields absent from an existing valid bundled theme, preserving every user-supplied value. The native service parses the JSON configuration and shortcut action arrays, supports UTF-8 files with or without a BOM, and caches the dictionary until its timestamp or size changes.
+The installer creates `%LOCALAPPDATA%\Enput Method\config.json`, `shortcut.json`, `dictionary.txt`, four JSON themes, and `enput.db`. `conf.json` from older releases is migrated without overwriting custom content. Configuration, shortcuts, and themes remain JSON because they are user settings. Lexicon content is SQLite-only: the package contains a validated `enput.seed.db`; an existing JSON/JSONL lexicon is imported transactionally once, validated, and then deleted. The native service opens `enput.db` through Windows `winsqlite3.dll` and has no JSON/JSONL lexicon fallback.
 
 ## Suggestions
 
-Suggestions are sourced from the ordered user dictionary. The bundled dictionary combines the Google 10,000 English word list with `dwyl/english-words` `words_alpha.txt`, then removes duplicates. The configured candidate count limits only the current page; every matching word remains available through paging. Number keys map to the current page.
+Word-prefix candidates remain sourced from the ordered `dictionary.txt`. Phrase suggestions, Emoji keywords, and translation records are queried from indexed SQLite tables. The configured candidate count limits only the current page; every matching word remains available through paging. Number keys map to the current page.
 
 ## Appearance
 

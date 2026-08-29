@@ -96,6 +96,7 @@
 | I-37 | `hug` 看似只显示来源，没有英中内容。 | 已安装 ECDICT 原始记录包含 `n. a tight or amorous embrace` 和“紧抱、拥抱”等；根因是 I-34 的来源正文与旧宿主 DLL/Overlay 组合。 | 代码修复与数据抽样确认；待关闭重开宿主后验收。 |
 | I-38 | 翻译窗尺寸不能由用户调整，文本布局不适合词性、语言和例句。 | 原实现是 `TextBlock + ScrollViewer` 且 `SizeToContent`。改为只读 `RichTextBox + FlowDocument`、四边/四角无激活命中测试、`config.json` 初始尺寸和 250ms 防抖写回。 | WPF 自动化通过；待真实鼠标缩放与持久化验收。 |
 | I-39 | `saw -> 🪚` 在 VS Code 变方框，Saint Helena Flag 视觉上被误认作瑞士。 | 服务端提交 `U+1FA9A` 正确；方框由目标编辑器字体缺字决定。Saint Helena 正确为 `🇸🇭`（区域指示符 S/H），瑞士为 `🇨🇭`（C/H）。清理重复关键字并增加码点回归。 | 码点和安装数据测试通过；VS Code 字体兼容性需按宿主单列观察。 |
+| I-40 | SQLite 迁移后 F2 无 Emoji、F3 无翻译，普通英文候选部分可用。 | `enput.db` 已生成并删除 JSON/JSONL，但已打开的 Notepad 仍映射旧 JSON 版 TSF DLL；旧 DLL 可继续读取保留的 `dictionary.txt`，却找不到已删除的 Emoji/翻译文件。安装并注册 SQLite DLL 后关闭重开宿主即可。 | 已安装新 DLL，SQLite 自检通过；F2 `fire` 与 F3 `braces`/`hug` 待重开真实宿主后验收。 |
 
 ### 当前自动化证据
 

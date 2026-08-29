@@ -20,6 +20,8 @@
 
 该模式会检查安装包完整性、注册 TSF DLL，然后逐个比较已注册 DLL 和 Program Files 中 Overlay 文件的 SHA-256。失败时会将详细异常写入 `%LOCALAPPDATA%\Enput Method\install-verification.log`，并在脚本终端中输出。
 
+SQLite 词库验证还会确认 `enput.db` 与 `enput.db.ready` 存在、schema version 正确、`he`、`can i help you?`、`fire`、`saw`、`braces`、`hug` 可查询，并确认旧词库 JSON/JSONL 文件不存在。
+
 需要观察安装器窗口或人工排查时，再直接运行 `EnputMethod.Installer.exe` 并点击“安装”。
 
 若安装失败，先检查以下事实，不要直接重复安装：

@@ -99,6 +99,35 @@ WPF 的字号单位是 DIP，而配置的 `fontSize` 是 pt。Overlay 固定使�
 
 安装/迁移采用 pending 数据库、事务、验证、原子替换和 `enput.db.ready` 标记。只有成功后才会删除旧 JSON/JSONL 词库文件。
 
+## 6.1 当前候选与联想算法
+
+这里的“联想”分为两条独立路径：**输入尚未确认时的候选生成**，以及**选词提交后的后续建议**。当前没有神经网络、LLM、词向量、语言模型概率或在线推理；所有结果来自本地有序词表、SQLite `suggestions` 和用户的选词频率。
+
+### 输入中的候选生成
+
+每次输入改变时，TSF 将输入小写化，分别收集四个互不混合的候选层，再按固定层级合并、大小写去重：
+
+| 层级 | 数据与规则 | 示例 |
+| --- | --- | --- |
+| 1. 精确匹配 | `words.normalized == input`，或短语 candidate 与 input 相同。 | `can` 优先于 `candle`。 |
+| 2. 短语续写 | `suggestions.kind = 1` 的 candidate 以输入加空格开头，且 trigger 与输入相同。 | 输入 `can` 时，`can i help you?` 属于本层。 |
+| 3. 普通前缀 | 有序词表和 SQLite 短语 candidate 以输入开头。短语按 `priority DESC, ordinal` 查询；普通单词保持词典 ordinal。 | `new` 可得到 `new york`，普通单词如 `newspaper` 同属本层。 |
+| 4. 保序近似匹配 | 仅输入至少 3 个字符后启用。SQL 先以首字符和 `LIKE %a%b%c%` 缩小集合，再逐字符验证字符顺序；短语比较忽略空格，Emoji 还忽略 `_`、`-`。 | `hpy -> happy`、`newyork -> new york`、`machinelearning -> machine learning`、`pignose -> pig_nose`。 |
+
+合并顺序永远是 `精确 -> 短语续写 -> 前缀 -> 近似`。每一层内部以不区分大小写的文本去重；前一层已经出现的候选不会在后一层重复。近似查询分别限制普通词 96 条、短语 48 条，以避免短输入把 SQLite 查询扩大成全表扫描。所有结果随后按 `candidateCount` 分页，当前配置上限为 9 项/页。
+
+`adaptiveCandidateRanking=true` 时，`HKCU\Software\Enput Method\CandidateFrequency` 中已选过的候选只会在**所属层级内部**按降序频率稳定前移；未选过的候选保持原词典/数据 ordinal。因此学习不会把 `hpy` 的近似结果挪到精确 `happy` 或前缀结果之前。设为 `false` 后不重排，也不继续记录新的选词频率。
+
+### 选词后的关联建议
+
+选中并提交一个候选后，服务调用 `QuerySuggestions(committedText)`：
+
+1. `kind = 0` 的记录是直接后续候选，原样显示。
+2. `kind = 1` 的完整短语必须以 `committedText + " "` 开头；服务只显示后缀，避免重复提交。例如提交 `how` 后，`how are you` 显示为 `are you`，再次选择后得到 `how are you`，而不是 `how how are you`。
+3. 若该词没有任何关联记录，才显示固定兜底序列：`the`、`to`、`and`、`a`、`is`、`of`、`for`、`in`、`that`。这不是上下文预测，因此它不能根据上文区分 `Can I help you?` 等语义。
+4. 此阶段也可在结果内部应用用户频率排序，但不会产生新的词或跨词预测。
+
+因此，当前系统的“句子联想”是**手工/语料导入的短语和后续词查表**，不是上下文语言模型。WordNet 导入扩大了多词短语覆盖，但它本身不提供句子频率、语法或上下文概率。要实现真正基于前文的句子补全，需要新增 n-gram/语料频率、语境窗口和排序模型，属于后续功能而不是当前行为。
 ## 7. 配置与快捷键
 
 用户配置目录是 `%LOCALAPPDATA%\Enput Method`。

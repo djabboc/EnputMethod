@@ -29,6 +29,11 @@ Word-prefix candidates remain sourced from the ordered `dictionary.txt`. Phrase 
 
 `config.json` controls vertical or horizontal layout, automatic trailing spaces after selection, font family, font size, opacity, and the active theme. `shortcut.json` maps actions to one or more key names. A theme controls background, foreground, selected-row colors and border, border color and width, corner radius, padding, row height, and shadow size. Translation-window fields use the `translation` prefix and separately control width, maximum height, colors, border, padding, corner radius, and scrollbar colors. Bundled themes are `dark`, `light`, `eye-care`, and `paper`.
 
+## Candidate and Association Ranking
+
+Candidate generation is deterministic local lookup, not a neural language model. For active input it merges four de-duplicated tiers in this fixed order: exact word/phrase, a phrase continuation whose trigger is the current input, ordinary word/phrase prefixes, then ordered-subsequence approximate matches for inputs of at least three characters. Phrase matching ignores spaces and Emoji matching also ignores `_` and `-`. Frequency learning only reorders candidates inside each tier, so it cannot move an approximate result ahead of an exact or prefix result.
+
+After a candidate is committed, the service separately looks up records triggered by the committed text. Next-word records are shown directly; a stored full phrase is reduced to the suffix after the committed text. When no record exists, the service uses a fixed common-word fallback. Consequently, current sentence association is phrase-table lookup and fallback, not context-aware sentence prediction.
 ## Current Limits
 
 - The service is x64-only, so x86 applications need a matching x86 TSF DLL before they can use it.

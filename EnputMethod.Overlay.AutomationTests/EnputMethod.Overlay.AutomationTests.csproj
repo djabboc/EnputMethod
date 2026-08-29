@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>EnputMethod.Overlay.AutomationTests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\EnputMethod.Overlay\OverlayFocus.cs" Link="OverlayFocus.cs" />
+    <Compile Include="..\EnputMethod.Overlay\OverlayProtocol.cs" Link="OverlayProtocol.cs" />
+  </ItemGroup>
+</Project>

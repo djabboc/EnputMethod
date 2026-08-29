@@ -8,9 +8,12 @@ internal static class OverlayFocus
 
     internal static bool IsForegroundWindow(long ownerWindow)
     {
-        if (ownerWindow == 0) return true;
+        return IsOwnerOfForeground(ownerWindow, GetForegroundWindow());
+    }
 
-        IntPtr foreground = GetForegroundWindow();
+    internal static bool IsOwnerOfForeground(long ownerWindow, IntPtr foreground)
+    {
+        if (ownerWindow == 0) return true;
         if (foreground == IntPtr.Zero) return false;
 
         IntPtr ownerRoot = GetAncestor(new IntPtr(ownerWindow), GaRoot);

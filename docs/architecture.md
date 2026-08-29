@@ -48,3 +48,9 @@ The configuration contract uses points for `fontSize`. Native GDI/DirectWrite al
 ## Composition Rendering Boundary
 
 While a typed prefix has not been committed or selected, the TSF service keeps it in an active `ITfComposition` so a candidate selection can replace the entire range atomically. The host application owns the visible rendering of that composition, including its underline. Enput does not set a TSF display attribute for underline color or thickness. Therefore the presence of an underline is caused by Enput's active-composition state, while its actual appearance is application-defined. The current design intentionally retains this behavior; candidate UI and composition state are not yet decoupled.
+
+## 词组与取消快捷键（2026-08-29）
+
+安装器将 Princeton WordNet 3.1 派生的 62,319 条多词短语一次性导入 SQLite `suggestions`，并用 `metadata.builtinPhraseVersion` 确保已有用户数据库只升级一次。高优先级补充覆盖通用地名和经济、商业、心理学、计算机、工程、法律术语；`newyork`、`machinelearning` 等无空格输入由紧凑保序短语匹配召回。`wordnet-phrases.txt` 仅用于安装导入，TSF 运行时仍只读 `enput.db`。
+
+`shortcut.json` 的 `cancelComposition` 是多按键动作，默认 `["Escape", "Shift"]`。配置中的任一按键都会先被 TSF 捕获并执行同一取消路径：终止当前未确认 composition、隐藏候选；Emoji 模式无输入时退出模式。安装只补充缺失配置字段，不覆盖用户已自定义的数组。

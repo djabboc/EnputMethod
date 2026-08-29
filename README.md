@@ -51,6 +51,8 @@ See [Root Cause Analysis](docs/root-cause-analysis.md) for the deployment and ca
 See [Update Notes](docs/update-notes-zh-CN.md) for the Chinese configuration and update guide.
 See [Installation Validation](docs/installation-validation-zh-CN.md) for the repeatable build, installation, and joint manual-test procedure.
 See [Development Issue Ledger](docs/development-issue-ledger-zh-CN.md) for the complete problem history, deferred decisions, and the current consolidated manual acceptance list.
+See [Technology Stack](docs/technology-stack-zh-CN.md) for the current component, runtime, data, IPC, deployment, and configuration details.
+See [Debugging and Testing](docs/debugging-and-testing-zh-CN.md) for the layered build, installation, automated, and real-host verification procedure.
 
 
 ## Current Development Status (2026-08-29)

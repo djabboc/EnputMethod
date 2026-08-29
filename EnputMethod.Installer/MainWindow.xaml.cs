@@ -72,14 +72,30 @@ public partial class MainWindow : Window
     {
         string source = Path.Combine(AppContext.BaseDirectory, "Overlay");
         string destination = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Enput Method", "Overlay");
-        StopInstalledOverlay(destination);
         Directory.CreateDirectory(destination);
         foreach (string file in Directory.EnumerateFiles(source))
         {
-            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), true);
+            CopyOverlayFile(file, destination);
         }
     }
 
+    private static void CopyOverlayFile(string sourceFile, string destinationDirectory)
+    {
+        const int attempts = 6;
+        for (int attempt = 0; attempt < attempts; ++attempt)
+        {
+            StopInstalledOverlay(destinationDirectory);
+            try
+            {
+                File.Copy(sourceFile, Path.Combine(destinationDirectory, Path.GetFileName(sourceFile)), true);
+                return;
+            }
+            catch (IOException) when (attempt + 1 < attempts)
+            {
+                Thread.Sleep(100);
+            }
+        }
+    }
     private static void StopInstalledOverlay(string overlayDirectory)
     {
         string executable = Path.GetFullPath(Path.Combine(overlayDirectory, "EnputMethod.Overlay.exe"));

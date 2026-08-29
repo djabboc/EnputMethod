@@ -1,0 +1,8 @@
+This package includes a mechanically derived list of multi-word lemmas from Princeton WordNet 3.1.
+Source: https://wordnetcode.princeton.edu/wn3.1.dict.tar.gz
+Downloaded: 2026-08-29
+Derived file: wordnet-phrases.txt
+SHA-256: 0E33B1E726A3E78833AF5DF924628EF0A85D2F7437064AFEF905AAE66BEF8560
+
+WordNet 3.1 Copyright 2011 by Princeton University. All rights reserved.
+The WordNet software and database are provided "AS IS". Princeton University makes no representations or warranties, express or implied, including merchantability, fitness for a particular purpose, or non-infringement. The Princeton University name may not be used in advertising or publicity pertaining to distribution. Copyright remains with Princeton University.

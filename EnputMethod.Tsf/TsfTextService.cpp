@@ -141,6 +141,7 @@ struct ShortcutConfiguration {
     std::vector<WPARAM> nextPage{ VK_OEM_PLUS, VK_ADD };
     std::vector<WPARAM> selectPrevious{ VK_UP };
     std::vector<WPARAM> selectNext{ VK_DOWN };
+    std::vector<WPARAM> cancelComposition{ VK_ESCAPE, VK_SHIFT };
     std::vector<WPARAM> toggleEmojiMode{ VK_F2 };
     std::vector<WPARAM> toggleTranslationWindow{ VK_F3 };
 };
@@ -180,7 +181,7 @@ WPARAM ShortcutKey(const std::string& name) {
         { "Tab", VK_TAB }, { "Minus", VK_OEM_MINUS }, { "Plus", VK_OEM_PLUS },
         { "NumpadSubtract", VK_SUBTRACT }, { "NumpadAdd", VK_ADD },
         { "Up", VK_UP }, { "Down", VK_DOWN }, { "Space", VK_SPACE },
-        { "Enter", VK_RETURN }, { "Escape", VK_ESCAPE }, { "F2", VK_F2 }, { "F3", VK_F3 }
+        { "Enter", VK_RETURN }, { "Escape", VK_ESCAPE }, { "Shift", VK_SHIFT }, { "F2", VK_F2 }, { "F3", VK_F3 }
     };
     const auto named = keys.find(name);
     if (named != keys.end()) return named->second;
@@ -211,6 +212,7 @@ ShortcutConfiguration LoadShortcutConfiguration() {
     shortcuts.nextPage = ShortcutKeys(object, "nextPage", shortcuts.nextPage);
     shortcuts.selectPrevious = ShortcutKeys(object, "selectPrevious", shortcuts.selectPrevious);
     shortcuts.selectNext = ShortcutKeys(object, "selectNext", shortcuts.selectNext);
+    shortcuts.cancelComposition = ShortcutKeys(object, "cancelComposition", shortcuts.cancelComposition);
     shortcuts.toggleEmojiMode = ShortcutKeys(object, "toggleEmojiMode", shortcuts.toggleEmojiMode);
     shortcuts.toggleTranslationWindow = ShortcutKeys(object, "toggleTranslationWindow", shortcuts.toggleTranslationWindow);
     return shortcuts;
@@ -1671,7 +1673,10 @@ public:
             UpdateCurrentPage();
             return UpdateComposition(context, cookie);
         }
-        if (emojiMode_ && key == VK_ESCAPE && typed_.empty()) { emojiMode_ = false; return S_OK; }
+        if (HasShortcut(configuration_.shortcuts.cancelComposition, key)) {
+            if (emojiMode_ && typed_.empty()) { emojiMode_ = false; return S_OK; }
+            return FinishComposition(cookie, typed_, L'\0');
+        }
         if (key >= 'A' && key <= 'Z') {
             ClearDetachedSuggestions();
             const bool uppercase = (GetKeyState(VK_SHIFT) < 0) ^ ((GetKeyState(VK_CAPITAL) & 1) != 0);
@@ -1708,7 +1713,6 @@ public:
         if (key == VK_SPACE && IsSuggestionActive()) return FinishComposition(cookie, L"", L' ');
         if (key == VK_SPACE) return FinishWithSuggestions(context, cookie, typed_, L' ');
         if (key == VK_RETURN) return FinishComposition(cookie, typed_, L'\r');
-        if (key == VK_ESCAPE) return FinishComposition(cookie, typed_, L'\0');
         return S_FALSE;
     }
 
@@ -1816,9 +1820,9 @@ private:
     bool ShouldHandleKey(WPARAM key) const {
         if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key)) return true;
         if (HasShortcut(configuration_.shortcuts.toggleEmojiMode, key)) return true;
+        if (HasShortcut(configuration_.shortcuts.cancelComposition, key)) return true;
         if (emojiMode_ && !allCandidates_.empty() &&
             (HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key))) return true;
-        if (emojiMode_ && key == VK_ESCAPE && typed_.empty()) return true;
         if (IsSuggestionActive() || detachedSuggestionActive_) return !IsModifierKey(key);
         if (!typed_.empty()) return !IsModifierKey(key);
         if (GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0) return false;
@@ -1830,7 +1834,7 @@ private:
             if (!IsSuggestionActive() && !detachedSuggestionActive_) return false;
             const bool hasModifier = GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0;
             if (!hasModifier && key >= 'A' && key <= 'Z') return false;
-            if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key) || key == VK_SPACE || HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key)) return false;
+            if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key) || HasShortcut(configuration_.shortcuts.cancelComposition, key) || key == VK_SPACE || HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key)) return false;
             if (HasShortcut(configuration_.shortcuts.selectPrevious, key) || HasShortcut(configuration_.shortcuts.selectNext, key)) return false;
             if (enput::TryGetCandidateIndex(key, candidates_.size(), nullptr)) return false;
             return !(HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size());
@@ -1838,6 +1842,7 @@ private:
         const bool hasModifier = GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0;
         if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key)) return false;
         if (HasShortcut(configuration_.shortcuts.toggleEmojiMode, key)) return false;
+        if (HasShortcut(configuration_.shortcuts.cancelComposition, key)) return false;
         if (!hasModifier && key >= 'A' && key <= 'Z') return false;
         if (key == VK_BACK) return cursor_ == 0;
         if (key == VK_SPACE || key == VK_RETURN || key == VK_ESCAPE) return false;

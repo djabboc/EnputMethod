@@ -67,6 +67,7 @@ public partial class MainWindow : Window
         MergeMissingConfigurationFields(destinationDirectory);
         MigrateDefaultFontSize(destinationDirectory);
         CopyDefaultFile("shortcut.json", destinationDirectory);
+        MergeMissingObjectFields(destinationDirectory, "shortcut.json");
         CopyDefaultFile("dictionary.txt", destinationDirectory);
         LexiconDatabaseBuilder.CreateOrMigrate(destinationDirectory, AppContext.BaseDirectory);
         EnsureFullTranslationDictionary(destinationDirectory);
@@ -265,9 +266,12 @@ public partial class MainWindow : Window
     }
 
     private static void MergeMissingConfigurationFields(string destinationDirectory)
+        => MergeMissingObjectFields(destinationDirectory, "config.json");
+
+    private static void MergeMissingObjectFields(string destinationDirectory, string fileName)
     {
-        string source = Path.Combine(AppContext.BaseDirectory, "config.json");
-        string destination = Path.Combine(destinationDirectory, "config.json");
+        string source = Path.Combine(AppContext.BaseDirectory, fileName);
+        string destination = Path.Combine(destinationDirectory, fileName);
         try
         {
             JsonObject? bundled = JsonNode.Parse(File.ReadAllText(source)) as JsonObject;

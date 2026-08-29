@@ -24,3 +24,11 @@
 2. F2 输入 `pignose`，候选中应包含 `pig_nose` 所关联的 Emoji；普通模式输入 `hpy`，候选中应出现 `happy`，输入 `empirestate` 应出现 `empire state building`，且前缀候选仍在近似结果前。
 3. 按 F3 显示 `braces`，确认词性、`en:`、`zh-CN:`、例句为不同富文本样式；拖选一段解释，右键选择 `Copy`，在记事本粘贴后内容应一致。
 4. 更换 `%LOCALAPPDATA%\Enput Method\themes` 中的主题或字段后重开候选/翻译窗，确认相应富文本颜色更新；窗口宽高仍由 `config.json` 的 `translationWindowWidth`、`translationWindowHeight` 控制。
+
+## 2026-08-29：词组语料与取消动作
+
+- [x] 下载并导入公开 WordNet 3.1 多词短语，保留归属文件。
+- [x] 补充高频地名和跨学科术语：经济、商业、心理、计算机、工程、法律。
+- [x] 为无空格短语输入增加 `newyork` 和 `machinelearning` 回归。
+- [x] 新增 `cancelComposition` 可配置快捷键数组，默认 `Escape` 与 `Shift`。
+- [ ] 真实宿主人工复验：确认 Enput 已激活后，验证上述两个短语和 Shift 取消，不把测试误判为微软输入法的结果。

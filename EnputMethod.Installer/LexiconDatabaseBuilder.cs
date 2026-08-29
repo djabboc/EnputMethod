@@ -6,6 +6,16 @@ namespace EnputMethod.Installer;
 internal static class LexiconDatabaseBuilder
 {
     internal const int SchemaVersion = 1;
+    private const string BuiltinPhraseVersion = "wordnet-3.1-20260829";
+    private static readonly string[] CoreAcademicPhrases =
+    [
+        "machine learning", "deep learning", "artificial intelligence", "data science", "computer vision", "natural language processing", "software engineering", "distributed systems", "cloud computing", "database management", "operating system", "computer network", "information security", "cyber security", "human computer interaction",
+        "behavioral economics", "game theory", "financial market", "monetary policy", "fiscal policy", "supply chain", "market research", "business strategy", "corporate governance", "risk management", "cost benefit analysis", "gross domestic product", "interest rate", "exchange rate", "venture capital",
+        "social psychology", "clinical psychology", "cognitive neuroscience", "mental health", "personality trait", "decision making", "emotional intelligence", "cognitive behavioral therapy", "developmental psychology", "research methodology",
+        "electrical engineering", "mechanical engineering", "chemical engineering", "materials science", "systems engineering", "control system", "signal processing", "structural engineering", "renewable energy", "quality assurance",
+        "constitutional law", "criminal law", "civil law", "contract law", "intellectual property", "due process", "legal liability", "court order", "burden of proof", "law enforcement",
+        "new york", "los angeles", "san francisco", "washington dc", "united states", "united kingdom", "european union", "south korea", "hong kong", "silicon valley"
+    ];
 
     internal static void CreateOrMigrate(string userDirectory, string packageDirectory)
     {
@@ -13,7 +23,7 @@ internal static class LexiconDatabaseBuilder
         if (File.Exists(databasePath) && File.Exists(Path.Combine(userDirectory, "enput.db.ready")))
         {
             using var existing = new NativeSqliteConnection(databasePath);
-            EnsureBuiltInCandidates(existing);
+            EnsureBuiltInCandidates(existing, packageDirectory);
             return;
         }
 
@@ -23,7 +33,7 @@ internal static class LexiconDatabaseBuilder
         if (!HasLegacyLexicon(userDirectory) && File.Exists(seed))
         {
             File.Copy(seed, pending, true);
-            using (var database = new NativeSqliteConnection(pending)) EnsureBuiltInCandidates(database);
+            using (var database = new NativeSqliteConnection(pending)) EnsureBuiltInCandidates(database, packageDirectory);
             ValidateDatabase(pending);
             File.Move(pending, databasePath, true);
             File.WriteAllText(Path.Combine(userDirectory, "enput.db.ready"), SchemaVersion.ToString());
@@ -41,7 +51,7 @@ internal static class LexiconDatabaseBuilder
                 ImportTranslations(database, PickInput(userDirectory, packageDirectory, "translations.json"), 0);
                 ImportTranslationLines(database, Path.Combine(userDirectory, "translations.ecdict.jsonl"), 10);
                 ImportTranslationLines(database, Path.Combine(userDirectory, "translations.cc-cedict.jsonl"), 20);
-                EnsureBuiltInCandidates(database);
+                EnsureBuiltInCandidates(database, packageDirectory);
                 database.Execute($"INSERT INTO metadata(key, value) VALUES('schemaVersion', '{SchemaVersion}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
                 database.Execute("COMMIT;");
             }
@@ -98,6 +108,7 @@ internal static class LexiconDatabaseBuilder
         if (database.ScalarInt("SELECT COUNT(*) FROM words WHERE normalized >= 'he' AND normalized < 'he' || char(65535);") < 3) throw new InvalidOperationException("Word prefix lookup validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE trigger = 'can' AND candidate = 'can i help you?';") != 1) throw new InvalidOperationException("Phrase suggestion validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE trigger = 'empire' AND candidate = 'empire state building';") != 1) throw new InvalidOperationException("Built-in compact phrase validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE candidate IN ('new york', 'computer science', 'machine learning', 'contract law');") < 4) throw new InvalidOperationException("Bundled domain phrase validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'fire';") < 1 || database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'saw';") < 1) throw new InvalidOperationException("Emoji lookup validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM words WHERE normalized >= 'h' AND normalized < ('h' || char(65535)) AND normalized LIKE '%h%p%y%';") < 1) throw new InvalidOperationException("Ordered word subsequence validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'pig_nose';") != 1) throw new InvalidOperationException("Ordered Emoji subsequence validation failed.");
@@ -114,9 +125,25 @@ internal static class LexiconDatabaseBuilder
         return File.Exists(user) ? user : Path.Combine(packageDirectory, name);
     }
 
-    private static void EnsureBuiltInCandidates(NativeSqliteConnection database)
+    private static void EnsureBuiltInCandidates(NativeSqliteConnection database, string packageDirectory)
     {
         database.Execute("INSERT OR IGNORE INTO suggestions(trigger, kind, candidate, ordinal, priority) VALUES('empire', 1, 'empire state building', 0, 100);");
+        if (database.ScalarInt($"SELECT COUNT(*) FROM metadata WHERE key = 'builtinPhraseVersion' AND value = '{BuiltinPhraseVersion}';") != 0) return;
+        using NativeSqliteStatement insert = database.Prepare("INSERT OR IGNORE INTO suggestions(trigger, kind, candidate, ordinal, priority) VALUES(?, 1, ?, ?, ?);");
+        int ordinal = 1000;
+        foreach (string phrase in CoreAcademicPhrases) InsertPhrase(insert, phrase, ordinal++, 50);
+        string wordNetPath = Path.Combine(packageDirectory, "wordnet-phrases.txt");
+        if (!File.Exists(wordNetPath)) throw new InvalidOperationException("Bundled WordNet phrase source is missing.");
+        foreach (string phrase in File.ReadLines(wordNetPath)) InsertPhrase(insert, phrase, ordinal++, 5);
+        database.Execute($"INSERT INTO metadata(key, value) VALUES('builtinPhraseVersion', '{BuiltinPhraseVersion}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
+    }
+
+    private static void InsertPhrase(NativeSqliteStatement insert, string rawPhrase, int ordinal, int priority)
+    {
+        string phrase = rawPhrase.Trim().ToLowerInvariant();
+        int separator = phrase.IndexOf(' ');
+        if (separator is <= 0 || separator == phrase.Length - 1 || phrase.Length > 120) return;
+        insert.BindText(1, phrase[..separator]); insert.BindText(2, phrase); insert.BindInt(3, ordinal); insert.BindInt(4, priority); insert.Execute();
     }
 
     private static void CreateSchema(NativeSqliteConnection database) => database.Execute("""

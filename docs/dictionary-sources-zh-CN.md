@@ -49,3 +49,11 @@ JSON 文件可能将非 BMP Emoji 序列化成 UTF-16 代理对，例如 `\\uD83
 ## SQLite 决策（2026-08-29）
 
 已采用 Windows 内置 `winsqlite3.dll`。Schema version 为 `1`，导入采用 pending 数据库、事务、校验和原子替换，失败时保留原 `enput.db`。没有 JSONL 回退：旧文件仅在成功导入后删除。后续扩展包括词形还原、模糊/全文检索、短语语料、例句筛选和 schema version 升级。
+
+## WordNet 多词短语（2026-08-29）
+
+- 数据集：Princeton WordNet 3.1，下载自官方词典归档：`https://wordnetcode.princeton.edu/wn3.1.dict.tar.gz`。
+- 导入内容：从名词、动词、形容词和副词索引提取二至五词的英文 lemma；下划线转换为空格，得到 62,319 条短语。
+- 覆盖：除通用地名和常用固定短语外，包含经济学、商业、心理学、计算机科学、工程和法律等学科术语。内置高优先级补充覆盖 `machine learning`、`software engineering`、`new york`、`empire state building` 等 WordNet 不完整或需要优先召回的短语。
+- 安装方式：安装器在 SQLite `suggestions` 表一次性导入，并以 `metadata.builtinPhraseVersion` 记录版本。运行时仍只查询 `enput.db`，不读取该文本文件或任何 JSON 词典。
+- 署名：安装包内 `WORDNET-ATTRIBUTION.txt` 保留原始来源、下载日期、派生文件 SHA-256 和 WordNet 许可说明。

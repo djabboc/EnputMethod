@@ -79,3 +79,9 @@ Use the following command for a complete local release check:
 ```
 
 It builds the installer and TSF service, runs native candidate/JSON/translation-line-break tests, Overlay protocol and multi-host tests, WPF foreground/pagination/color-Emoji/18pt font-scale automation, then invokes unattended installation verification. A successful run proves the registered TSF DLL and installed Overlay files match the package; it does not prove that a specific target application has already reloaded the new DLL or that Windows switched that application to Enput. Those remain explicit manual checks.
+
+## 2026-08-29 词组与 Shift 验证
+
+安装包完整性检查必须包含 `wordnet-phrases.txt` 和 `WORDNET-ATTRIBUTION.txt`。安装后检查 `%LOCALAPPDATA%\Enput Method\enput.db` 的 `metadata.builtinPhraseVersion`，并确认 suggestions 可找到 `new york`、`computer science`、`machine learning`、`contract law`。
+
+关闭并重新打开测试宿主、确认已切换到 Enput Method 后，输入 `newyork` 和 `machinelearning`，应分别出现对应短语。输入 `he` 保持候选窗显示后按 `Shift`，候选窗和活动组合文本应一起取消；按 `Escape` 的结果必须相同。若用户移除了 `shortcut.json` 中的 `Shift`，该按键应恢复普通修饰键行为。

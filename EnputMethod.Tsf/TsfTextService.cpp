@@ -3,6 +3,7 @@
 #include <dwrite.h>
 #include <textstor.h>
 #include <msctf.h>
+#include "CandidateRanking.h"
 #include "CandidateSelection.h"
 #include "JsonObjectReader.h"
 #include "OverlayClient.h"
@@ -344,6 +345,45 @@ const std::vector<std::wstring>& LoadDictionary() {
 std::wstring Lowercase(std::wstring text) {
     std::transform(text.begin(), text.end(), text.begin(), [](wchar_t character) { return static_cast<wchar_t>(towlower(character)); });
     return text;
+}
+
+constexpr wchar_t kCandidateFrequencyRegistryKey[] = L"Software\\Enput Method\\CandidateFrequency";
+
+enput::CandidateFrequencyMap& CandidateFrequencies() {
+    static enput::CandidateFrequencyMap frequencies = [] {
+        enput::CandidateFrequencyMap loaded;
+        HKEY key{};
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, kCandidateFrequencyRegistryKey, 0, KEY_READ, &key) != ERROR_SUCCESS) return loaded;
+        wchar_t valueName[256]{};
+        for (DWORD index = 0;; ++index) {
+            DWORD characterCount = ARRAYSIZE(valueName);
+            DWORD type{};
+            DWORD value{};
+            DWORD valueSize = sizeof(value);
+            const LONG status = RegEnumValueW(key, index, valueName, &characterCount, nullptr, &type, reinterpret_cast<BYTE*>(&value), &valueSize);
+            if (status == ERROR_NO_MORE_ITEMS) break;
+            if (status != ERROR_SUCCESS || type != REG_DWORD || valueSize != sizeof(value)) continue;
+            const std::wstring normalized = enput::CandidateFrequencyKey(valueName);
+            if (normalized.empty()) continue;
+            loaded[normalized] = static_cast<unsigned int>(std::clamp(value, static_cast<DWORD>(1), static_cast<DWORD>(1000000)));
+        }
+        RegCloseKey(key);
+        return loaded;
+    }();
+    return frequencies;
+}
+
+void RecordCandidateSelection(const std::wstring& candidate) {
+    const std::wstring keyName = enput::CandidateFrequencyKey(candidate);
+    if (keyName.empty()) return;
+    enput::CandidateFrequencyMap& frequencies = CandidateFrequencies();
+    if (!frequencies.contains(keyName) && frequencies.size() >= 4096) return;
+    unsigned int& frequency = frequencies[keyName];
+    if (frequency < 1000000u) ++frequency;
+    HKEY registry{};
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, kCandidateFrequencyRegistryKey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &registry, nullptr) != ERROR_SUCCESS) return;
+    RegSetValueExW(registry, keyName.c_str(), 0, REG_DWORD, reinterpret_cast<const BYTE*>(&frequency), sizeof(frequency));
+    RegCloseKey(registry);
 }
 
 struct SuggestionEntry {
@@ -1624,6 +1664,9 @@ private:
             }
         }
         std::vector<std::wstring> matches;
+        const enput::CandidateFrequencyMap& frequencies = CandidateFrequencies();
+        enput::RankCandidatesByFrequency(&exactMatches, frequencies);
+        enput::RankCandidatesByFrequency(&prefixMatches, frequencies);
         matches.reserve(exactMatches.size() + prefixMatches.size());
         matches.insert(matches.end(), exactMatches.begin(), exactMatches.end());
         matches.insert(matches.end(), prefixMatches.begin(), prefixMatches.end());
@@ -1651,6 +1694,7 @@ private:
             static const std::vector<std::wstring> fallback{ L"the", L"to", L"and", L"a", L"is", L"of", L"for", L"in", L"that" };
             matches = fallback;
         }
+        enput::RankCandidatesByFrequency(&matches, CandidateFrequencies());
         return matches;
     }
 
@@ -1953,6 +1997,7 @@ private:
     HRESULT CommitCandidate(ITfContext* context, TfEditCookie cookie, const std::wstring& candidate, wchar_t trailing) {
         const size_t separator = candidate.find(static_cast<wchar_t>(0x1F));
         const std::wstring committed = separator == std::wstring::npos ? candidate : candidate.substr(0, separator);
+        if (separator == std::wstring::npos) RecordCandidateSelection(committed);
         return detachedSuggestionActive_ ? CommitDetachedSuggestion(context, cookie, committed, trailing) : FinishWithSuggestions(context, cookie, committed, trailing);
     }
 

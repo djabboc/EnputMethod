@@ -1,3 +1,4 @@
+#include "../EnputMethod.Tsf/CandidateRanking.h"
 #include "../EnputMethod.Tsf/CandidateSelection.h"
 
 #include <cstdlib>
@@ -37,10 +38,23 @@ void VerifyCandidateBounds() {
     Expect(!enput::TryGetCandidateIndex('1', 0, nullptr), "No digit can select when no candidates are visible.");
 }
 
+void VerifyFrequencyRanking() {
+    std::vector<std::wstring> candidates{ L"hello", L"help", L"helium", L"hero" };
+    enput::CandidateFrequencyMap frequencies;
+    frequencies[enput::CandidateFrequencyKey(L"HELP")] = 7;
+    frequencies[enput::CandidateFrequencyKey(L"hero")] = 3;
+    enput::RankCandidatesByFrequency(&candidates, frequencies);
+    Expect(candidates[0] == L"help", "Most frequently selected candidate must be first.");
+    Expect(candidates[1] == L"hero", "Second-most frequently selected candidate must follow.");
+    Expect(candidates[2] == L"hello", "Unselected candidates must keep dictionary order.");
+    Expect(candidates[3] == L"helium", "Unselected candidates must keep dictionary order.");
+}
+
 }
 
 int main() {
     VerifyDigitMappings();
+    VerifyFrequencyRanking();
     VerifyCandidateBounds();
     std::cout << "TSF candidate selection tests passed.\n";
     return 0;

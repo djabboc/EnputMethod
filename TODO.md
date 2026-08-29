@@ -24,6 +24,7 @@
   - Do not append an extra space when the selected word is immediately followed by punctuation or an explicit user action that should not receive one.
 - [x] Apply configured font family, size, and opacity to the floating candidate window.
 - [x] Keep the window non-activating, positioned at the TSF composition caret, and usable with number keys `1` through `9`.
+- [x] Learn candidate selection frequency locally without changing exact-match priority or the order of unseen dictionary entries.
 - [~] Repeated selection, backspace, Enter, Escape, Space, punctuation, cursor movement, no-match input, paging, and input in Notepad, EmEditor, and ChatGPT.
   - Many individual cases have passed user verification. The remaining cross-application regression and the latest mouse-pagination repair are listed for consolidated verification in `docs/development-issue-ledger-zh-CN.md`.
 

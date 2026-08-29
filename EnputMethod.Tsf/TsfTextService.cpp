@@ -769,6 +769,20 @@ std::vector<StoredSuggestion> QuerySuggestionPrefixes(const std::wstring& prefix
     return results;
 }
 
+std::vector<StoredSuggestion> QueryApproximateSuggestions(const std::wstring& queryText) {
+    if (queryText.size() < 3) return {};
+    SqliteStatement query(Lexicon().Open(), L"SELECT trigger, kind, candidate FROM suggestions WHERE candidate >= ?2 AND candidate < ?3 AND candidate LIKE ?1 ESCAPE '\\' ORDER BY priority DESC, ordinal LIMIT 48;");
+    if (!query) return {};
+    const std::wstring firstCharacter(1, queryText.front());
+    query.Bind(1, enput::LikeOrderedSubsequencePattern(queryText)); query.Bind(2, firstCharacter); query.Bind(3, PrefixLimit(firstCharacter));
+    std::vector<StoredSuggestion> results;
+    while (query.Next()) {
+        const std::wstring candidate = query.Text(2);
+        if (enput::IsOrderedCompactSubsequence(queryText, candidate)) results.push_back({ query.Text(0), candidate, query.Int(1) });
+    }
+    return results;
+}
+
 std::vector<StoredSuggestion> QuerySuggestions(const std::wstring& trigger) {
     SqliteStatement query(Lexicon().Open(), L"SELECT trigger, kind, candidate FROM suggestions WHERE trigger = ?1 ORDER BY priority DESC, kind, ordinal;");
     if (!query) return {};
@@ -1919,6 +1933,12 @@ private:
                 appendUnique(&exactMatches, &exactKeys, entry.candidate);
             } else {
                 appendUnique(&prefixMatches, &prefixKeys, entry.candidate);
+            }
+        }
+        for (const StoredSuggestion& entry : QueryApproximateSuggestions(lower)) {
+            const std::wstring candidate = Lowercase(entry.candidate);
+            if (!candidate.starts_with(lower) && enput::IsOrderedCompactSubsequence(lower, candidate)) {
+                appendUnique(&approximateMatches, &approximateKeys, entry.candidate);
             }
         }
         for (const std::wstring& word : QueryApproximateWords(lower)) {

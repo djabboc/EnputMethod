@@ -71,7 +71,7 @@ there
 
 ## 保序不完整匹配
 
-输入至少三个字符后，普通候选与 Emoji 关键字支持保序但不连续的匹配：`hpy` 可找到 `happy`，`pignose` 可找到 `pig_nose`。精确匹配、短语续写和前缀匹配始终优先于这类近似结果。Emoji 模式也支持配置的 `-`、`+` 和小键盘加减键翻页。
+输入至少三个字符后，普通候选、短语和 Emoji 关键字支持保序但不连续的匹配：`hpy` 可找到 `happy`，`pignose` 可找到 `pig_nose`，`empirestate` 可找到 `empire state building`。精确匹配、短语续写和前缀匹配始终优先于这类近似结果。Emoji 模式也支持配置的 `-`、`+` 和小键盘加减键翻页。
 
 
 ## 2026-08-29 UI and Data Corrections

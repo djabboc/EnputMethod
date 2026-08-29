@@ -83,6 +83,7 @@ void VerifyTranslationTextNormalization() {
 void VerifyOrderedSubsequenceMatching() {
     Expect(enput::IsOrderedSubsequence(L"hpy", L"happy"), "Ordered incomplete input must match happy.");
     Expect(enput::IsOrderedSubsequence(L"pignose", L"pig_nose", true), "Emoji keyword separators must be ignored for ordered matching.");
+    Expect(enput::IsOrderedCompactSubsequence(L"empirestate", L"Empire State Building"), "Space-free phrase input must match its spaced phrase candidate.");
     Expect(enput::IsOrderedSubsequence(L"pno", L"pig_nose", true), "Emoji ordered matching must preserve non-adjacent characters.");
     Expect(!enput::IsOrderedSubsequence(L"pyh", L"happy"), "Ordered matching must reject reversed character order.");
     Expect(enput::LikeOrderedSubsequencePattern(L"hpy") == L"%h%p%y%", "SQLite LIKE fallback pattern must preserve order.");

@@ -10,7 +10,12 @@ internal static class LexiconDatabaseBuilder
     internal static void CreateOrMigrate(string userDirectory, string packageDirectory)
     {
         string databasePath = Path.Combine(userDirectory, "enput.db");
-        if (File.Exists(databasePath) && File.Exists(Path.Combine(userDirectory, "enput.db.ready"))) return;
+        if (File.Exists(databasePath) && File.Exists(Path.Combine(userDirectory, "enput.db.ready")))
+        {
+            using var existing = new NativeSqliteConnection(databasePath);
+            EnsureBuiltInCandidates(existing);
+            return;
+        }
 
         string pending = databasePath + ".pending";
         if (File.Exists(pending)) File.Delete(pending);
@@ -18,6 +23,7 @@ internal static class LexiconDatabaseBuilder
         if (!HasLegacyLexicon(userDirectory) && File.Exists(seed))
         {
             File.Copy(seed, pending, true);
+            using (var database = new NativeSqliteConnection(pending)) EnsureBuiltInCandidates(database);
             ValidateDatabase(pending);
             File.Move(pending, databasePath, true);
             File.WriteAllText(Path.Combine(userDirectory, "enput.db.ready"), SchemaVersion.ToString());
@@ -35,6 +41,7 @@ internal static class LexiconDatabaseBuilder
                 ImportTranslations(database, PickInput(userDirectory, packageDirectory, "translations.json"), 0);
                 ImportTranslationLines(database, Path.Combine(userDirectory, "translations.ecdict.jsonl"), 10);
                 ImportTranslationLines(database, Path.Combine(userDirectory, "translations.cc-cedict.jsonl"), 20);
+                EnsureBuiltInCandidates(database);
                 database.Execute($"INSERT INTO metadata(key, value) VALUES('schemaVersion', '{SchemaVersion}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
                 database.Execute("COMMIT;");
             }
@@ -90,9 +97,10 @@ internal static class LexiconDatabaseBuilder
         if (database.ScalarInt("SELECT CAST(value AS INTEGER) FROM metadata WHERE key = 'schemaVersion';") != SchemaVersion) throw new InvalidOperationException("SQLite schema version is invalid.");
         if (database.ScalarInt("SELECT COUNT(*) FROM words WHERE normalized >= 'he' AND normalized < 'he' || char(65535);") < 3) throw new InvalidOperationException("Word prefix lookup validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE trigger = 'can' AND candidate = 'can i help you?';") != 1) throw new InvalidOperationException("Phrase suggestion validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE trigger = 'empire' AND candidate = 'empire state building';") != 1) throw new InvalidOperationException("Built-in compact phrase validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'fire';") < 1 || database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'saw';") < 1) throw new InvalidOperationException("Emoji lookup validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM words WHERE normalized >= 'h' AND normalized < ('h' || char(65535)) AND normalized LIKE '%h%p%y%';") < 1) throw new InvalidOperationException("Ordered word subsequence validation failed.");
-        if (database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized >= 'p' AND normalized < ('p' || char(65535)) AND normalized LIKE '%p%i%g%n%o%s%e%';") < 1) throw new InvalidOperationException("Ordered Emoji subsequence validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'pig_nose';") != 1) throw new InvalidOperationException("Ordered Emoji subsequence validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM translation_entry WHERE key IN ('braces', 'hug');") < 2) throw new InvalidOperationException("Translation lookup validation failed.");
         foreach (string legacyName in new[] { "suggestions.json", "emoji.json", "translations.json", "translations.ecdict.jsonl", "translations.cc-cedict.jsonl" })
         {
@@ -104,6 +112,11 @@ internal static class LexiconDatabaseBuilder
     {
         string user = Path.Combine(userDirectory, name);
         return File.Exists(user) ? user : Path.Combine(packageDirectory, name);
+    }
+
+    private static void EnsureBuiltInCandidates(NativeSqliteConnection database)
+    {
+        database.Execute("INSERT OR IGNORE INTO suggestions(trigger, kind, candidate, ordinal, priority) VALUES('empire', 1, 'empire state building', 0, 100);");
     }
 
     private static void CreateSchema(NativeSqliteConnection database) => database.Execute("""

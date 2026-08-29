@@ -19,6 +19,10 @@ inline bool IsOrderedSubsequence(const std::wstring& query, const std::wstring& 
     return queryIndex == query.size();
 }
 
+inline bool IsOrderedCompactSubsequence(const std::wstring& query, const std::wstring& candidate) {
+    return IsOrderedSubsequence(query, candidate, true);
+}
+
 inline std::wstring LikeOrderedSubsequencePattern(const std::wstring& query) {
     std::wstring pattern = L"%";
     for (wchar_t character : query) {

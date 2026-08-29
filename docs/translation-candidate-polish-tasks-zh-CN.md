@@ -9,7 +9,7 @@
 | 翻译主题富文本 | 每套主题定义词性、语言标签、例句前景和例句背景；正文用 `FlowDocument` 的独立 Run 呈现词性、标签、释义与例句。 | Overlay 自动化检查结构化段落、语义标签和选区。 | 已完成 |
 | 翻译复制 | 只读 RichTextBox 开放鼠标命中与文档交互；鼠标拖选后可右键 `Copy`。窗口仍使用 `WS_EX_NOACTIVATE`，不会抢占编辑器输入焦点。 | Overlay 自动化检查选择文本与复制菜单。 | 已完成 |
 | Emoji 键盘翻页 | Emoji 状态且存在候选时，TSF 优先捕获配置的 `-`、`+`、小键盘减/加键；分页仍仅改变页码，不提交组合文本。 | TSF 按键路径与完整 Release 构建。 | 已完成 |
-| 保序不完整匹配 | 长度至少 3、首字符一致时，以 SQLite `LIKE` 候选并在 C++ 再校验顺序；前缀与精确匹配始终排在其前。Emoji 忽略 `_`、`-` 和空白。 | 原生单元用例覆盖 `hpy -> happy`、`pignose -> pig_nose`、反序拒绝和 LIKE 转义；安装验证检查词库数据。 | 已完成 |
+| 保序不完整匹配 | 长度至少 3、首字符一致时，以 SQLite `LIKE` 候选并在 C++ 再校验顺序；普通词、Emoji 关键字和短语候选均参与。前缀与精确匹配始终排在其前。Emoji/短语匹配忽略 `_`、`-` 和空白。 | 原生单元用例覆盖 `hpy -> happy`、`pignose -> pig_nose`、`empirestate -> empire state building`、反序拒绝和 LIKE 转义；安装验证检查词库数据。 | 已完成 |
 
 ## 排序与性能规则
 
@@ -21,6 +21,6 @@
 ## 手工验收
 
 1. 在记事本切换 Enput，按 F2 输入 `s` 或其他可产生两页以上结果的关键字，按 `+` 到下一页、`-` 回上一页；文本不应被提交。
-2. F2 输入 `pignose`，候选中应包含 `pig_nose` 所关联的 Emoji；普通模式输入 `hpy`，候选中应出现 `happy`，且 `ha...` 前缀候选仍在近似结果前。
+2. F2 输入 `pignose`，候选中应包含 `pig_nose` 所关联的 Emoji；普通模式输入 `hpy`，候选中应出现 `happy`，输入 `empirestate` 应出现 `empire state building`，且前缀候选仍在近似结果前。
 3. 按 F3 显示 `braces`，确认词性、`en:`、`zh-CN:`、例句为不同富文本样式；拖选一段解释，右键选择 `Copy`，在记事本粘贴后内容应一致。
 4. 更换 `%LOCALAPPDATA%\Enput Method\themes` 中的主题或字段后重开候选/翻译窗，确认相应富文本颜色更新；窗口宽高仍由 `config.json` 的 `translationWindowWidth`、`translationWindowHeight` 控制。

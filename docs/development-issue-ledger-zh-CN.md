@@ -99,6 +99,8 @@
 | I-40 | SQLite 迁移后 F2 无 Emoji、F3 无翻译，普通英文候选部分可用。 | `enput.db` 已生成并删除 JSON/JSONL，但已打开的 Notepad 仍映射旧 JSON 版 TSF DLL；旧 DLL 可继续读取保留的 `dictionary.txt`，却找不到已删除的 Emoji/翻译文件。安装并注册 SQLite DLL 后关闭重开宿主即可。 | 已安装新 DLL，SQLite 自检通过；F2 `fire` 与 F3 `braces`/`hug` 待重开真实宿主后验收。 |
 | I-41 | 翻译窗使用富文本但无法鼠标选择、复制，且主题只能统一设置正文颜色。 | RichTextBox 被禁用文档交互；主题协议缺少语义 Run 的样式字段。开放只读文档交互并提供右键 Copy；将词性、标签、例句的颜色和例句背景纳入每套主题。 | Overlay 自动化覆盖结构、选择与复制菜单；手工复制验收见 `translation-candidate-polish-tasks-zh-CN.md`。 |
 | I-42 | Emoji 模式中 `-`、`+` 可能未由 TSF 优先捕获，且严格前缀不能容忍省略字符或 Emoji 关键字分隔符。 | Emoji 有候选时显式捕获配置的分页键；在前缀匹配之后追加首字符一致、长度至少 3 的 SQLite 保序查询，Emoji 比较忽略 `_`、`-`、空白。 | 原生单元覆盖 `hpy`、`pignose` 和反序拒绝；Release 构建通过，实际宿主翻页待手工验收。 |
+| I-43 | `pignose` 和 `empirestate` 不能分别找到 `pig_nose` 与 Empire State Building。 | 已确认 `pig_nose` 存在于 SQLite 且 SQL 查询可命中，故需部署新 TSF；短语表缺少 Empire State Building，补为内置短语，并将无空格保序匹配扩展到 suggestions。 | 单元与 SQLite 验证覆盖；本轮安装后在真实宿主复测。 |
+| I-44 | `install-and-verify.ps1` 在 SQLite 验证实际成功后仍报告失败。 | PowerShell 对 GUI 子进程的 `&` 调用不保证填充 `$LASTEXITCODE`。改为 `Start-Process -Wait -PassThru` 并检查显式 `ExitCode`。 | 修复后重新执行系统安装与 SQLite 验证。 |
 
 ### 当前自动化证据
 

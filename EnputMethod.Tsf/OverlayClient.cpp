@@ -1,6 +1,7 @@
 #include "OverlayClient.h"
 
 #include "JsonObjectReader.h"
+#include "OverlayDiagnostics.h"
 
 #include <windows.h>
 
@@ -45,6 +46,7 @@ public:
     void Start() {
         if (!stopEvent_ || worker_.joinable()) return;
         ResetEvent(stopEvent_);
+        WriteOverlayDiagnostic("client.start", clientId_);
         worker_ = std::thread([this] { Run(); });
     }
 
@@ -53,6 +55,7 @@ public:
         SetEvent(stopEvent_);
         worker_.join();
         connected_.store(false);
+        WriteOverlayDiagnostic("client.stop", clientId_);
     }
 
     bool Publish(std::string message) {
@@ -60,7 +63,10 @@ public:
     }
 
     bool PublishBatch(std::vector<std::string> messages) {
-        if (!connected_.load() || messages.empty() || std::any_of(messages.begin(), messages.end(), [](const std::string& message) { return message.empty(); })) return false;
+        if (!connected_.load() || messages.empty() || std::any_of(messages.begin(), messages.end(), [](const std::string& message) { return message.empty(); })) {
+            WriteOverlayDiagnostic("publish.skipped", connected_.load() ? "invalid-message" : "not-connected");
+            return false;
+        }
         std::scoped_lock lock(queueLock_);
         queuedMessages_.clear();
         for (std::string& message : messages) queuedMessages_.push_back(std::move(message));
@@ -101,6 +107,7 @@ public:
                 pipe = INVALID_HANDLE_VALUE;
                 if (connected_.exchange(false) || wasConnected) {
                     wasConnected = false;
+                    WriteOverlayDiagnostic("client.disconnected", clientId_);
                     eventCallback_(OverlayEvent{ OverlayEventType::Disconnected });
                 }
                 continue;
@@ -117,6 +124,7 @@ public:
         STARTUPINFOW startupInfo{ sizeof(startupInfo) };
         PROCESS_INFORMATION processInfo{};
         if (CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startupInfo, &processInfo)) {
+            WriteOverlayDiagnostic("overlay.launch", "started");
             CloseHandle(processInfo.hThread);
             CloseHandle(processInfo.hProcess);
         }
@@ -151,8 +159,12 @@ public:
         const enput::json::Value* type = Member(message, "type", enput::json::Value::Type::String);
         if (!type) return;
         if (type->string == "ready") {
-            connected_.store(true);
+            const bool wasAlreadyConnected = connected_.exchange(true);
             *wasConnected = true;
+            if (!wasAlreadyConnected) {
+                WriteOverlayDiagnostic("client.connected", clientId_);
+                eventCallback_(OverlayEvent{ OverlayEventType::Connected });
+            }
             return;
         }
         if (type->string != "presented" && type->string != "selectCandidate" && type->string != "previousPage" && type->string != "nextPage" && type->string != "dismiss") return;
@@ -165,6 +177,7 @@ public:
             if (!candidateIndex || candidateIndex->number < 0 || candidateIndex->number > 1000) return;
             event.candidateIndex = static_cast<int>(candidateIndex->number);
         }
+        WriteOverlayDiagnostic("event.received", type->string + " state=" + std::to_string(event.stateId));
         eventCallback_(std::move(event));
     }
 

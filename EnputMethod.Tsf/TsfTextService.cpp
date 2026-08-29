@@ -5,6 +5,7 @@
 #include <msctf.h>
 #include "JsonObjectReader.h"
 #include "OverlayClient.h"
+#include "OverlayDiagnostics.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -557,7 +558,7 @@ const TranslationEntry* FindTranslation(const std::wstring& text) {
 
 class KeyEditSession;
 class CandidateClickEditSession;
-class OverlayFallbackEditSession;
+class OverlayRefreshEditSession;
 
 class CandidateWindow final {
 public:
@@ -1405,7 +1406,7 @@ public:
 private:
     friend class KeyEditSession;
     friend class CandidateClickEditSession;
-    friend class OverlayFallbackEditSession;
+    friend class OverlayRefreshEditSession;
 
     static constexpr UINT kOverlayEventMessage = WM_APP + 73;
     static constexpr wchar_t kOverlayActionWindowClassName[] = L"EnputMethodOverlayActionWindow";
@@ -1462,14 +1463,19 @@ private:
         if (event.type == enput::OverlayEventType::Disconnected) {
             if (!overlayActive_) return;
             overlayActive_ = false;
-            RequestOverlayFallback();
+            enput::WriteOverlayDiagnostic("overlay.disconnected", "native-fallback-disabled");
             return;
         }
+        if (event.type == enput::OverlayEventType::Connected) {
+            enput::WriteOverlayDiagnostic("overlay.connected", candidates_.empty() ? "no-candidates" : "refresh-current-state");
+            if (!candidates_.empty()) RequestOverlayRefresh();
+            return;
+        }
+
         if (!overlayClient_ || event.clientId != overlayClient_->ClientId() || event.stateId != overlayStateId_) return;
         if (event.action == "presented") {
             overlayActive_ = true;
-            candidateWindow_.Hide();
-            translationWindow_.Hide();
+            enput::WriteOverlayDiagnostic("candidate.presented", "state=" + std::to_string(event.stateId));
         }
         else if (event.action == "selectCandidate") HandleCandidateWindowAction(event.candidateIndex);
         else if (event.action == "previousPage") HandleCandidateWindowAction(-1);
@@ -1477,7 +1483,7 @@ private:
         else if (event.action == "dismiss") HandleCandidateWindowAction(-3);
     }
 
-    void RequestOverlayFallback();
+    void RequestOverlayRefresh();
 
     void HandleCandidateWindowAction(int action);
 
@@ -1782,20 +1788,37 @@ private:
     }
 
     void PresentCandidates(ITfContext* context, TfEditCookie cookie, ITfRange* range) {
-        candidateWindow_.Show(context, cookie, range, candidates_, configuration_, currentPage_, PageCount(), selectedIndex_, (GetKeyState(VK_CAPITAL) & 1) != 0, keepCandidateWindowPosition_, emojiMode_ ? L"EMOJI" : L"", [this](int action) { HandleCandidateWindowAction(action); });
-        RECT candidateBounds{};
-        const TranslationEntry* translation = translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr;
-        translationWindow_.Show(context, cookie, range, translation, configuration_, candidateWindow_.GetScreenBounds(&candidateBounds) ? &candidateBounds : nullptr);
-
         overlayActive_ = false;
-        if (!overlayClient_ || !overlayClient_->IsConnected() || !candidateWindow_.GetScreenBounds(&candidateBounds)) return;
+        if (!overlayClient_ || !overlayClient_->IsConnected()) {
+            enput::WriteOverlayDiagnostic("candidate.skipped", "overlay-not-connected");
+            return;
+        }
+        ITfContextView* view{};
+        if (FAILED(context->GetActiveView(&view))) {
+            enput::WriteOverlayDiagnostic("candidate.skipped", "active-view-unavailable");
+            return;
+        }
+        RECT textBounds{};
+        BOOL clipped{};
+        const HRESULT boundsHr = view->GetTextExt(cookie, range, &textBounds, &clipped);
+        view->Release();
+        if (FAILED(boundsHr)) {
+            enput::WriteOverlayDiagnostic("candidate.skipped", "text-bounds-unavailable");
+            return;
+        }
+        RECT candidateBounds{ textBounds.left, textBounds.bottom + 2, textBounds.right, textBounds.bottom };
+        const TranslationEntry* translation = translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr;
         const std::uint64_t stateId = ++overlayStateId_;
         std::vector<std::string> messages{ CandidateOverlayMessage(candidateBounds, stateId) };
         if (translation) messages.push_back(TranslationOverlayMessage(*translation, candidateBounds, stateId));
         else messages.push_back("{\"type\":\"hide\",\"clientId\":\"" + overlayClient_->ClientId() + "\",\"stateId\":" + std::to_string(stateId) + ",\"surface\":\"translation\"}");
-        if (!overlayClient_->PublishBatch(std::move(messages))) return;
-    }
+        if (!overlayClient_->PublishBatch(std::move(messages))) {
+            enput::WriteOverlayDiagnostic("candidate.skipped", "publish-failed");
+            return;
 
+        }
+        enput::WriteOverlayDiagnostic("candidate.published", "state=" + std::to_string(stateId) + " items=" + std::to_string(candidates_.size()));
+    }
     HRESULT UpdateComposition(ITfContext* context, TfEditCookie cookie) {
         if (!composition_) {
             ITfContextComposition* compositions{};
@@ -1983,10 +2006,10 @@ private:
     int action_;
 };
 
-class OverlayFallbackEditSession final : public ITfEditSession {
+class OverlayRefreshEditSession final : public ITfEditSession {
 public:
-    OverlayFallbackEditSession(TextService* service, ITfContext* context) : service_(service), context_(context) { service_->AddRef(); context_->AddRef(); }
-    ~OverlayFallbackEditSession() { context_->Release(); service_->Release(); }
+    OverlayRefreshEditSession(TextService* service, ITfContext* context) : service_(service), context_(context) { service_->AddRef(); context_->AddRef(); }
+    ~OverlayRefreshEditSession() { context_->Release(); service_->Release(); }
     STDMETHODIMP QueryInterface(REFIID iid, void** result) override { if (!result) return E_INVALIDARG; *result = nullptr; if (iid != IID_IUnknown && iid != IID_ITfEditSession) return E_NOINTERFACE; *result = static_cast<ITfEditSession*>(this); AddRef(); return S_OK; }
     STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&refs_); }
     STDMETHODIMP_(ULONG) Release() override { const auto refs = InterlockedDecrement(&refs_); if (!refs) delete this; return refs; }
@@ -2008,10 +2031,10 @@ void TextService::HandleCandidateWindowAction(int action) {
     session->Release();
 }
 
-void TextService::RequestOverlayFallback() {
+void TextService::RequestOverlayRefresh() {
     ITfContext* context = composition_ ? compositionContext_ : detachedSuggestionContext_;
     if (!context || candidates_.empty()) return;
-    auto* session = new (std::nothrow) OverlayFallbackEditSession(this, context);
+    auto* session = new (std::nothrow) OverlayRefreshEditSession(this, context);
     if (!session) return;
     HRESULT sessionResult{};
     context->RequestEditSession(clientId_, session, TF_ES_ASYNC | TF_ES_READWRITE, &sessionResult);

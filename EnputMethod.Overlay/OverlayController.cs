@@ -15,6 +15,7 @@ internal sealed class OverlayController
             {
                 case "showCandidates" when message.Candidates is not null:
                     _candidateWindow.ShowCandidates(message.ClientId, message.StateId, message.Candidates, sendAction);
+                    OverlayDiagnostics.Write("candidate.presented", $"state={message.StateId} client={message.ClientId}");
                     _ = sendAction(new OverlayMessage { Type = "presented", ClientId = message.ClientId, StateId = message.StateId });
                     break;
                 case "showTranslation" when message.Translation is not null:

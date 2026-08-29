@@ -9,6 +9,7 @@
 namespace enput {
 
 enum class OverlayEventType {
+    Connected,
     Action,
     Disconnected,
 };

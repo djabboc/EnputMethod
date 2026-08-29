@@ -74,6 +74,7 @@ internal sealed class OverlayPipeServer : IDisposable
                 {
                     connection = new PipeConnection(message.ClientId, writer);
                     _connections.AddOrUpdate(message.ClientId, connection, (_, _) => connection);
+                    OverlayDiagnostics.Write("pipe.connected", message.ClientId);
                 }
                 else if (!string.Equals(connection.ClientId, message.ClientId, StringComparison.Ordinal))
                 {
@@ -81,6 +82,7 @@ internal sealed class OverlayPipeServer : IDisposable
                     continue;
                 }
 
+                OverlayDiagnostics.Write("pipe.received", $"{message.Type} state={message.StateId} client={message.ClientId}");
                 _messageHandler(message, SendActionAsync);
                 await connection.SendAsync(JsonSerializer.Serialize(new { type = "accepted", stateId = message.StateId }, OverlayProtocol.JsonOptions), cancellationToken);
             }
@@ -94,6 +96,7 @@ internal sealed class OverlayPipeServer : IDisposable
             if (connection is not null && _connections.TryGetValue(connection.ClientId, out PipeConnection? current) && ReferenceEquals(current, connection))
             {
                 _connections.TryRemove(connection.ClientId, out _);
+                OverlayDiagnostics.Write("pipe.disconnected", connection.ClientId);
             }
         }
         }

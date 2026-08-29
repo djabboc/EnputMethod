@@ -60,3 +60,8 @@ The UI has been split from the input service. `EnputMethod.Tsf.dll` remains the 
 `fontSize` is a point value. The default is `18`; the WPF Overlay converts it to 24 device-independent pixels so it visually matches the native 18pt configuration. Emoji candidates use bundled Twemoji color PNG assets. The installer preserves user emoji entries while merging bundled keywords and priority. The native JSON reader correctly decodes escaped Unicode surrogate pairs, including `fire -> 🔥`.
 
 For translation data, ECDICT entries can contain literal `\\n` or `\\r\\n`; the TSF service normalizes them to actual line breaks before publishing the WPF view. Run `scripts\run-regression.ps1 -Configuration Release` for the Release build, native tests, Overlay protocol/foreground tests, and installed-file verification. The remaining real-application acceptance matrix is maintained in `docs/development-issue-ledger-zh-CN.md`.
+
+
+## Active Composition Appearance
+
+Before a candidate is committed, the typed prefix remains an active TSF composition so selecting a candidate can replace it safely. Some applications render active compositions with an underline; the application controls that visual appearance. This is currently intentional and can differ between editors.

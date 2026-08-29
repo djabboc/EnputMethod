@@ -3,6 +3,8 @@ namespace EnputMethod.Installer;
 public partial class App : System.Windows.Application
 {
     private const string InstallVerificationLogFileName = "install-verification.log";
+    private const string LexiconVerificationLogFileName = "lexicon-verification.log";
+    private const string PackageVerificationLogFileName = "package-verification.log";
 
     protected override void OnStartup(System.Windows.StartupEventArgs e)
     {
@@ -21,16 +23,16 @@ public partial class App : System.Windows.Application
             }
             catch (Exception ex)
             {
-                WriteInstallVerificationLog(ex.ToString());
+                WriteVerificationLog(InstallVerificationLogFileName, ex.ToString());
                 Environment.ExitCode = 1;
             }
-            finally { Current.Shutdown(); }
+            finally { Current.Shutdown(Environment.ExitCode); }
             return;
         }
 
         if (e.Args.Contains("--migrate-lexicon", StringComparer.OrdinalIgnoreCase))
         {
-            RunHeadless(() =>
+            RunHeadless(InstallVerificationLogFileName, () =>
             {
                 LexiconDatabaseBuilder.CreateOrMigrate(ProductLayout.StaticResourceDirectory, ProductLayout.PackageResourceDirectory);
                 return "SQLite lexicon migration completed.";
@@ -40,7 +42,7 @@ public partial class App : System.Windows.Application
 
         if (e.Args.Contains("--verify-lexicon", StringComparer.OrdinalIgnoreCase))
         {
-            RunHeadless(() =>
+            RunHeadless(LexiconVerificationLogFileName, () =>
             {
                 LexiconDatabaseBuilder.VerifyInstalledDatabase(ProductLayout.StaticResourceDirectory);
                 return "SQLite lexicon verification passed.";
@@ -51,18 +53,18 @@ public partial class App : System.Windows.Application
         if (e.Args.Contains("--verify-package", StringComparer.OrdinalIgnoreCase))
         {
             InstallerVerification result = InstallerVerifier.VerifyPackage(ProductLayout.PayloadDirectory);
-            WriteInstallVerificationLog(result.Message);
+            WriteVerificationLog(PackageVerificationLogFileName, result.Message);
             Environment.ExitCode = result.Succeeded ? 0 : 1;
-            Shutdown();
+            Shutdown(Environment.ExitCode);
             return;
         }
 
         if (e.Args.Contains("--install-and-verify", StringComparer.OrdinalIgnoreCase))
         {
             InstallerVerification result = global::EnputMethod.Installer.MainWindow.InstallAndVerify();
-            WriteInstallVerificationLog(result.Message);
+            WriteVerificationLog(InstallVerificationLogFileName, result.Message);
             Environment.ExitCode = result.Succeeded ? 0 : 1;
-            Shutdown();
+            Shutdown(Environment.ExitCode);
             return;
         }
 
@@ -71,25 +73,25 @@ public partial class App : System.Windows.Application
         window.Show();
     }
 
-    private static void RunHeadless(Func<string> action)
+    private static void RunHeadless(string logFileName, Func<string> action)
     {
         try
         {
-            WriteInstallVerificationLog(action());
+            WriteVerificationLog(logFileName, action());
             Environment.ExitCode = 0;
         }
         catch (Exception ex)
         {
-            WriteInstallVerificationLog(ex.ToString());
+            WriteVerificationLog(logFileName, ex.ToString());
             Environment.ExitCode = 1;
         }
-        finally { Current.Shutdown(); }
+        finally { Current.Shutdown(Environment.ExitCode); }
     }
 
-    private static void WriteInstallVerificationLog(string message)
+    private static void WriteVerificationLog(string fileName, string message)
     {
         string directory = ProductLayout.UserDataDirectory;
         System.IO.Directory.CreateDirectory(directory);
-        System.IO.File.WriteAllText(System.IO.Path.Combine(directory, InstallVerificationLogFileName), message);
+        System.IO.File.WriteAllText(System.IO.Path.Combine(directory, fileName), message);
     }
 }

@@ -13,7 +13,7 @@ if (Test-Path -LiteralPath $destination) { Remove-Item -LiteralPath $destination
 New-Item -ItemType Directory -Path $destination | Out-Null
 
 foreach ($project in "EnputMethod.Installer\EnputMethod.Installer.csproj", "EnputMethod.Uninstaller\EnputMethod.Uninstaller.csproj") {
-    $process = Start-Process -FilePath $msbuild -ArgumentList "`"$(Join-Path $projectRoot $project)`" /m /nologo /p:Configuration=$Configuration /p:Platform=x64" -WorkingDirectory $projectRoot -Wait -PassThru
+    $process = Start-Process -FilePath $msbuild -ArgumentList "`"$(Join-Path $projectRoot $project)`" /t:Rebuild /m /nologo /p:Configuration=$Configuration /p:Platform=x64" -WorkingDirectory $projectRoot -Wait -PassThru
     if ($process.ExitCode -ne 0) { throw "Build failed for $project with exit code $($process.ExitCode)." }
 }
 

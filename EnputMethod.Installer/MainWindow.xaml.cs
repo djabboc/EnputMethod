@@ -21,6 +21,9 @@ public partial class MainWindow : Window
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate int InstallInputMethodDelegate();
 
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate int GetRegistrationStageDelegate();
+
     internal sealed record InstallationProgress(int Percentage, string Stage);
 
     public MainWindow() => InitializeComponent();
@@ -44,42 +47,81 @@ public partial class MainWindow : Window
 
     internal static InstallerVerification InstallAndVerify(IProgress<InstallationProgress>? progress = null)
     {
-        string payload = ProductLayout.PayloadDirectory;
-        InstallerVerification package = InstallerVerifier.VerifyPackage(payload);
-        if (!package.Succeeded) return package;
+        using var installationMutex = new Mutex(false, @"Local\EnputMethod.Installer.Installation.v1");
+        bool lockTaken = false;
         try
         {
-            Report(progress, 5, "正在检查发布包...");
-            DeployStaticPayload(payload, progress);
-            Report(progress, 45, "正在注册 Windows 输入法服务...");
-            int hr = InvokeNativeInstaller(payload);
-            if (hr < 0) return InstallerVerification.Failure($"Native TSF installation failed (0x{hr:X8}).");
-            Report(progress, 60, "正在初始化用户配置...");
-            EnsureUserConfiguration();
-            Report(progress, 70, "正在准备静态词库...");
-            EnsureStaticLexicon(progress);
-            Report(progress, 92, "正在验证已安装文件...");
-            InstallerVerification result = InstallerVerifier.VerifySystemInstallation(payload);
-            Report(progress, result.Succeeded ? 100 : 0, result.Succeeded ? "安装完成。" : "安装验证失败。" );
-            return result;
+            try { lockTaken = installationMutex.WaitOne(TimeSpan.Zero); }
+            catch (AbandonedMutexException) { lockTaken = true; }
+            if (!lockTaken) return InstallerVerification.Failure("Another Enput Method installation is still preparing static resources. Wait for it to finish, then retry.");
+
+            string payload = ProductLayout.PayloadDirectory;
+            string phase = "verifying the release package";
+            InstallerVerification package = InstallerVerifier.VerifyPackage(payload);
+            if (!package.Succeeded) return package;
+            try
+            {
+                Report(progress, 5, "正在检查发布包...");
+                phase = "deploying the overlay and static resources";
+                DeployStaticPayload(payload, progress);
+                Report(progress, 45, "正在初始化用户配置...");
+                phase = "initializing user configuration";
+                EnsureUserConfiguration();
+                Report(progress, 55, "正在准备静态词库...");
+                phase = "preparing the static lexicon";
+                EnsureStaticLexicon(progress);
+                Report(progress, 90, "正在注册 Windows 输入法服务...");
+                phase = "registering the Windows TSF input service";
+                (int hr, int stage) = InvokeNativeInstaller(payload);
+                if (hr < 0) return InstallerVerification.Failure($"Native TSF installation failed (0x{hr:X8}) at {NativeStageText(stage)}.");
+                Report(progress, 95, "正在验证已安装文件...");
+                phase = "verifying the installed product";
+                InstallerVerification result = InstallerVerifier.VerifySystemInstallation(payload);
+                Report(progress, result.Succeeded ? 100 : 0, result.Succeeded ? "安装完成。" : "安装验证失败。");
+                return result;
+            }
+            catch (Exception ex)
+            {
+                return InstallerVerification.Failure($"Installation failed during {phase}: {ex.Message}");
+            }
         }
-        catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException or IOException or UnauthorizedAccessException or InvalidOperationException)
+        finally
         {
-            return InstallerVerification.Failure($"Installation failed: {ex.Message}");
+            if (lockTaken) installationMutex.ReleaseMutex();
         }
     }
-
     private static void Report(IProgress<InstallationProgress>? progress, int percentage, string stage)
         => progress?.Report(new InstallationProgress(percentage, stage));
 
-    private static int InvokeNativeInstaller(string payloadDirectory)
+    private static (int HResult, int Stage) InvokeNativeInstaller(string payloadDirectory)
     {
         string dllPath = Path.Combine(payloadDirectory, "EnputMethod.Tsf.dll");
         IntPtr module = NativeLibrary.Load(dllPath);
         IntPtr procedure = NativeLibrary.GetExport(module, "InstallEnglishInputMethod");
-        return Marshal.GetDelegateForFunctionPointer<InstallInputMethodDelegate>(procedure)();
+        int result = Marshal.GetDelegateForFunctionPointer<InstallInputMethodDelegate>(procedure)();
+        int stage = 0;
+        try
+        {
+            IntPtr stageProcedure = NativeLibrary.GetExport(module, "GetEnputRegistrationStage");
+            stage = Marshal.GetDelegateForFunctionPointer<GetRegistrationStageDelegate>(stageProcedure)();
+        }
+        catch (EntryPointNotFoundException) { }
+        return (result, stage);
     }
 
+    private static string NativeStageText(int stage) => stage switch
+    {
+        10 => "resolving the Program Files target",
+        11 => "copying or registering the TSF COM DLL",
+        20 => "creating the Windows TSF profile manager",
+        21 => "registering the Enput TSF service",
+        22 => "adding the Chinese-language Enput profile",
+        23 => "enabling the Enput language profile",
+        24 => "creating the TSF category manager",
+        25 => "registering the keyboard category",
+        26 => "registering the immersive-support category",
+        _ => "an unknown native registration stage",
+    };
     private static void DeployStaticPayload(string payloadDirectory, IProgress<InstallationProgress>? progress)
     {
         string overlaySource = Path.Combine(payloadDirectory, "Overlay");
@@ -211,10 +253,16 @@ public partial class MainWindow : Window
     {
         string resources = ProductLayout.StaticResourceDirectory;
         LexiconDatabaseBuilder.CreateOrMigrate(resources, ProductLayout.PackageResourceDirectory);
-        Report(progress, 80, "正在导入完整翻译词典...");
-        EnsureFullTranslationDictionary(resources);
-        Report(progress, 86, "正在导入中文补充索引...");
-        EnsureCcCedictEnglishIndex(resources);
+        if (!LexiconDatabaseBuilder.HasTranslationSource(resources, "ECDICT%"))
+        {
+            Report(progress, 80, "正在导入完整翻译词典...");
+            EnsureFullTranslationDictionary(resources);
+        }
+        if (!LexiconDatabaseBuilder.HasTranslationSource(resources, "CC-CEDICT%"))
+        {
+            Report(progress, 86, "正在导入中文补充索引...");
+            EnsureCcCedictEnglishIndex(resources);
+        }
         LexiconDatabaseBuilder.ImportDownloadedTranslations(resources);
     }
     private static void MergeDefaultSuggestions(string destinationDirectory)

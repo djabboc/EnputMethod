@@ -11,12 +11,14 @@ $installer = if ([string]::IsNullOrWhiteSpace($InstallerPath)) {
 } else {
     [IO.Path]::GetFullPath($InstallerPath)
 }
-$verificationLog = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "Enput Method\UserData\install-verification.log"
+$userDataRoot = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "Enput Method\UserData"
+$verificationLog = Join-Path $userDataRoot "install-verification.log"
+$lexiconVerificationLog = Join-Path $userDataRoot "lexicon-verification.log"
 if (-not (Test-Path -LiteralPath $installer)) {
     throw "Build the x64 installer before running system installation verification: $installer"
 }
 
-$userData = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "Enput Method\UserData"
+$userData = $userDataRoot
 $configPath = Join-Path $userData "config.json"
 $shortcutPath = Join-Path $userData "shortcut.json"
 $configHashBefore = if (Test-Path -LiteralPath $configPath) { (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash } else { $null }
@@ -25,7 +27,8 @@ $shortcutHashBefore = if (Test-Path -LiteralPath $shortcutPath) { (Get-FileHash 
 $process = Start-Process -FilePath $installer -ArgumentList "--install-and-verify" -Verb RunAs -Wait -PassThru
 if ($process.ExitCode -ne 0) {
     $diagnostic = if (Test-Path -LiteralPath $verificationLog) { Get-Content -LiteralPath $verificationLog -Raw } else { "No verification log was written." }
-    throw "Installation verification failed with exit code $($process.ExitCode).`n$diagnostic"
+    throw "Installation verification failed with exit code $($process.ExitCode).
+$diagnostic"
 }
 
 if (-not (Test-Path -LiteralPath $configPath) -or -not (Test-Path -LiteralPath $shortcutPath)) {
@@ -44,8 +47,9 @@ if ($null -eq $configHashBefore) {
 
 $lexiconVerification = Start-Process -FilePath $installer -ArgumentList "--verify-lexicon" -Wait -PassThru
 if ($lexiconVerification.ExitCode -ne 0) {
-    $diagnostic = if (Test-Path -LiteralPath $verificationLog) { Get-Content -LiteralPath $verificationLog -Raw } else { "No SQLite verification log was written." }
-    throw "SQLite lexicon verification failed with exit code $($lexiconVerification.ExitCode).`n$diagnostic"
+    $diagnostic = if (Test-Path -LiteralPath $lexiconVerificationLog) { Get-Content -LiteralPath $lexiconVerificationLog -Raw } else { "No SQLite verification log was written." }
+    throw "SQLite lexicon verification failed with exit code $($lexiconVerification.ExitCode).
+$diagnostic"
 }
 
 $staticDirectory = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)) "Enput Method\Resources"

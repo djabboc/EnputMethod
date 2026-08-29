@@ -139,3 +139,12 @@
 | P-03 | 安装/卸载点击后看似卡住。 | 两个 WPF 启动器改为后台任务、阶段文本、进度条和禁用重复点击；安装覆盖部署、注册、SQLite 初始化、验证，卸载覆盖注销、停止 Overlay、删除产品根、验证。 | 卸载器 Release 构建 0 错误/0 警告；GUI 进度的真实 UAC 观察待系统安装验收。 |
 | P-04 | 静态资源与用户设置混在 AppData。 | 静态资源统一部署到 Program Files；仅配置、快捷键和日志留在 `UserData`。升级不覆盖用户文件，卸载默认保留它们。 | payload 完整性、UAC 安装、Program Files 路径、SQLite 自检和现有用户配置/快捷键 hash 保留均通过。 |
 | P-05 | 打包校验首次失败。 | 主题被打进 `Resources` 根目录，运行时实际从 `Resources\themes` 读取。拆分 MSBuild item 并将主题固定到 `payload\Resources\themes`。 | 重建本地 Release 包后 `--verify-package` 通过。 |
+
+## 2026-08-29：发布包安装/卸载事故
+
+| 编号 | 现象 | 根因 | 处理与状态 |
+| --- | --- | --- | --- |
+| P-06 | 从本地 Release 包启动卸载器，提示“文件不完整、不匹配或已占用”。 | 实际 payload DLL 可加载且两个卸载导出存在；Program Files 中有 Explorer、ChatGPT、VS Code、Edge 等多个宿主映射 Enput TSF DLL，递归删除阶段抛出文件占用异常。旧 UI 将此误报为包不完整。 | 卸载器改为记录阶段、完整异常和实际持有 DLL 的进程；窗口改为自动行高，日志写入 `uninstall-verification.log`。完全删除需关闭宿主或重启后重试。 |
+| P-07 | 安装器显示 `0x80004002`，包检查日志又覆盖了安装错误。 | 单一 `install-verification.log` 被 `--verify-package` 和 `--verify-lexicon` 复用；本地包构建的增量路径还可能暂存旧 TSF DLL。 | 发布脚本改为 `/t:Rebuild`；新增 native registration stage 导出，安装器显示具体 TSF 阶段；日志拆分为 install/package/lexicon 三份。新 payload 已验证包含诊断导出。 |
+| P-08 | 原有微软拼音看似失效。 | 许多已启动应用仍加载 Enput 的 in-process TSF DLL，且 Enput profile 与微软拼音同属中文输入法组；这不等同于删除微软拼音注册。 | 已将默认输入法恢复为 Microsoft Pinyin；必须重启 Windows 后验证所有进程均已卸载旧 DLL。微软拼音的用户语言项仍存在。 |
+| P-09 | 安装器日志报“拒绝访问”，但自动脚本没有失败；随后多个安装实例争用 `enput.db.pending`，且注册 TSF 后 Overlay 可能重新占用数据库。 | 无界面 WPF 仅设置 `Environment.ExitCode` 未传给 `Shutdown`；安装锁只覆盖 Overlay 复制，未覆盖词库；词库准备位于 TSF 注册之后且临时名固定。 | 无界面退出码改为真实传播；全安装互斥；词库先于 TSF 注册；GUID staging；有效旧数据库保留并跳过重复下载。2026-08-29 UAC 安装、静态资源和 SQLite 验证通过。 |

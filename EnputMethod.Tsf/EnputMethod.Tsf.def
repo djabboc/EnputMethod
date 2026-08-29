@@ -3,3 +3,4 @@ EXPORTS
     DllGetClassObject PRIVATE
     InstallEnglishInputMethod PRIVATE
     UninstallEnglishInputMethod PRIVATE
+    GetEnputRegistrationStage PRIVATE

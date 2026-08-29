@@ -93,3 +93,13 @@ C:\Program Files\Enput Method\
 ## 5. 非目标
 
 本任务不改变候选算法、SQLite schema 或快捷键语义；不重新引入 JSON/JSONL 运行时词库回退；不提供 x86 TSF 产物。发布目录和本地构建目录均由脚本管理并被 `.gitignore` 排除。
+## 6. 后续修正（2026-08-29）
+
+本地包构建改为对安装器和卸载器执行 MSBuild `Rebuild`，避免 C++ TSF 的已变更 DLL 被增量构建漏暂存。包验证现在同时检查最新 payload；原生导出 `GetEnputRegistrationStage` 仅用于将安装/注销 HRESULT 定位到明确的 Windows TSF 阶段。
+
+卸载不应把“文件被宿主加载”视为包不完整。安装器会停止 Overlay，但不能强制终止 Explorer、编辑器、浏览器等宿主的进程内 TSF DLL。卸载器会列出占用进程；关闭它们或重启后重试才会删除 Program Files 产品目录。默认用户数据仍保留。
+## 7. 安装修正（2026-08-29）
+
+安装器现在把整个部署、词库准备、TSF 注册和验证视为单一互斥事务。若已有安装器正在运行，第二个实例会报告占用而不会并发写入 SQLite staging 文件。词库准备在 TSF 注册前完成，避免注册后已打开的宿主重新启动 Overlay 并锁住 `enput.db`。已有且能通过 schema/数据校验的静态数据库会保留，只补 `enput.db.ready`；检测到 ECDICT/CC-CEDICT 来源时不重复下载。无界面安装验证会返回真实进程退出码，`install-and-verify.ps1` 可以可靠拦截失败。
+
+本轮提升权限验证已通过：TSF DLL 已注册到 `C:\Program Files\Enput Method`，Overlay 与静态资源完整，SQLite 验证成功，Microsoft Pinyin 仍为默认输入法。卸载的目录删除仍需要关闭所有加载旧 TSF DLL 的宿主，或重启 Windows 后再运行最新卸载器。

@@ -1,24 +1,24 @@
 <Window x:Class="EnputMethod.Uninstaller.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Enput Method 卸载" Width="460" Height="260"
+        Title="Enput Method 卸载" Width="500" Height="300"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize">
     <Grid Margin="28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <TextBlock Text="Enput Method" FontSize="24" FontWeight="SemiBold"/>
-        <TextBlock Grid.Row="1" VerticalAlignment="Center"
+        <TextBlock Grid.Row="1" Margin="0,16,0,0"
                    Text="从 Windows 中文输入法组中移除 Enput Method。&#x0a;已安装的静态资源将从 Program Files 清理，用户配置默认保留。"
                    TextWrapping="Wrap" FontSize="14"/>
-        <StackPanel Grid.Row="2" Margin="0,12,0,0">
-            <TextBlock x:Name="StatusText" Text="准备卸载。" Margin="0,0,0,6"/>
+        <StackPanel Grid.Row="2" Margin="0,18,0,0">
+            <TextBlock x:Name="StatusText" Text="准备卸载。" TextWrapping="Wrap" MinHeight="20" Margin="0,0,0,6"/>
             <ProgressBar x:Name="UninstallProgress" Minimum="0" Maximum="100" Height="8" Value="0"/>
         </StackPanel>
         <Button x:Name="UninstallButton" Grid.Row="3" Content="卸载" Click="Uninstall_Click" IsDefault="True"
-                Padding="24,7" Margin="0,16,0,0" HorizontalAlignment="Right"/>
+                Padding="24,7" Margin="0,18,0,0" HorizontalAlignment="Right"/>
     </Grid>
 </Window>

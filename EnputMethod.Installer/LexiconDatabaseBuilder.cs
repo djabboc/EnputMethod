@@ -20,15 +20,25 @@ internal static class LexiconDatabaseBuilder
     internal static void CreateOrMigrate(string userDirectory, string packageDirectory)
     {
         string databasePath = Path.Combine(userDirectory, "enput.db");
-        if (File.Exists(databasePath) && File.Exists(Path.Combine(userDirectory, "enput.db.ready")))
+        string readyMarker = Path.Combine(userDirectory, "enput.db.ready");
+        if (File.Exists(databasePath) && File.Exists(readyMarker))
         {
             using var existing = new NativeSqliteConnection(databasePath);
             EnsureBuiltInCandidates(existing, packageDirectory);
             return;
         }
+        if (File.Exists(databasePath))
+        {
+            // Upgrades preserve an already valid static database. Earlier builds could
+            // omit the marker while leaving a complete database in Program Files.
+            ValidateDatabase(databasePath);
+            File.WriteAllText(readyMarker, SchemaVersion.ToString());
+            return;
+        }
 
-        string pending = databasePath + ".pending";
-        if (File.Exists(pending)) File.Delete(pending);
+        // A failed legacy installer may leave enput.db.pending behind. Each current
+        // installation uses an isolated staging name so it cannot race with that file.
+        string pending = databasePath + "." + Guid.NewGuid().ToString("N") + ".pending";
         string seed = Path.Combine(packageDirectory, "enput.seed.db");
         if (!HasLegacyLexicon(userDirectory) && File.Exists(seed))
         {
@@ -67,6 +77,20 @@ internal static class LexiconDatabaseBuilder
         DeleteLegacyJson(userDirectory);
     }
 
+    internal static bool HasTranslationSource(string userDirectory, string sourcePrefix)
+    {
+        string databasePath = Path.Combine(userDirectory, "enput.db");
+        if (!File.Exists(databasePath)) return false;
+        try
+        {
+            using var database = new NativeSqliteConnection(databasePath);
+            return database.ScalarInt($"SELECT COUNT(*) FROM translation_entry WHERE source LIKE '{sourcePrefix}';") > 0;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
     internal static void ImportDownloadedTranslations(string userDirectory)
     {
         string ecdict = Path.Combine(userDirectory, "translations.ecdict.jsonl");

@@ -66,3 +66,14 @@
 - `he`、`?`、空格得到 `he? `。
 - 分页、上下选择、Tab 提交和选中项主题样式均正常。
 - 在候选页边界按住上键或 `-`，以及正常下翻页时，候选窗无明显闪烁。
+
+
+## 2026-08-29 Automated Regression Baseline
+
+Use the following command for a complete local release check:
+
+```powershell
+.\scripts\run-regression.ps1 -Configuration Release
+```
+
+It builds the installer and TSF service, runs native candidate/JSON/translation-line-break tests, Overlay protocol and multi-host tests, WPF foreground/pagination/color-Emoji/18pt font-scale automation, then invokes unattended installation verification. A successful run proves the registered TSF DLL and installed Overlay files match the package; it does not prove that a specific target application has already reloaded the new DLL or that Windows switched that application to Enput. Those remain explicit manual checks.

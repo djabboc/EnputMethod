@@ -12,7 +12,7 @@
   - `layout`: `vertical` or `horizontal`; default `vertical`.
   - `appendSpaceAfterSelection`: boolean; default `true`.
   - `fontFamily`: `Segoe UI`.
-  - `fontSize`: `16` pixels.
+  - `fontSize`: `18` points; the WPF Overlay converts this to 24 device-independent pixels.
   - `opacity`: `1.0`.
   - `theme`: default `dark`.
 - [x] Replace the current narrow configuration reader with a JSON parser that rejects invalid values safely and falls back to defaults.

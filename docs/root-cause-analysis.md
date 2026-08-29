@@ -2,7 +2,7 @@
 
 ## Outcome
 
-The final verified behavior is a TSF English input method in the Chinese input-method group. It displays a floating candidate window near the text cursor, keeps the typed prefix in the application, and commits candidates with `1` through `4`. Two consecutive selections were verified in Notepad without a crash.
+The final verified behavior is a TSF English input method in the Chinese input-method group. It displays a floating candidate window near the text cursor, keeps the typed prefix in the application, and commits the visible candidate with `1` through `9`. Two consecutive selections were verified in Notepad without a crash.
 
 ## Why The Work Took So Long
 
@@ -22,7 +22,7 @@ Several independent faults looked like one symptom: switching to Enput without g
 2. Installer and uninstaller explicitly load the adjacent native DLL instead of relying on DLL search order.
 3. Installation removes only the legacy Enput user-level CLSID registration before writing the machine-level registration.
 4. Deployment uses versioned DLL filenames (`EnputMethod.Tsf.8.dll` for the current release), avoiding overwrite failures when an older DLL is mapped.
-5. Suggestions use a non-activating popup window and a bounded vector of up to four candidates.
+5. Suggestions publish a non-activating WPF Overlay and keep a paged candidate list with up to nine visible items.
 6. Candidate-word capacity is derived from the real count and is checked before Release builds during this repair cycle.
 
 ## Required Validation Order
@@ -44,3 +44,12 @@ The native configuration reader accepts valid UTF-8 JSON both with and without a
 ## Why A Target Application Must Be Reopened After A DLL Update
 
 TSF activates the COM text service inside each target application's process. The process keeps the active service object and its DLL mapped for its lifetime. Updating COM registration changes only future activation; it does not replace an already-loaded service in an existing Notepad or editor process. Close and reopen a target application before testing a DLL update, then confirm the process loaded the expected versioned DLL. This is required for DLL updates, not for ordinary edits to `conf.json` or `dictionary.txt`, which the service reads for the next candidate query.
+
+
+## 2026-08-29 Follow-up: Service/UI Split Incidents
+
+The earlier incident review describes the original native candidate window. It is historical. The current production shape is a C++ in-process TSF service plus an out-of-process WPF Overlay. This introduced a separate class of failures: candidate state could be published without a visible window, old pipe actions could target a newer page, multiple editors could leave multiple clickable windows, installation could race a running Overlay, and tests could type into the wrong active IME.
+
+The corrective contract is now explicit: every host has a `clientId`; every view has a monotonic `stateId`; Overlay returns intention only; C++ validates the state and performs TSF edits. Pipe work is asynchronous and bounded, windows are non-activating and foreground-gated, and the installer verifies deployed Overlay files as well as the TSF DLL. `run-regression.ps1` covers these mechanical invariants, but it cannot establish that Windows selected Enput inside an arbitrary application.
+
+Two data-format incidents were also added to the validation order. First, an installer-written Unicode surrogate pair such as `\\uD83D\\uDD25` must decode as a single four-byte UTF-8 Emoji; otherwise a present `fire` entry is unusable. Second, an ECDICT value containing literal `\\n` or `\\r\\n` must be normalized before display. Both now have native regression tests. The WPF font contract is likewise explicit: configuration uses points; the renderer converts to 96-DPI WPF units.

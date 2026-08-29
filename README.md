@@ -51,3 +51,12 @@ See [Root Cause Analysis](docs/root-cause-analysis.md) for the deployment and ca
 See [Update Notes](docs/update-notes-zh-CN.md) for the Chinese configuration and update guide.
 See [Installation Validation](docs/installation-validation-zh-CN.md) for the repeatable build, installation, and joint manual-test procedure.
 See [Development Issue Ledger](docs/development-issue-ledger-zh-CN.md) for the complete problem history, deferred decisions, and the current consolidated manual acceptance list.
+
+
+## Current Development Status (2026-08-29)
+
+The UI has been split from the input service. `EnputMethod.Tsf.dll` remains the in-process C++ TSF/COM service. Candidate and translation windows are rendered by the installed `EnputMethod.Overlay` WPF companion through local named pipes. Each application connection has a `clientId` and monotonic `stateId`; stale actions cannot select a newer candidate page, and only the foreground editor's Overlay windows remain visible.
+
+`fontSize` is a point value. The default is `18`; the WPF Overlay converts it to 24 device-independent pixels so it visually matches the native 18pt configuration. Emoji candidates use bundled Twemoji color PNG assets. The installer preserves user emoji entries while merging bundled keywords and priority. The native JSON reader correctly decodes escaped Unicode surrogate pairs, including `fire -> 🔥`.
+
+For translation data, ECDICT entries can contain literal `\\n` or `\\r\\n`; the TSF service normalizes them to actual line breaks before publishing the WPF view. Run `scripts\run-regression.ps1 -Configuration Release` for the Release build, native tests, Overlay protocol/foreground tests, and installed-file verification. The remaining real-application acceptance matrix is maintained in `docs/development-issue-ledger-zh-CN.md`.

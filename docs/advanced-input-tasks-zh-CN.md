@@ -97,3 +97,13 @@
 - Follow-up test: after installation completes with network access, enter a non-demo word such as `abandon`, open translation with `F3`, and verify English definition, Chinese meaning, and part of speech.
 
 All advanced-feature defects, deferred work, and consolidated acceptance cases are also tracked in `docs/development-issue-ledger-zh-CN.md`.
+
+
+## 2026-08-29 后续修复
+
+- Emoji 数据扩展为带关键词和优先级的彩色 Twemoji 目录。基础词 `fire`、`water`、`bucket`、`cat`、`dog` 被设置为优先匹配项。
+- JSON 解析器修复了安装器序列化后 Unicode 代理对的读取；这是 `fire` 词条在数据存在但候选不可用时的根因。
+- 翻译视图的文本标准化覆盖 ECDICT 中的字面量 `\\n`、`\\r` 和 `\\r\\n`。
+- 自适应候选排序默认开启，可通过 `adaptiveCandidateRanking: false` 关闭；关闭时维持词典顺序且不继续记录学习结果。
+
+相关自动化均纳入 `run-regression.ps1`；跨应用交互仍按问题总账验收。

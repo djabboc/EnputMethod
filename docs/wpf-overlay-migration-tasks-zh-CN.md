@@ -70,3 +70,14 @@ Host 只接受与其当前状态 ID 相同的动作，并在收到有效动作�
 ## 实施顺序
 
 先完成任务 1 的契约与独立可运行 Overlay，再接入 Native Host。不得先删除或禁用原生候选窗。
+
+
+## 2026-08-29 Progress Update
+
+- [x] Overlay UI is the only candidate and translation renderer in installed builds; the native windows are no longer a visual fallback.
+- [x] A client/session model isolates windows and actions per host, suppresses background-host windows, rejects stale `stateId` actions, and hides surfaces after empty candidate updates or focus loss.
+- [x] Installation, Overlay deployment, protocol, multi-host routing, foreground arbitration, color Emoji assets, pager edge placement, and 18pt-to-WPF font conversion have automated coverage.
+- [x] The installed Overlay now receives the native theme and 18pt configuration; it handles literal escaped translation line breaks.
+- [~] Real-application verification remains required for Notepad, EmEditor, VS Code, browsers, and ChatGPT. Automated tests cannot assert that Windows selected Enput rather than another active IME.
+
+The original task checkboxes above are historical. The consolidated current manual matrix is `development-issue-ledger-zh-CN.md`.

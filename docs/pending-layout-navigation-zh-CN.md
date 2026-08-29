@@ -13,3 +13,8 @@
 - 在两种布局下测试每页首项、末项以及跨页边界。
 - 验证默认快捷键和 `shortcut.json` 中同一动作的多个快捷键。
 - 翻页和切换高亮时，候选框位置保持稳定。
+
+
+## 2026-08-29 Review
+
+This navigation-axis decision remains intentionally deferred. The new WPF pager has stable left/right edge controls and does not change keyboard-axis semantics. Do not fold this deferred design change into a visual pager regression.

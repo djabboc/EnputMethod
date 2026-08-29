@@ -25,7 +25,7 @@
   "appendSpaceAfterSelection": true,
   "adaptiveCandidateRanking": true,
   "fontFamily": "Segoe UI",
-  "fontSize": 16,
+  "fontSize": 18,
   "opacity": 1.0,
   "theme": "dark"
 }
@@ -36,7 +36,7 @@
 - `layout`：`vertical` 为竖排，`horizontal` 为横排。
 - `appendSpaceAfterSelection`：数字键或 `Tab` 选词后是否自动添加空格。
 - `adaptiveCandidateRanking`：是否根据当前用户的历史选词频率调整候选排序。默认 `true`；设为 `false` 后保持词典顺序，且不再记录新的选择频率。
-- `fontFamily` 与 `fontSize`：候选窗字体与像素字号。
+- `fontFamily` 与 `fontSize`：候选窗和翻译窗字体；`fontSize` 单位为点（pt），默认 `18`。WPF Overlay 会按 96/72 换算为设备无关像素，因此 18pt 实际渲染为 24 DIP。
 - `opacity`：范围为 `0.2` 到 `1.0`。
 - `theme`：`dark`、`light`、`eye-care` 或 `paper`。
 
@@ -63,3 +63,11 @@ there
 主题目录为 `%LOCALAPPDATA%\Enput Method\themes`，包含四个默认文件：`dark.json`、`light.json`、`eye-care.json`、`paper.json`。主题文件可控制背景、前景、首选项颜色、边框、圆角、内边距、行高和阴影尺寸。主题修改会在下一次显示候选窗时读取。
 
 翻译窗使用独立的主题字段：`translationBackground`、`translationForeground`、`translationTitleForeground`、`translationBorder`、`translationBorderWidth`、`translationCornerRadius`、`translationPadding`、`translationWidth`、`translationMaxHeight`、`translationScrollbarTrack` 和 `translationScrollbarThumb`。`translationMaxHeight` 低于完整释义高度时会显示滚动条；默认深色主题设置为 `160`，便于验证长释义的滚动。安装更新只会补齐主题中缺失的新字段，已有值不会被覆盖。
+
+
+## 2026-08-29 UI and Data Corrections
+
+- The default `fontSize` is now `18` points. A WPF `FontSize` is measured in device-independent pixels, not points; the Overlay therefore renders the configured value at `fontSize * 96 / 72`. Do not set 24 merely to obtain an 18pt visual size.
+- Emoji candidates use installed Twemoji color assets and an expanded catalog. The installer merges the supplied keyword and priority updates without replacing user-added entries. The C++ JSON reader now combines escaped UTF-16 surrogate pairs, so an installed entry such as `"emoji":"\\uD83D\\uDD25"` is read as `🔥`.
+- Full ECDICT translations may store line breaks as literal `\\n` or `\\r\\n`. The input service now converts those markers to real line breaks before the WPF translation window displays them. `block` is a regression example.
+- Candidate pager placement is a three-region layout: previous button at the left frame edge, page text centered in available space, next button at the right frame edge. Its hover state is enabled only when movement is available.

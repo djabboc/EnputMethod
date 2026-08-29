@@ -15,3 +15,10 @@
 ## 日文映射
 
 当前日文映射仅包含随程序提供的少量示例词条。完整英日映射计划使用 JMdict；该数据集采用 CC BY-SA 4.0，导入前必须保留其署名和相同许可要求。
+
+
+## Emoji 数据与显示（2026-08-29）
+
+Emoji 词典使用可编辑的 `emoji.json`，每个条目包含 Unicode Emoji、关键词和可选优先级。安装器合并随版本提供的新关键词和优先级，不删除用户自定义条目。Overlay 使用随安装包部署的 Twemoji PNG 资产以获得彩色渲染；资产遵循 `EnputMethod.Overlay/TWEMOJI-LICENSE.txt` 中的许可。
+
+JSON 文件可能将非 BMP Emoji 序列化成 UTF-16 代理对，例如 `\\uD83D\\uDD25`。运行时必须合并该对并输出合法 UTF-8；不得将高、低代理项分别编码。

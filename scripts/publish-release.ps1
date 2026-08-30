@@ -65,8 +65,8 @@ function Test-RemoteTag {
         }
 
         $output = $standardOutput.GetAwaiter().GetResult().Trim()
-        $error = $standardError.GetAwaiter().GetResult().Trim()
-        if ($process.ExitCode -ne 0) { throw "Remote tag query failed: $error" }
+        $standardErrorText = $standardError.GetAwaiter().GetResult().Trim()
+        if ($process.ExitCode -ne 0) { throw "Remote tag query failed: $standardErrorText" }
         if (-not [string]::IsNullOrWhiteSpace($output)) {
             throw "Remote Git tag already exists: $TagName. A release version cannot be reused."
         }

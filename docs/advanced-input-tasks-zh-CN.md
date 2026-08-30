@@ -43,7 +43,8 @@
 ## Task 11 verification record
 
 - Completed: `suggestions.json` supports ordered entries, phrase candidates, and next-word associations while keeping the existing `dictionary.txt` compatible.
-- Completed: choosing a candidate (or committing a word with Space) starts a zero-length TSF composition only when an association exists, so the next suggestions remain visible at the caret.
+- Completed: choosing a candidate (or committing a word with Space) ends the active composition, then creates a detached follow-up suggestion state at the caret only when an association exists, so the next suggestions remain visible without extending the committed text.
+- Completed: Escape or either Shift dismisses a detached follow-up suggestion without changing the already committed word; mouse dismiss uses the same no-text-write path.
 - Static verification: Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors.
 
 ## 任务 12：Emoji 模式

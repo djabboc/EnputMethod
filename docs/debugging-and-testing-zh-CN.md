@@ -121,6 +121,7 @@ dotnet --info
 | --- | --- | --- |
 | 数字选词 | `he` 后按 `1` 至 `9` | 提交当前页对应候选，页外数字透传。 |
 | Tab | `he` 后按 Tab | 提交高亮候选。 |
+| 后续联想取消 | 输入 `hello` 后按 Tab，看到 `world` 等后续候选后分别按 Escape、左 Shift、右 Shift | 已提交的 `hello`（及配置的尾随空格）保持不变；只隐藏后续候选和翻译窗，不向编辑区写入空文本；随后输入字符或空格不应复活旧候选。 |
 | Escape 取消 | `he` 后按 Escape | 候选隐藏，活动 composition 不提交。 |
 | Shift 取消 | `he` 后按 Shift | 与 Escape 完全等价；不遗留 `he` 或候选窗。 |
 | 自定义取消键 | 从 `cancelComposition` 移除 Shift 后按 Shift | Shift 恢复普通修饰键，不取消 composition。 |

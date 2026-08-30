@@ -129,6 +129,7 @@
 
 | I-45 | 常见地名和跨学科短语召回不足，例如 `newyork`、机器学习、合同法。 | 原 suggestions 只覆盖少量手工高频续写，没有系统性多词语料。下载官方 WordNet 3.1，提取 62,319 条二至五词 lemma 导入 SQLite，并补充高优先级术语。 | Release 构建、SQLite、无空格匹配回归和系统安装验证通过；用户已确认成功。 |
 | I-46 | 用户习惯按 Shift 终止联想，但此前只支持 Escape。 | 取消动作被硬编码为单个 Escape 键且修饰键会直接放行。新增 `shortcut.json.cancelComposition` 数组，默认 Escape/Shift；TSF 在组合状态下优先捕获两者并执行同一取消路径。 | 自动化、安装验证通过；用户已确认成功。 |
+| I-47 | 输入 `hello` 后按 Tab，出现 `world` 等后续联想时，Escape 和 Shift 被吞掉却不能关闭候选。 | Tab 已提交并结束 active composition，服务转入 detached follow-up suggestion；取消分支仍调用 `FinishComposition`，因没有 composition 而返回 `S_FALSE`，未清理候选状态。 | 取消分支按状态路由：detached 建议只清理自身并隐藏窗口，不写编辑区；鼠标 dismiss 同样复用该路径。新增 Escape、左右 Shift 和取消路由的原生回归，Release 构建/安装验证通过；真实 Notepad 验收待当前 UI 自动化环境恢复或用户复测。 |
 
 ## 2026-08-29：一站式发布改造记录
 

@@ -10,6 +10,7 @@
 #include "JsonObjectReader.h"
 #include "OverlayClient.h"
 #include "OverlayDiagnostics.h"
+#include "SuggestionCancellation.h"
 #include "TranslationText.h"
 #include <algorithm>
 #include <cmath>
@@ -229,7 +230,7 @@ ShortcutConfiguration LoadShortcutConfiguration() {
 }
 
 bool HasShortcut(const std::vector<WPARAM>& keys, WPARAM key) {
-    return std::find(keys.begin(), keys.end(), key) != keys.end();
+    return enput::HasConfiguredShortcut(keys, key);
 }
 
 bool IsSafeThemeName(const std::string& name) {
@@ -1684,8 +1685,16 @@ public:
             return UpdateComposition(context, cookie);
         }
         if (HasShortcut(configuration_.shortcuts.cancelComposition, key)) {
-            if (emojiMode_ && typed_.empty()) { emojiMode_ = false; return S_OK; }
-            return FinishComposition(cookie, typed_, L'\0');
+            switch (enput::ResolveCandidateCancellationAction(detachedSuggestionActive_, emojiMode_, typed_.empty())) {
+            case enput::CandidateCancellationAction::DismissDetachedSuggestion:
+                return DismissDetachedSuggestions();
+            case enput::CandidateCancellationAction::ExitEmptyEmojiMode:
+                emojiMode_ = false;
+                return S_OK;
+            case enput::CandidateCancellationAction::FinishComposition:
+                return FinishComposition(cookie, typed_, L'\0');
+            }
+            return E_UNEXPECTED;
         }
         if (key >= 'A' && key <= 'Z') {
             ClearDetachedSuggestions();
@@ -1823,7 +1832,7 @@ private:
         }
         if (action == -1) return MovePage(context, cookie, -1);
         if (action == -2) return MovePage(context, cookie, 1);
-        if (action == -3) return detachedSuggestionActive_ ? CommitDetachedSuggestion(context, cookie, L"", L'\0') : FinishComposition(cookie, L"", L'\0');
+        if (action == -3) return detachedSuggestionActive_ ? DismissDetachedSuggestions() : FinishComposition(cookie, L"", L'\0');
         return S_FALSE;
     }
 
@@ -2277,6 +2286,21 @@ private:
     void ClearDetachedSuggestions() {
         detachedSuggestionActive_ = false;
         if (detachedSuggestionContext_) { detachedSuggestionContext_->Release(); detachedSuggestionContext_ = nullptr; }
+    }
+
+    HRESULT DismissDetachedSuggestions() {
+        if (!detachedSuggestionActive_) return S_FALSE;
+        ClearDetachedSuggestions();
+        typed_.clear();
+        cursor_ = 0;
+        allCandidates_.clear();
+        candidates_.clear();
+        currentPage_ = 0;
+        selectedIndex_ = 0;
+        HideOverlay();
+        candidateWindow_.Hide();
+        translationWindow_.Hide();
+        return S_OK;
     }
 
     HRESULT ShowDetachedSuggestions(ITfContext* context, TfEditCookie cookie) {

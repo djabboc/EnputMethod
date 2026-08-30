@@ -2,6 +2,7 @@
 #include "../EnputMethod.Tsf/CandidateSelection.h"
 #include "../EnputMethod.Tsf/ApproximateMatch.h"
 #include "../EnputMethod.Tsf/JsonObjectReader.h"
+#include "../EnputMethod.Tsf/SuggestionCancellation.h"
 #include "../EnputMethod.Tsf/TranslationText.h"
 
 #include <cstdlib>
@@ -91,6 +92,20 @@ void VerifyOrderedSubsequenceMatching() {
     Expect(enput::LikeOrderedSubsequencePattern(L"hpy") == L"%h%p%y%", "SQLite LIKE fallback pattern must preserve order.");
 }
 
+void VerifyDetachedSuggestionCancellation() {
+    const std::vector<WPARAM> cancelShortcuts{ VK_ESCAPE, VK_SHIFT };
+    Expect(enput::HasConfiguredShortcut(cancelShortcuts, VK_ESCAPE), "Escape must remain a configured cancellation shortcut.");
+    Expect(enput::HasConfiguredShortcut(cancelShortcuts, VK_SHIFT), "Generic Shift must remain a configured cancellation shortcut.");
+    Expect(enput::HasConfiguredShortcut(cancelShortcuts, VK_LSHIFT), "Left Shift must honor a generic Shift cancellation shortcut.");
+    Expect(enput::HasConfiguredShortcut(cancelShortcuts, VK_RSHIFT), "Right Shift must honor a generic Shift cancellation shortcut.");
+    Expect(enput::ResolveCandidateCancellationAction(true, false, true) == enput::CandidateCancellationAction::DismissDetachedSuggestion,
+           "Escape or Shift must dismiss the detached world suggestion after hello is committed.");
+    Expect(enput::ResolveCandidateCancellationAction(false, false, false) == enput::CandidateCancellationAction::FinishComposition,
+           "Active composition cancellation must keep its existing finish path.");
+    Expect(enput::ResolveCandidateCancellationAction(false, true, true) == enput::CandidateCancellationAction::ExitEmptyEmojiMode,
+           "Empty Emoji mode cancellation must keep its existing exit behavior.");
+}
+
 }
 
 int main() {
@@ -99,6 +114,7 @@ int main() {
     VerifyTranslationLineBreaks();
     VerifyTranslationTextNormalization();
     VerifyOrderedSubsequenceMatching();
+    VerifyDetachedSuggestionCancellation();
     VerifyFrequencyRanking();
     VerifyCandidateBounds();
     std::cout << "TSF candidate selection tests passed.\n";

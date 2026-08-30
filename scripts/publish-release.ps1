@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern("^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")]
     [string]$Version
@@ -90,18 +90,20 @@ if (Test-Path -LiteralPath $destination) { throw "Release directory already exis
 New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot "artifacts\local\Release") -Destination $destination -Recurse
 
-$readme = @"
-Enput Method $Version（Windows x64）
-
-1. 安装或卸载前请保持此目录完整。
-2. 运行“Install Enput Method.exe”，并接受 Windows UAC 提示。
-3. 此安装包不包含 .NET Runtime。若系统提示缺少 .NET 9 Desktop Runtime（x64），请按 Windows 提示完成安装后重试。
-4. 更新后，请关闭并重新打开目标编辑器再测试输入法。
-5. 如需移除 Enput，请运行“Uninstall Enput Method.exe”。卸载仅注销输入法；已部署的运行资源和个人配置会保留，便于已打开应用继续运行和之后立即重装。卸载成功后可以删除此解压目录。
-
-安装后的运行文件和静态资源位于 Program Files\Enput Method。
-用户配置和学习排序保存在 LocalAppData\Enput Method\UserData；升级不会覆盖它们。
-"@
+$readmeLines = @(
+    ('Enput Method {0}（Windows x64）' -f $Version),
+    '',
+    '1. 安装或卸载前请保持此目录完整。',
+    '2. 运行“Install Enput Method.exe”，并接受 Windows UAC 提示。',
+    '3. 此安装包不包含 .NET Runtime。若系统提示缺少 .NET 9 Desktop Runtime（x64），请按 Windows 提示完成安装后重试。',
+    '4. 更新后，请关闭并重新打开目标编辑器再测试输入法。',
+    '5. 如需移除 Enput，请运行“Uninstall Enput Method.exe”。卸载仅注销输入法；已部署的运行资源和个人配置会保留，便于已打开应用继续运行和之后立即重装。卸载成功后可以删除此解压目录。',
+    '',
+    '安装后的运行文件和静态资源位于 Program Files\Enput Method。',
+    '用户配置和学习排序保存在 LocalAppData\Enput Method\UserData；升级不会覆盖它们。',
+    ''
+)
+$readme = [string]::Join([Environment]::NewLine, [string[]]$readmeLines)
 Set-Content -LiteralPath (Join-Path $destination "README.txt") -Value $readme -Encoding utf8NoBOM
 
 $installer = Join-Path $destination "Install Enput Method.exe"

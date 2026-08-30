@@ -200,6 +200,6 @@
 | P-11 | 正式发布从哪个分支产生。 | 本地 `main` 从已认可的 `codex/translation-copy-button` 提交建立。以后只从 `main` 发布，不合并其它分支作为发布来源。 |
 | P-12 | 发布 ZIP 是否应自动包含词库和全部用户所需文件。 | 是。发布脚本构建 `Release|x64`，生成 ZIP，并解压后运行安装器完整性校验。包中必须有安装器、卸载器、运行时依赖、TSF、Overlay、Emoji、主题、`enput.seed.db`、词表和归属文件；安装时准备 `enput.db`，不依赖联网下载。 |
 | P-13 | 是否随发布包携带 .NET Runtime。 | 否。按产品决定不包含 Runtime，用户缺少 .NET 9 Desktop Runtime x64 时接受 Windows 提示安装。发布包 README 和 GitHub Release 说明必须明确这一点。 |
-| P-14 | 版本号与 Git tag 的来源、重复规则。 | `-Version 0.1.0` 对应不可变 tag `v0.1.0` 与同名 ZIP。脚本要求 `main`、干净工作区、未存在的本地/远程同名 tag，并在构建、ZIP 解压验证和 SHA-256 生成成功后才创建本地 tag。脚本不提交、不推送、不创建 GitHub Release。 |
+| P-14 | 版本号与 Git tag 的来源、重复规则。 | `-Version 0.1.0` 对应不可变 tag `v0.1.0` 与同名 ZIP。脚本要求 `main`、干净工作区和未存在的本地同名 tag，并在构建、ZIP 解压验证和 SHA-256 生成成功后才创建本地 tag。脚本不访问网络，不提交、不推送、不创建 GitHub Release；发布者在手工推送前先执行 `git fetch --tags origin`，将远程 tag 同步到本地后再发布。 |
 | P-15 | 如何向不会编译的用户交付。 | 发布者手工推送 `main` 和本地 tag，再在 GitHub Release 页面上传 ZIP 与 `.sha256`。完整步骤见 `release-manual-zh-CN.md`。 |
 | P-16 | 首次 SSH 推送 `main` 报权限或没有 upstream。 | 远程地址必须为 `git@github.com:djabboc/EnputMethod.git`，不得写成 `git\@github.com`；多 key 环境可在仓库级设置 `core.sshCommand` 与 `IdentitiesOnly=yes`，但不记录真实私钥文件名。首次使用 `git push -u origin main` 建立 `origin/main` 跟踪；之后普通 `git push` 即可。已于 2026-08-30 成功推送。 |

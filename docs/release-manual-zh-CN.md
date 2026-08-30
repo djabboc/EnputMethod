@@ -22,7 +22,7 @@
 该命令按以下顺序执行：
 
 1. 检查当前分支必须为 `main`，且工作区没有已跟踪、未跟踪或暂存变更。
-2. 检查版本号格式，并检查本地与 `origin` 中均不存在 `v0.1.0`。同一版本不能复用。
+2. 检查版本号格式，并检查本地不存在 `v0.1.0`。同一台发布机上同一版本不能复用。远程 tag 同步由发布者在手工推送前完成。
 3. 扫描已跟踪文件中的常见私钥、GitHub Token、AWS 访问密钥，以及 `.env`、`.pem`、`.key`、`.pfx`、`.p12` 文件。命中即拒绝发布，必须人工确认并处理。
 4. 以 `Release|x64` 重建安装器、卸载器、TSF 与 Overlay。
 5. 创建 `artifacts\release\EnputMethod-0.1.0-win-x64\`，并验证其 `payload`。
@@ -64,7 +64,7 @@ git log -1 --oneline
 git fetch --tags origin
 ```
 
-`git status --short` 必须没有输出。`git fetch --tags origin` 会让本地获知远程已有 tag；发布脚本也会直接检查 `origin`，防止重用已发布版本。
+`git status --short` 必须没有输出。`git fetch --tags origin` 会让本地获知远程已有 tag。确认 `git tag --list v0.1.0` 没有输出后再运行本地发布脚本；脚本本身不访问网络，保证可离线构建、打包和创建本地 tag。
 
 ### 2. 本地构建、打包、验证并创建 tag
 
@@ -125,7 +125,7 @@ Get-FileHash .\EnputMethod-0.1.0-win-x64.zip -Algorithm SHA256
 | 当前不是 `main` | 切换到 `main`，不要从临时分支发布。 |
 | 工作区不干净 | 先提交、还原或忽略变更；发布必须对应一个确定提交。 |
 | `v<Version>` 已存在 | 该版本已使用。提升版本号，绝不覆盖 tag 或旧 ZIP。 |
-| 脚本无法访问 `origin` | 检查网络、SSH 和远程地址；不能确认远程 tag 状态时不发布。 |
+| 手工 `git fetch --tags origin` 无法访问远程 | 检查网络、SSH 和远程地址；此时仍可创建本地包和本地 tag，但不得继续推送或在 GitHub 创建同版本 Release。 |
 | 敏感扫描命中 | 先判断是否真实凭据；真实凭据必须从历史和工作区移除并轮换，不能仅删除当前文件后继续发布。 |
 | 安装器无法启动 | 用户需按 Windows 提示安装 .NET 9 Desktop Runtime x64；该 Runtime 按产品决定不随 ZIP 分发。 |
 

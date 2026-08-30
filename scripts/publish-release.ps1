@@ -30,12 +30,6 @@ function Test-ReleaseSource {
     & git -C $projectRoot show-ref --verify --quiet "refs/tags/$TagName"
     if ($LASTEXITCODE -eq 0) { throw "Local Git tag already exists: $TagName" }
     if ($LASTEXITCODE -ne 1) { throw "Unable to check local Git tag: $TagName" }
-
-    $remoteTag = @(Invoke-GitText -Arguments @("ls-remote", "--tags", "origin", "refs/tags/$TagName"))
-    if ($remoteTag.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($remoteTag[0])) {
-        throw "Remote Git tag already exists: $TagName. A release version cannot be reused."
-    }
-
     $forbiddenFiles = @(Invoke-GitText -Arguments @("ls-files") | Where-Object { $_ -match "(^|/)(\.env(\.[^/]+)?|\.npmrc|[^/]+\.(pem|key|pfx|p12))$" })
     if ($forbiddenFiles.Count -gt 0) {
         throw "Tracked files may contain sensitive material and cannot be released: $($forbiddenFiles -join ', ')"

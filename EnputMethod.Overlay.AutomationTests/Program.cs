@@ -24,7 +24,7 @@ internal static class Program
             VerifyPointFontSizeUsesWpfDips();
             VerifyPaginationLayoutAndHover();
             VerifyTranslationWindowUsesRichTextAndConfiguredSize();
-            VerifyTranslationWindowSupportsNoActivatePointerSelection();
+            VerifyTranslationWindowKeepsNativeSelectionSurface();
             Console.WriteLine("Overlay foreground automation tests passed.");
             return 0;
         }
@@ -192,7 +192,7 @@ internal static class Program
             overlay.Close();
         }
     }
-    private static void VerifyTranslationWindowSupportsNoActivatePointerSelection()
+    private static void VerifyTranslationWindowKeepsNativeSelectionSurface()
     {
         var overlay = new TranslationOverlayWindow();
         try
@@ -205,23 +205,11 @@ internal static class Program
             var frame = (Border)overlay.Content;
             var panel = (Grid)frame.Child;
             var content = (RichTextBox)panel.Children[1];
-            content.UpdateLayout();
-            Run run = ((Paragraph)content.Document.Blocks.FirstBlock!).Inlines.OfType<Run>().Single();
-            Rect startBounds = run.ContentStart.GetCharacterRect(LogicalDirection.Forward);
-            Rect endBounds = run.ContentEnd.GetCharacterRect(LogicalDirection.Backward);
-            Assert(!startBounds.IsEmpty && !endBounds.IsEmpty, "The rendered translation text must expose pointer hit-test bounds.");
-            Point start = new(startBounds.Left + Math.Min(1, startBounds.Width / 2), startBounds.Top + Math.Max(1, startBounds.Height / 2));
-            Point end = new(endBounds.Right - Math.Min(1, endBounds.Width / 2), endBounds.Top + Math.Max(1, endBounds.Height / 2));
-            Assert(overlay.BeginPointerSelection(start), "A pointer-down inside translation text must begin a selection without activating the overlay.");
-            Assert(overlay.ExtendPointerSelection(end), "A pointer drag inside translation text must extend the selection without activating the overlay.");
-            overlay.EndPointerSelection();
-            Assert(content.Selection.Text.Contains("selectable", StringComparison.Ordinal), "Pointer selection must retain translated text for the Copy context menu.");
-            Assert(!content.IsKeyboardFocused, "Pointer selection must not transfer keyboard focus away from the editor host.");
+            Assert(!overlay.Focusable, "The translation window must remain non-activating so the TSF editor host keeps focus.");
+            Assert(content.IsReadOnly && content.IsHitTestVisible && content.Focusable && content.IsInactiveSelectionHighlightEnabled, "The translation surface must leave native RichTextBox selection enabled.");
+            content.SelectAll();
+            Assert(content.Selection.Text.Contains("selectable translation text", StringComparison.Ordinal), "Native RichTextBox selection must include the rendered translation text.");
             Assert(content.ContextMenu?.Items.OfType<MenuItem>().SingleOrDefault() is not null, "A selected translation must retain the Copy context menu.");
-            HitTestResult? textHit = VisualTreeHelper.HitTest(content, start);
-            Assert(textHit?.VisualHit is DependencyObject, "A rendered translation character must have a WPF hit-test source.");
-            Assert(overlay.IsTranslationTextInput(textHit!.VisualHit), "The translation text hit-test source must pass the root routed-event input guard.");
-            Assert(!overlay.IsTranslationTextInput(frame), "Window chrome must not be treated as selectable translation text.");
         }
         finally
         {

@@ -7,7 +7,6 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Interop;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 
@@ -51,8 +50,6 @@ internal sealed class TranslationOverlayWindow : Window
     private bool _hasTranslation;
     private bool _applyingTheme;
     private bool _hasUserSized;
-    private TextPointer? _selectionAnchor;
-    private bool _isPointerSelecting;
 
     public TranslationOverlayWindow()
     {
@@ -77,7 +74,6 @@ internal sealed class TranslationOverlayWindow : Window
         _content.ContextMenu = new ContextMenu();
         _content.ContextMenu.Items.Add(copy);
         _content.ContextMenu.Opened += (_, _) => copy.IsEnabled = !string.IsNullOrWhiteSpace(_content.Selection.Text);
-        _content.LostMouseCapture += (_, _) => EndPointerSelection();
         _panel = new Grid();
         _panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -95,11 +91,6 @@ internal sealed class TranslationOverlayWindow : Window
             Child = _panel,
         };
         Content = _frame;
-        AddHandler(UIElement.PreviewMouseLeftButtonDownEvent, new MouseButtonEventHandler(OnContentPreviewMouseLeftButtonDown), true);
-        AddHandler(Mouse.PreviewMouseMoveEvent, new MouseEventHandler(OnContentPreviewMouseMove), true);
-        AddHandler(UIElement.PreviewMouseLeftButtonUpEvent, new MouseButtonEventHandler(OnContentPreviewMouseLeftButtonUp), true);
-        AddHandler(UIElement.PreviewMouseRightButtonDownEvent, new MouseButtonEventHandler(OnContentPreviewMouseRightButtonDown), true);
-        AddHandler(UIElement.PreviewMouseRightButtonUpEvent, new MouseButtonEventHandler(OnContentPreviewMouseRightButtonUp), true);
         _saveSizeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _saveSizeTimer.Tick += (_, _) =>
         {
@@ -180,7 +171,6 @@ internal sealed class TranslationOverlayWindow : Window
 
     private void RenderContent(string content, OverlayTheme theme)
     {
-        EndPointerSelection();
         var document = new FlowDocument
         {
             FontFamily = new FontFamily(theme.FontFamily),
@@ -233,111 +223,6 @@ internal sealed class TranslationOverlayWindow : Window
             firstLine = false;
         }
         _content.Document = document;
-    }
-
-    // This window intentionally never takes editor focus, so selection is driven here
-    // instead of allowing RichTextBox to activate the overlay through its default path.
-    internal bool BeginPointerSelection(Point position)
-    {
-        TextPointer? pointer = _content.GetPositionFromPoint(position, true);
-        if (pointer is null) return false;
-        _selectionAnchor = pointer;
-        _isPointerSelecting = true;
-        _content.Selection.Select(pointer, pointer);
-        return true;
-    }
-
-    internal bool ExtendPointerSelection(Point position)
-    {
-        if (!_isPointerSelecting || _selectionAnchor is null) return false;
-        TextPointer? pointer = _content.GetPositionFromPoint(position, true);
-        if (pointer is null) return false;
-        _content.Selection.Select(_selectionAnchor, pointer);
-        return true;
-    }
-
-    internal void EndPointerSelection()
-    {
-        _isPointerSelecting = false;
-        _selectionAnchor = null;
-        if (_content.IsMouseCaptured) _content.ReleaseMouseCapture();
-    }
-
-    private void OnContentPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs eventArgs)
-    {
-        if (!IsTranslationTextInput(eventArgs.OriginalSource) ||
-            !BeginPointerSelection(eventArgs.GetPosition(_content))) return;
-        if (!_content.CaptureMouse())
-        {
-            EndPointerSelection();
-            return;
-        }
-        eventArgs.Handled = true;
-    }
-
-    private void OnContentPreviewMouseMove(object sender, MouseEventArgs eventArgs)
-    {
-        if (!_isPointerSelecting) return;
-        ExtendPointerSelection(eventArgs.GetPosition(_content));
-        eventArgs.Handled = true;
-    }
-
-    private void OnContentPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs eventArgs)
-    {
-        if (!_isPointerSelecting) return;
-        ExtendPointerSelection(eventArgs.GetPosition(_content));
-        EndPointerSelection();
-        eventArgs.Handled = true;
-    }
-
-    private void OnContentPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs eventArgs)
-    {
-        if (!IsTranslationTextInput(eventArgs.OriginalSource)) return;
-        // Preserve the existing drag selection instead of letting RichTextBox request focus.
-        eventArgs.Handled = true;
-    }
-
-    private void OnContentPreviewMouseRightButtonUp(object sender, MouseButtonEventArgs eventArgs)
-    {
-        if (!IsTranslationTextInput(eventArgs.OriginalSource)) return;
-        if (_content.ContextMenu is ContextMenu menu)
-        {
-            menu.PlacementTarget = _content;
-            menu.Placement = PlacementMode.MousePoint;
-            menu.IsOpen = true;
-        }
-        eventArgs.Handled = true;
-    }
-
-    internal bool IsTranslationTextInput(object source)
-    {
-        return source is DependencyObject dependency &&
-               IsDescendantOf(dependency, _content) &&
-               !IsScrollbarInput(source);
-    }
-
-    private static bool IsScrollbarInput(object source)
-    {
-        for (DependencyObject? current = source as DependencyObject; current is not null; current = ParentOf(current))
-        {
-            if (current is ScrollBar) return true;
-        }
-        return false;
-    }
-
-    private static bool IsDescendantOf(DependencyObject source, DependencyObject ancestor)
-    {
-        for (DependencyObject? current = source; current is not null; current = ParentOf(current))
-            if (ReferenceEquals(current, ancestor)) return true;
-        return false;
-    }
-
-    private static DependencyObject? ParentOf(DependencyObject current)
-    {
-        DependencyObject? visualParent = current is Visual visual
-            ? VisualTreeHelper.GetParent(visual)
-            : null;
-        return visualParent ?? LogicalTreeHelper.GetParent(current);
     }
 
     private static bool TrySplitLanguageLabel(string line, out string? label, out string? meaning)

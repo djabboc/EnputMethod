@@ -183,3 +183,10 @@
 ### 本次可复用结论
 
 对于当前已发布的修复，用户不需要在每次安装/卸载后重启；真实 UAC 链路已经验证可以立即重装。只有旧版半注册状态已经让某个已打开应用持有异常 TSF 会话时，关闭该应用或重启一次才是清除历史缓存的恢复手段，而不是新版安装流程的常规要求。
+
+## 2026-08-30: Translation-window selection regression
+
+- Symptom: a F3 translation window could render rich text and expose Copy, but mouse drag did not create a usable selection.
+- Cause: WS_EX_NOACTIVATE preserves the editor's TSF focus, while the default RichTextBox selection route tries to acquire keyboard focus.
+- Fix: explicit preview-mouse selection maps drag coordinates to TextPointer ranges; right-click opens Copy without clearing the range; scrollbar input remains native.
+- Verification: Overlay automation uses rendered text coordinates to select text, checks that keyboard focus remains outside the overlay, and confirms the Copy menu exists.

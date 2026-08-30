@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Interop;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 
@@ -35,6 +36,7 @@ internal sealed class TranslationOverlayWindow : Window
         IsReadOnly = true,
         IsDocumentEnabled = true,
         Focusable = true,
+        IsInactiveSelectionHighlightEnabled = true,
         BorderThickness = new Thickness(0),
         Background = Brushes.Transparent,
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -49,6 +51,8 @@ internal sealed class TranslationOverlayWindow : Window
     private bool _hasTranslation;
     private bool _applyingTheme;
     private bool _hasUserSized;
+    private TextPointer? _selectionAnchor;
+    private bool _isPointerSelecting;
 
     public TranslationOverlayWindow()
     {
@@ -72,6 +76,13 @@ internal sealed class TranslationOverlayWindow : Window
         copy.Click += (_, _) => CopySelection();
         _content.ContextMenu = new ContextMenu();
         _content.ContextMenu.Items.Add(copy);
+        _content.ContextMenu.Opened += (_, _) => copy.IsEnabled = !string.IsNullOrWhiteSpace(_content.Selection.Text);
+        _content.PreviewMouseLeftButtonDown += OnContentPreviewMouseLeftButtonDown;
+        _content.PreviewMouseMove += OnContentPreviewMouseMove;
+        _content.PreviewMouseLeftButtonUp += OnContentPreviewMouseLeftButtonUp;
+        _content.PreviewMouseRightButtonDown += OnContentPreviewMouseRightButtonDown;
+        _content.PreviewMouseRightButtonUp += OnContentPreviewMouseRightButtonUp;
+        _content.LostMouseCapture += (_, _) => EndPointerSelection();
         _panel = new Grid();
         _panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -169,6 +180,7 @@ internal sealed class TranslationOverlayWindow : Window
 
     private void RenderContent(string content, OverlayTheme theme)
     {
+        EndPointerSelection();
         var document = new FlowDocument
         {
             FontFamily = new FontFamily(theme.FontFamily),
@@ -223,6 +235,84 @@ internal sealed class TranslationOverlayWindow : Window
         _content.Document = document;
     }
 
+    // This window intentionally never takes editor focus, so selection is driven here
+    // instead of allowing RichTextBox to activate the overlay through its default path.
+    internal bool BeginPointerSelection(Point position)
+    {
+        TextPointer? pointer = _content.GetPositionFromPoint(position, true);
+        if (pointer is null) return false;
+        _selectionAnchor = pointer;
+        _isPointerSelecting = true;
+        _content.Selection.Select(pointer, pointer);
+        return true;
+    }
+
+    internal bool ExtendPointerSelection(Point position)
+    {
+        if (!_isPointerSelecting || _selectionAnchor is null) return false;
+        TextPointer? pointer = _content.GetPositionFromPoint(position, true);
+        if (pointer is null) return false;
+        _content.Selection.Select(_selectionAnchor, pointer);
+        return true;
+    }
+
+    internal void EndPointerSelection()
+    {
+        _isPointerSelecting = false;
+        _selectionAnchor = null;
+        if (_content.IsMouseCaptured) _content.ReleaseMouseCapture();
+    }
+
+    private void OnContentPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs eventArgs)
+    {
+        if (IsScrollbarInput(eventArgs.OriginalSource) || !BeginPointerSelection(eventArgs.GetPosition(_content))) return;
+        _content.CaptureMouse();
+        eventArgs.Handled = true;
+    }
+
+    private void OnContentPreviewMouseMove(object sender, MouseEventArgs eventArgs)
+    {
+        if (!_isPointerSelecting) return;
+        ExtendPointerSelection(eventArgs.GetPosition(_content));
+        eventArgs.Handled = true;
+    }
+
+    private void OnContentPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs eventArgs)
+    {
+        if (!_isPointerSelecting) return;
+        ExtendPointerSelection(eventArgs.GetPosition(_content));
+        EndPointerSelection();
+        eventArgs.Handled = true;
+    }
+
+    private void OnContentPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs eventArgs)
+    {
+        if (IsScrollbarInput(eventArgs.OriginalSource)) return;
+        // Preserve the existing drag selection instead of letting RichTextBox request focus.
+        eventArgs.Handled = true;
+    }
+
+    private void OnContentPreviewMouseRightButtonUp(object sender, MouseButtonEventArgs eventArgs)
+    {
+        if (IsScrollbarInput(eventArgs.OriginalSource)) return;
+        if (_content.ContextMenu is ContextMenu menu)
+        {
+            menu.PlacementTarget = _content;
+            menu.Placement = PlacementMode.MousePoint;
+            menu.IsOpen = true;
+        }
+        eventArgs.Handled = true;
+    }
+
+    private static bool IsScrollbarInput(object source)
+    {
+        for (DependencyObject? current = source as DependencyObject; current is not null; current = current is Visual ? VisualTreeHelper.GetParent(current) : LogicalTreeHelper.GetParent(current))
+        {
+            if (current is ScrollBar) return true;
+        }
+        return false;
+    }
+
     private static bool TrySplitLanguageLabel(string line, out string? label, out string? meaning)
     {
         label = null;
@@ -247,7 +337,15 @@ internal sealed class TranslationOverlayWindow : Window
     private void CopySelection()
     {
         string selected = _content.Selection.Text;
-        if (!string.IsNullOrWhiteSpace(selected)) Clipboard.SetText(selected);
+        if (string.IsNullOrWhiteSpace(selected)) return;
+        try
+        {
+            Clipboard.SetText(selected);
+        }
+        catch (ExternalException)
+        {
+            // Another process can briefly lock the shared Windows clipboard.
+        }
     }
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs eventArgs)

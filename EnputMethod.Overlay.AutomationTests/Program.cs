@@ -24,6 +24,7 @@ internal static class Program
             VerifyPointFontSizeUsesWpfDips();
             VerifyPaginationLayoutAndHover();
             VerifyTranslationWindowUsesRichTextAndConfiguredSize();
+            VerifyTranslationWindowSupportsNoActivatePointerSelection();
             Console.WriteLine("Overlay foreground automation tests passed.");
             return 0;
         }
@@ -172,7 +173,7 @@ internal static class Program
             var content = (RichTextBox)panel.Children[1];
             Assert(content.Document.Blocks.Count == 4, "Translation content must be rendered as structured FlowDocument paragraphs.");
             Assert(content.Document.Blocks.OfType<Paragraph>().Any(paragraph => paragraph.Inlines.OfType<Run>().Any(run => run.Text == "zh-CN: ")), "Language labels must remain semantic rich-text runs.");
-            Assert(content.IsReadOnly && content.IsDocumentEnabled && content.IsHitTestVisible && content.ContextMenu is not null, "Translation rich text must remain mouse-selectable and expose a copy command.");
+            Assert(content.IsReadOnly && content.IsDocumentEnabled && content.IsHitTestVisible && content.IsInactiveSelectionHighlightEnabled && content.ContextMenu is not null, "Translation rich text must remain visibly mouse-selectable without activating the overlay and expose a copy command.");
             Assert(content.Resources[typeof(ScrollBar)] is Style, "Translation scrollbar styling must come from the supplied theme.");
             content.SelectAll();
             Assert(content.Selection.Text.Contains("牙套", StringComparison.Ordinal), "Translation selection must include rendered rich text.");
@@ -185,6 +186,38 @@ internal static class Program
                 Theme = new OverlayTheme { TranslationWindowWidth = 460, TranslationWindowHeight = 340 },
             }, null);
             Assert(overlay.Width == 520 && overlay.Height == 360, "A user-resized translation window must not be reset by a stale service message.");
+        }
+        finally
+        {
+            overlay.Close();
+        }
+    }
+    private static void VerifyTranslationWindowSupportsNoActivatePointerSelection()
+    {
+        var overlay = new TranslationOverlayWindow();
+        try
+        {
+            overlay.ShowTranslation("selection-test", new TranslationView
+            {
+                Title = "selection",
+                Content = "selectable translation text",
+            }, null);
+            var frame = (Border)overlay.Content;
+            var panel = (Grid)frame.Child;
+            var content = (RichTextBox)panel.Children[1];
+            content.UpdateLayout();
+            Run run = ((Paragraph)content.Document.Blocks.FirstBlock!).Inlines.OfType<Run>().Single();
+            Rect startBounds = run.ContentStart.GetCharacterRect(LogicalDirection.Forward);
+            Rect endBounds = run.ContentEnd.GetCharacterRect(LogicalDirection.Backward);
+            Assert(!startBounds.IsEmpty && !endBounds.IsEmpty, "The rendered translation text must expose pointer hit-test bounds.");
+            Point start = new(startBounds.Left + Math.Min(1, startBounds.Width / 2), startBounds.Top + Math.Max(1, startBounds.Height / 2));
+            Point end = new(endBounds.Right - Math.Min(1, endBounds.Width / 2), endBounds.Top + Math.Max(1, endBounds.Height / 2));
+            Assert(overlay.BeginPointerSelection(start), "A pointer-down inside translation text must begin a selection without activating the overlay.");
+            Assert(overlay.ExtendPointerSelection(end), "A pointer drag inside translation text must extend the selection without activating the overlay.");
+            overlay.EndPointerSelection();
+            Assert(content.Selection.Text.Contains("selectable", StringComparison.Ordinal), "Pointer selection must retain translated text for the Copy context menu.");
+            Assert(!content.IsKeyboardFocused, "Pointer selection must not transfer keyboard focus away from the editor host.");
+            Assert(content.ContextMenu?.Items.OfType<MenuItem>().SingleOrDefault() is not null, "A selected translation must retain the Copy context menu.");
         }
         finally
         {

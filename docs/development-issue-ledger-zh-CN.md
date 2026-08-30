@@ -193,3 +193,12 @@
 - 早期尝试：曾实现预览鼠标选区，将拖动坐标映射至 `TextPointer` 范围，并保留滚动条的原生输入。该实现使产品语义复杂且没有满足实际需求。
 - 最终决定：已删除这套鼠标拖选和右键复制实现。翻译窗口保持不抢焦点；用户通过标题栏 `Copy` 按钮复制完整翻译，成功后短暂显示 `✓ Copied`。
 - 验证：Overlay 自动化验证 Copy 动作、剪贴板写入和成功反馈的超时恢复；不再声称支持鼠标框选文本。
+## 2026-08-30：正式发布、版本与 GitHub 交付决策
+
+| 编号 | 问题/决定 | 当前规则 |
+| --- | --- | --- |
+| P-11 | 正式发布从哪个分支产生。 | 本地 `main` 从已认可的 `codex/translation-copy-button` 提交建立。以后只从 `main` 发布，不合并其它分支作为发布来源。 |
+| P-12 | 发布 ZIP 是否应自动包含词库和全部用户所需文件。 | 是。发布脚本构建 `Release|x64`，生成 ZIP，并解压后运行安装器完整性校验。包中必须有安装器、卸载器、运行时依赖、TSF、Overlay、Emoji、主题、`enput.seed.db`、词表和归属文件；安装时准备 `enput.db`，不依赖联网下载。 |
+| P-13 | 是否随发布包携带 .NET Runtime。 | 否。按产品决定不包含 Runtime，用户缺少 .NET 9 Desktop Runtime x64 时接受 Windows 提示安装。发布包 README 和 GitHub Release 说明必须明确这一点。 |
+| P-14 | 版本号与 Git tag 的来源、重复规则。 | `-Version 0.1.0` 对应不可变 tag `v0.1.0` 与同名 ZIP。脚本要求 `main`、干净工作区、未存在的本地/远程同名 tag，并在构建、ZIP 解压验证和 SHA-256 生成成功后才创建本地 tag。脚本不提交、不推送、不创建 GitHub Release。 |
+| P-15 | 如何向不会编译的用户交付。 | 发布者手工推送 `main` 和本地 tag，再在 GitHub Release 页面上传 ZIP 与 `.sha256`。完整步骤见 `release-manual-zh-CN.md`。 |

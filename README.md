@@ -25,7 +25,7 @@ Enput Method 是一个基于文本服务框架（TSF）的 Windows 英文输入�
 
 ## 安装与使用
 
-普通用户下载并解压发布 ZIP 后，在解压目录运行 `Install Enput Method.exe`，接受 Windows UAC 提示。发布目录的顶层应直接包含：
+普通用户下载并解压发布 ZIP 后，在解压目录运行 `Install Enput Method.exe`，接受 Windows UAC 提示。发布包不携带 .NET Runtime；若 Windows 提示缺少 .NET 9 Desktop Runtime x64，按提示安装后重试。发布目录的顶层应直接包含：
 
 ```text
 Install Enput Method.exe
@@ -67,7 +67,7 @@ Windows 可能缓存文本服务。若安装后 Enput 没有立即出现在现�
 
 分层构建、安装、自动化和真实宿主验证流程见[调试与测试](docs/debugging-and-testing-zh-CN.md)。
 
-一站式发布、资源根目录和进度界面方案见[发布打包任务书](docs/release-packaging-tasks-zh-CN.md)。
+一站式发布、资源根目录和进度界面方案见[发布打包任务书](docs/release-packaging-tasks-zh-CN.md)。从本地打包到 GitHub Release 页面上传的完整人工流程见[正式发布手册](docs/release-manual-zh-CN.md)。
 
 ## 当前开发状态（2026-08-29）
 

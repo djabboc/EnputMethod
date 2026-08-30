@@ -86,7 +86,7 @@ C:\Program Files\Enput Method\
 .\scripts\run-regression.ps1 -Configuration Release
 ```
 
-本轮已执行：Release 卸载器构建（0 警告、0 错误）、本地包完整性验证、`run-overlay-tests.ps1 -Configuration Release`（原生测试、10 个协议用例、多宿主管道、前景仲裁）、带 `-Zip` 的发布目录/压缩包结构检查，以及 `install-and-verify.ps1` 的 UAC 系统安装验证。后者确认 TSF 注册、Program Files 静态资源、SQLite 自检均通过，并确认覆盖安装不改变已有 UserData 配置和快捷键 hash。
+本轮已执行：Release 卸载器构建（0 警告、0 错误）、本地包完整性验证、`run-overlay-tests.ps1 -Configuration Release`（原生测试、10 个协议用例、多宿主管道、前景仲裁）、发布目录/压缩包结构检查，以及 `install-and-verify.ps1` 的 UAC 系统安装验证。后者确认 TSF 注册、Program Files 静态资源、SQLite 自检均通过，并确认覆盖安装不改变已有 UserData 配置和快捷键 hash。
 
 系统卸载仍会修改 Windows 的输入法注册，须在接受 UAC 后单独验收；它不能由纯结构检查替代。真实应用的候选、F2/F3、焦点切换和字体兼容性验收也仍需要确认 Enput 已被选中。
 

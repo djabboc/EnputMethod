@@ -218,6 +218,10 @@ internal static class Program
             Assert(content.Selection.Text.Contains("selectable", StringComparison.Ordinal), "Pointer selection must retain translated text for the Copy context menu.");
             Assert(!content.IsKeyboardFocused, "Pointer selection must not transfer keyboard focus away from the editor host.");
             Assert(content.ContextMenu?.Items.OfType<MenuItem>().SingleOrDefault() is not null, "A selected translation must retain the Copy context menu.");
+            HitTestResult? textHit = VisualTreeHelper.HitTest(content, start);
+            Assert(textHit?.VisualHit is DependencyObject, "A rendered translation character must have a WPF hit-test source.");
+            Assert(overlay.IsTranslationTextInput(textHit!.VisualHit), "The translation text hit-test source must pass the root routed-event input guard.");
+            Assert(!overlay.IsTranslationTextInput(frame), "Window chrome must not be treated as selectable translation text.");
         }
         finally
         {

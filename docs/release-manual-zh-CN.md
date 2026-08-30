@@ -32,6 +32,8 @@
 
 脚本绝不执行 `git commit`、`git push`、创建远程 tag 或创建 GitHub Release。构建/验证失败时不会创建 tag；同名 tag 或同名产物目录/ZIP 已存在时会停止，不覆盖旧发布物。
 
+发布脚本兼容 Windows PowerShell 5.1。发布目录中的 `README.txt` 使用 .NET UTF-8（无 BOM）写入；不能使用仅较新 PowerShell 支持的 `Set-Content -Encoding utf8NoBOM`，否则会在组装目录阶段报参数绑定错误。
+
 ## 首次连接 GitHub 仓库
 
 以下命令只需在本地 `main` 已建立、GitHub 仓库仍为空时执行一次：

@@ -203,3 +203,4 @@
 | P-14 | 版本号与 Git tag 的来源、重复规则。 | `-Version 0.1.0` 对应不可变 tag `v0.1.0` 与同名 ZIP。脚本要求 `main`、干净工作区、未存在的本地/远程同名 tag，并在构建、ZIP 解压验证和 SHA-256 生成成功后才创建本地 tag。远端查询为只读操作且最多等待 15 秒；超时或 SSH 失败会在构建前停止。脚本不提交、不推送、不创建 GitHub Release。 |
 | P-15 | 如何向不会编译的用户交付。 | 发布者手工推送 `main` 和本地 tag，再在 GitHub Release 页面上传 ZIP 与 `.sha256`。完整步骤见 `release-manual-zh-CN.md`。 |
 | P-16 | 首次 SSH 推送 `main` 报权限或没有 upstream。 | 远程地址必须为 `git@github.com:djabboc/EnputMethod.git`，不得写成 `git\@github.com`；多 key 环境可在仓库级设置 `core.sshCommand` 与 `IdentitiesOnly=yes`，但不记录真实私钥文件名。首次使用 `git push -u origin main` 建立 `origin/main` 跟踪；之后普通 `git push` 即可。已于 2026-08-30 成功推送。 |
+| P-17 | `publish-release.ps1` 在 Windows PowerShell 5.1 的第 4 步报 `utf8NoBOM` 参数绑定错误。 | PowerShell 5.1 的 `Set-Content` 不识别 `utf8NoBOM`。README 改用 .NET `UTF8Encoding(false)` 写入，发布目录可继续在 PowerShell 5.1 下创建。 | 待完成 `0.1.0` 实际打包、解压校验和本地 tag 验证。 |

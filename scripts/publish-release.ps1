@@ -136,7 +136,7 @@ $readmeLines = @(
     ''
 )
 $readme = [string]::Join([Environment]::NewLine, [string[]]$readmeLines)
-Set-Content -LiteralPath (Join-Path $destination "README.txt") -Value $readme -Encoding utf8NoBOM
+[System.IO.File]::WriteAllText((Join-Path $destination "README.txt"), $readme, [System.Text.UTF8Encoding]::new($false))
 
 Write-Host "[5/8] 验证发布目录内容..."
 $installer = Join-Path $destination "Install Enput Method.exe"

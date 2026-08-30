@@ -41,7 +41,15 @@ git remote add origin git@github.com:djabboc/EnputMethod.git
 git push -u origin main
 ```
 
-SSH Key 只用于 Git 推送。GitHub 网页上传 Release 资产不依赖 `gh` CLI 或 Token，因此本流程不要求额外登录命令。
+远程地址中的 SSH 用户名是 `git@github.com`，`@` 前**不能**带反斜杠。首次直接执行 `git push` 时，如果 Git 提示 `main has no upstream branch`，使用上面的 `git push -u origin main`；成功后 `main` 会跟踪 `origin/main`，以后的日常代码推送可直接使用 `git push`。
+
+SSH Key 只用于 Git 推送。电脑有多个 SSH 私钥且 GitHub 未选择正确密钥时，可在本仓库设置指定身份：
+
+```powershell
+git config core.sshCommand "ssh -i ~/.ssh/<私钥文件名> -o IdentitiesOnly=yes"
+```
+
+`<私钥文件名>` 必须由发布者替换为本机实际私钥。不要把真实私钥路径、私钥文件或其内容写入 Git、文档或 GitHub Release。GitHub 网页上传 Release 资产不依赖 `gh` CLI 或 Token，因此本流程不要求额外登录命令。
 
 ## 每次正式发布的手工步骤
 

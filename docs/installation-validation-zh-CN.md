@@ -50,7 +50,7 @@ payload\Resources\...
 ## 3. 发布包验证
 
 ```powershell
-.\scripts\publish-release.ps1 -Version 0.1.0 -Zip
+.\scripts\publish-release.ps1 -Version 0.1.0
 ```
 
 产物为 `artifacts\release\EnputMethod-0.1.0-win-x64` 和同名 ZIP。ZIP 解压后应只有这一个顶层目录，安装器和卸载器必须在它的根目录，不得再嵌套 `Release`。

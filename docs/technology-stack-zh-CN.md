@@ -162,7 +162,7 @@ WPF 的字号单位是 DIP，而配置的 `fontSize` 是 pt。Overlay 固定使�
 
 ## 10. 一站式发布与运行目录（2026-08-29）
 
-发布不要求终端用户安装 Visual Studio 或 .NET SDK。`scripts\publish-release.ps1 -Version <version> -Zip` 产出自包含的 Windows x64 ZIP；用户在解压根目录运行 WPF `Install Enput Method.exe` 或 `Uninstall Enput Method.exe`。两个启动器各自携带相邻的托管 DLL、deps 和 runtimeconfig，运行时资源位于共同的 `payload`。
+发布不要求终端用户安装 Visual Studio 或 .NET SDK。`scripts\publish-release.ps1 -Version <version>` 默认产出自包含的 Windows x64 ZIP；用户在解压根目录运行 WPF `Install Enput Method.exe` 或 `Uninstall Enput Method.exe`。两个启动器各自携带相邻的托管 DLL、deps 和 runtimeconfig，运行时资源位于共同的 `payload`。
 
 安装时需要管理员权限：原生 TSF 注册函数把 DLL 复制为 `C:\Program Files\Enput Method\EnputMethod.Tsf.<build-id>.dll` 并写入 HKLM；WPF 安装器把 Overlay 与静态资源部署到同一产品根。静态 SQLite、主题、词表、Emoji 资源和归属文件都在 `C:\Program Files\Enput Method\Resources` 或 `Overlay`，不再放入 AppData。
 

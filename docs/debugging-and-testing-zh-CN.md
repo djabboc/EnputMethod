@@ -174,7 +174,7 @@ dotnet --info
 
 ```powershell
 .\scripts\build-local-package.ps1 -Configuration Release
-.\scripts\publish-release.ps1 -Version <version> -Zip
+.\scripts\publish-release.ps1 -Version <version>
 ```
 
 前者必须通过安装器的 `--verify-package`，后者生成的 ZIP 解压后只允许有一个 `EnputMethod-<version>-win-x64` 顶层目录；安装器和卸载器必须直接位于其根目录，不能被额外的 `Release` 目录包住。验证 manifest 包含 `payload\Resources\themes\*.json`，主题误落在 Resources 根目录时会被拒绝。

@@ -76,8 +76,8 @@ C:\Program Files\Enput Method\
 # 生成完整本地调试/测试包，并做非修改性的包完整性检查
 .\scripts\build-local-package.ps1 -Configuration Release
 
-# 生成面向用户的版本化目录；-Zip 同时生成压缩包
-.\scripts\publish-release.ps1 -Version 0.1.0 -Zip
+# 生成面向用户的版本化目录和已验证压缩包（默认行为）
+.\scripts\publish-release.ps1 -Version 0.1.0
 
 # 原生候选逻辑与 WPF Overlay 自动化
 .\scripts\run-overlay-tests.ps1 -Configuration Release

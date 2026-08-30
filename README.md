@@ -73,7 +73,7 @@ Windows 可能缓存文本服务。若安装后 Enput 没有立即出现在现�
 
 界面已从输入服务中拆分。`EnputMethod.Tsf.dll` 仍是进程内 C++ TSF/COM 服务。候选和翻译窗口由已安装的 `EnputMethod.Overlay` WPF 伴随进程通过本地命名管道绘制。每个应用连接都有 `clientId` 和单调递增的 `stateId`；过期动作不能选择新候选页，只有前景编辑器的 Overlay 窗口保持可见。
 
-翻译数据中，ECDICT 条目可能含有字面量 `\\n` 或 `\\r\\n`；TSF 服务会在发布 WPF 视图前将其标准化为真实换行。安装新 TSF DLL 后，测试前需关闭并重新打开目标编辑器：已打开进程会继续映射旧 DLL。在旧 JSON 数据型 DLL 已迁移其数据文件后运行它，会使 F2、F3 看起来失效。可运行 `scripts\run-regression.ps1 -Configuration Release`，完成发布构建、原生测试、Overlay 协议/前景测试和已安装文件验证。剩余真实应用验收矩阵维护在 `docs/development-issue-ledger-zh-CN.md`。
+翻译数据中，ECDICT 条目可能含有字面量 `\\n` 或 `\\r\\n`；TSF 服务会在发布 WPF 视图前将其标准化为真实换行。安装新 TSF DLL 后，测试前需关闭并重新打开目标编辑器：已打开进程会继续映射旧 DLL。在旧 JSON 数据型 DLL 已迁移其数据文件后运行它，会使 F2、F3 看起来失效。可运行 `scripts\run-regression.ps1 -Configuration Release`，完成发布构建、原生测试、Overlay 协议/前景测试和已安装文件验证。正式交付使用 `scripts\publish-release.ps1 -Version <version>`；它默认创建 ZIP，并对该 ZIP 解压后的实际安装包再做完整性验证。剩余真实应用验收矩阵维护在 `docs/development-issue-ledger-zh-CN.md`。
 
 ## 活动组合输入的外观
 

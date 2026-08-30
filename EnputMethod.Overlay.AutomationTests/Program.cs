@@ -157,25 +157,30 @@ internal static class Program
     }
     private static void VerifyTranslationWindowUsesRichTextAndConfiguredSize()
     {
-        var overlay = new TranslationOverlayWindow();
+        const string translationText = "noun\nen: n. a dental appliance\nzh-CN: 牙套\nExample: She wears braces.";
+        string? copiedText = null;
+        var overlay = new TranslationOverlayWindow(text => copiedText = text);
         try
         {
             overlay.ShowTranslation("translation-test", new TranslationView
             {
                 Title = "braces",
-                Content = "noun\nen: n. a dental appliance\nzh-CN: 牙套\nExample: She wears braces.",
+                Content = translationText,
                 Theme = new OverlayTheme { FontSize = 18, TranslationWindowWidth = 460, TranslationWindowHeight = 340 },
             }, null);
             Assert(overlay.Width == 460 && overlay.Height == 340, "Translation window must use the configured persistent dimensions.");
             var frame = (Border)overlay.Content;
             var panel = (Grid)frame.Child;
+            var header = (Grid)panel.Children[0];
             var content = (RichTextBox)panel.Children[1];
             Assert(content.Document.Blocks.Count == 4, "Translation content must be rendered as structured FlowDocument paragraphs.");
             Assert(content.Document.Blocks.OfType<Paragraph>().Any(paragraph => paragraph.Inlines.OfType<Run>().Any(run => run.Text == "zh-CN: ")), "Language labels must remain semantic rich-text runs.");
-            Assert(content.IsReadOnly && content.IsDocumentEnabled && content.IsHitTestVisible && content.ContextMenu is not null, "Translation rich text must remain mouse-selectable and expose a copy command.");
+            Assert(header.ColumnDefinitions.Count == 2 && header.Children[1] is Border { Child: TextBlock { Text: "Copy" } }, "Translation title bars must expose a visible Copy action.");
+            Assert(content.IsReadOnly && content.IsDocumentEnabled && content.IsHitTestVisible && !content.Focusable && content.ContextMenu is null, "Translation content must remain a non-focusable rich-text view without a selection copy route.");
             Assert(content.Resources[typeof(ScrollBar)] is Style, "Translation scrollbar styling must come from the supplied theme.");
-            content.SelectAll();
-            Assert(content.Selection.Text.Contains("牙套", StringComparison.Ordinal), "Translation selection must include rendered rich text.");
+            var copyAction = (Border)header.Children[1];
+            copyAction.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = Mouse.MouseUpEvent });
+            Assert(copiedText == translationText, "The Copy action must copy the complete translation text without changing focus.");
             overlay.Width = 520;
             overlay.Height = 360;
             overlay.ShowTranslation("translation-test", new TranslationView

@@ -30,29 +30,46 @@ internal sealed class TranslationOverlayWindow : Window
     private const int HtBottomLeft = 16;
     private const int HtBottomRight = 17;
     private const int ResizeBorderPixels = 8;
-    private readonly TextBlock _title = new() { FontWeight = FontWeights.SemiBold };
+    private readonly TextBlock _title = new()
+    {
+        FontWeight = FontWeights.SemiBold,
+        VerticalAlignment = VerticalAlignment.Center,
+        TextTrimming = TextTrimming.CharacterEllipsis,
+    };
+    private readonly TextBlock _copyLabel = new()
+    {
+        Text = "Copy",
+        VerticalAlignment = VerticalAlignment.Center,
+    };
     private readonly RichTextBox _content = new()
     {
         IsReadOnly = true,
         IsDocumentEnabled = true,
-        Focusable = true,
+        Focusable = false,
+        IsTabStop = false,
         BorderThickness = new Thickness(0),
         Background = Brushes.Transparent,
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
         Padding = new Thickness(0),
     };
+    private readonly Border _copyButton;
     private readonly Border _frame;
     private readonly Grid _panel;
     private readonly DispatcherTimer _saveSizeTimer;
+    private readonly Action<string> _clipboardWriter;
     private string? _clientId;
+    private string _copyText = string.Empty;
     private long _ownerWindow;
     private bool _hasTranslation;
     private bool _applyingTheme;
     private bool _hasUserSized;
+    private Brush _copyButtonBackground = Brushes.DimGray;
+    private Brush _copyButtonHoverBackground = Brushes.SteelBlue;
 
-    public TranslationOverlayWindow()
+    public TranslationOverlayWindow(Action<string>? clipboardWriter = null)
     {
+        _clipboardWriter = clipboardWriter ?? Clipboard.SetText;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
         Focusable = false;
@@ -69,16 +86,36 @@ internal sealed class TranslationOverlayWindow : Window
         Topmost = true;
         WindowStyle = WindowStyle.None;
         _content.Document = new FlowDocument { PagePadding = new Thickness(0) };
-        var copy = new MenuItem { Header = "Copy" };
-        copy.Click += (_, _) => CopySelection();
-        _content.ContextMenu = new ContextMenu();
-        _content.ContextMenu.Items.Add(copy);
+        _copyButton = new Border
+        {
+            Background = _copyButtonBackground,
+            BorderBrush = Brushes.Gray,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(3),
+            Cursor = Cursors.Hand,
+            Margin = new Thickness(10, 0, 0, 0),
+            Padding = new Thickness(7, 2, 7, 2),
+            ToolTip = "Copy translation",
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = _copyLabel,
+        };
+        _copyButton.MouseEnter += (_, _) => _copyButton.Background = _copyButtonHoverBackground;
+        _copyButton.MouseLeave += (_, _) => _copyButton.Background = _copyButtonBackground;
+        _copyButton.MouseLeftButtonUp += (_, _) => CopyTranslation();
+
+        var header = new Grid();
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(_title, 0);
+        Grid.SetColumn(_copyButton, 1);
+        header.Children.Add(_title);
+        header.Children.Add(_copyButton);
         _panel = new Grid();
         _panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(_title, 0);
+        Grid.SetRow(header, 0);
         Grid.SetRow(_content, 1);
-        _panel.Children.Add(_title);
+        _panel.Children.Add(header);
         _panel.Children.Add(_content);
         _frame = new Border
         {
@@ -103,6 +140,7 @@ internal sealed class TranslationOverlayWindow : Window
     public void ShowTranslation(string clientId, TranslationView view, Rect? candidateBounds)
     {
         _clientId = clientId;
+        _copyText = view.Content;
         _ownerWindow = view.OwnerWindow;
         _hasTranslation = true;
         OverlayTheme theme = view.Theme is { IsValid: true } configured ? configured : new OverlayTheme();
@@ -121,6 +159,7 @@ internal sealed class TranslationOverlayWindow : Window
     {
         if (!string.Equals(_clientId, clientId, StringComparison.Ordinal)) return;
         _hasTranslation = false;
+        _copyText = string.Empty;
         Hide();
     }
 
@@ -153,6 +192,13 @@ internal sealed class TranslationOverlayWindow : Window
             _title.FontFamily = new FontFamily(theme.FontFamily);
             _title.FontSize = theme.WpfFontSize;
             _title.Foreground = Brush(theme.TranslationTitleForeground, Brushes.White);
+            _copyLabel.FontFamily = new FontFamily(theme.FontFamily);
+            _copyLabel.FontSize = Math.Max(12, theme.WpfFontSize - 2);
+            _copyLabel.Foreground = Brush(theme.TranslationTitleForeground, Brushes.White);
+            _copyButtonBackground = Brush(theme.TranslationScrollbarTrack, Brushes.DimGray);
+            _copyButtonHoverBackground = Brush(theme.SelectedBackground, Brushes.SteelBlue);
+            _copyButton.Background = _copyButtonBackground;
+            _copyButton.BorderBrush = Brush(theme.TranslationBorder, Brushes.Gray);
             _content.FontFamily = new FontFamily(theme.FontFamily);
             _content.FontSize = theme.WpfFontSize;
             _content.Foreground = Brush(theme.TranslationForeground, Brushes.WhiteSmoke);
@@ -245,10 +291,17 @@ internal sealed class TranslationOverlayWindow : Window
         return parts.All(part => part.TrimEnd('.').ToLowerInvariant() is "n" or "noun" or "v" or "verb" or "vt" or "vi" or "adj" or "adjective" or "adv" or "adverb" or "pron" or "pronoun" or "prep" or "preposition" or "conj" or "conjunction" or "interj" or "interjection");
     }
 
-    private void CopySelection()
+    internal void CopyTranslation()
     {
-        string selected = _content.Selection.Text;
-        if (!string.IsNullOrWhiteSpace(selected)) Clipboard.SetText(selected);
+        if (string.IsNullOrWhiteSpace(_copyText)) return;
+        try
+        {
+            _clipboardWriter(_copyText);
+        }
+        catch (ExternalException)
+        {
+            // Another process can temporarily own the Windows clipboard.
+        }
     }
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs eventArgs)

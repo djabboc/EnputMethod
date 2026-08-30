@@ -36,7 +36,6 @@ internal sealed class TranslationOverlayWindow : Window
         IsReadOnly = true,
         IsDocumentEnabled = true,
         Focusable = true,
-        IsInactiveSelectionHighlightEnabled = true,
         BorderThickness = new Thickness(0),
         Background = Brushes.Transparent,
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -51,8 +50,6 @@ internal sealed class TranslationOverlayWindow : Window
     private bool _hasTranslation;
     private bool _applyingTheme;
     private bool _hasUserSized;
-    private TextPointer? _selectionAnchor;
-    private bool _isPointerSelecting;
 
     public TranslationOverlayWindow()
     {
@@ -76,8 +73,6 @@ internal sealed class TranslationOverlayWindow : Window
         copy.Click += (_, _) => CopySelection();
         _content.ContextMenu = new ContextMenu();
         _content.ContextMenu.Items.Add(copy);
-        _content.ContextMenu.Opened += (_, _) => copy.IsEnabled = !string.IsNullOrWhiteSpace(_content.Selection.Text);
-        _content.LostMouseCapture += (_, _) => EndPointerSelection();
         _panel = new Grid();
         _panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -95,9 +90,6 @@ internal sealed class TranslationOverlayWindow : Window
             Child = _panel,
         };
         Content = _frame;
-        AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(OnPreviewMouseDown), true);
-        AddHandler(Mouse.PreviewMouseMoveEvent, new MouseEventHandler(OnPreviewMouseMove), true);
-        AddHandler(Mouse.PreviewMouseUpEvent, new MouseButtonEventHandler(OnPreviewMouseUp), true);
         _saveSizeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _saveSizeTimer.Tick += (_, _) =>
         {
@@ -129,7 +121,6 @@ internal sealed class TranslationOverlayWindow : Window
     {
         if (!string.Equals(_clientId, clientId, StringComparison.Ordinal)) return;
         _hasTranslation = false;
-        EndPointerSelection();
         Hide();
     }
 
@@ -179,7 +170,6 @@ internal sealed class TranslationOverlayWindow : Window
 
     private void RenderContent(string content, OverlayTheme theme)
     {
-        EndPointerSelection();
         var document = new FlowDocument
         {
             FontFamily = new FontFamily(theme.FontFamily),
@@ -234,93 +224,6 @@ internal sealed class TranslationOverlayWindow : Window
         _content.Document = document;
     }
 
-    // Translation overlays must keep the editor's TSF focus. WPF's TextEditor cannot
-    // select text in a no-activate window, so pointer selection is maintained here.
-    private void OnPreviewMouseDown(object sender, MouseButtonEventArgs eventArgs)
-    {
-        if (!IsTranslationTextInput(eventArgs.OriginalSource)) return;
-
-        if (eventArgs.ChangedButton == MouseButton.Left)
-        {
-            TextPointer? pointer = _content.GetPositionFromPoint(eventArgs.GetPosition(_content), true);
-            if (pointer is null) return;
-            _selectionAnchor = pointer;
-            _isPointerSelecting = true;
-            _content.Selection.Select(pointer, pointer);
-            if (!_content.CaptureMouse())
-            {
-                EndPointerSelection();
-                return;
-            }
-            eventArgs.Handled = true;
-        }
-        else if (eventArgs.ChangedButton == MouseButton.Right)
-        {
-            eventArgs.Handled = true;
-        }
-    }
-
-    private void OnPreviewMouseMove(object sender, MouseEventArgs eventArgs)
-    {
-        if (!_isPointerSelecting) return;
-        if (eventArgs.LeftButton != MouseButtonState.Pressed)
-        {
-            EndPointerSelection();
-            return;
-        }
-        TextPointer? pointer = _content.GetPositionFromPoint(eventArgs.GetPosition(_content), true);
-        if (pointer is not null && _selectionAnchor is not null)
-            _content.Selection.Select(_selectionAnchor, pointer);
-        eventArgs.Handled = true;
-    }
-
-    private void OnPreviewMouseUp(object sender, MouseButtonEventArgs eventArgs)
-    {
-        if (eventArgs.ChangedButton == MouseButton.Left && _isPointerSelecting)
-        {
-            TextPointer? pointer = _content.GetPositionFromPoint(eventArgs.GetPosition(_content), true);
-            if (pointer is not null && _selectionAnchor is not null)
-                _content.Selection.Select(_selectionAnchor, pointer);
-            EndPointerSelection();
-            eventArgs.Handled = true;
-            return;
-        }
-
-        if (eventArgs.ChangedButton != MouseButton.Right || !IsTranslationTextInput(eventArgs.OriginalSource)) return;
-        if (_content.ContextMenu is ContextMenu menu)
-        {
-            menu.PlacementTarget = _content;
-            menu.Placement = PlacementMode.MousePoint;
-            menu.IsOpen = true;
-        }
-        eventArgs.Handled = true;
-    }
-
-    private void EndPointerSelection()
-    {
-        _isPointerSelecting = false;
-        _selectionAnchor = null;
-        if (_content.IsMouseCaptured) _content.ReleaseMouseCapture();
-    }
-
-    private bool IsTranslationTextInput(object? source)
-    {
-        for (DependencyObject? current = source as DependencyObject; current is not null; current = ParentOf(current))
-        {
-            if (current is ScrollBar) return false;
-            if (ReferenceEquals(current, _content)) return true;
-        }
-        return false;
-    }
-
-    private static DependencyObject? ParentOf(DependencyObject current)
-    {
-        DependencyObject? visualParent = current is Visual visual
-            ? VisualTreeHelper.GetParent(visual)
-            : null;
-        return visualParent ?? LogicalTreeHelper.GetParent(current);
-    }
-
     private static bool TrySplitLanguageLabel(string line, out string? label, out string? meaning)
     {
         label = null;
@@ -345,15 +248,7 @@ internal sealed class TranslationOverlayWindow : Window
     private void CopySelection()
     {
         string selected = _content.Selection.Text;
-        if (string.IsNullOrWhiteSpace(selected)) return;
-        try
-        {
-            Clipboard.SetText(selected);
-        }
-        catch (ExternalException)
-        {
-            // Another process can briefly lock the shared Windows clipboard.
-        }
+        if (!string.IsNullOrWhiteSpace(selected)) Clipboard.SetText(selected);
     }
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs eventArgs)

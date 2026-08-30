@@ -73,14 +73,17 @@ function Test-ReleaseArchive {
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $tagName = "v$Version"
+Write-Host "[1/7] 检查分支、工作区、版本和敏感内容..."
 Test-ReleaseSource -TagName $tagName
 
+Write-Host "[2/7] 构建 Release 安装器、卸载器、TSF 和 Overlay..."
 & (Join-Path $PSScriptRoot "build-local-package.ps1") -Configuration Release
 if (-not $?) { throw "Release local package build failed." }
 
 $name = "EnputMethod-$Version-win-x64"
 $destination = Join-Path $projectRoot "artifacts\release\$name"
 if (Test-Path -LiteralPath $destination) { throw "Release directory already exists and will not be overwritten: $destination" }
+Write-Host "[3/7] 组装版本化发布目录..."
 New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot "artifacts\local\Release") -Destination $destination -Recurse
 
@@ -100,19 +103,23 @@ $readmeLines = @(
 $readme = [string]::Join([Environment]::NewLine, [string[]]$readmeLines)
 Set-Content -LiteralPath (Join-Path $destination "README.txt") -Value $readme -Encoding utf8NoBOM
 
+Write-Host "[4/7] 验证发布目录内容..."
 $installer = Join-Path $destination "Install Enput Method.exe"
 $verification = Start-Process -FilePath $installer -ArgumentList "--verify-package" -WorkingDirectory $destination -Wait -PassThru
 if ($verification.ExitCode -ne 0) { throw "Release package verification failed with exit code $($verification.ExitCode)." }
 
 $zipPath = Join-Path $projectRoot "artifacts\release\$name.zip"
 if (Test-Path -LiteralPath $zipPath) { throw "Release archive already exists and will not be overwritten: $zipPath" }
+Write-Host "[5/7] 创建 ZIP 并验证解压后的实际安装包..."
 Compress-Archive -LiteralPath $destination -DestinationPath $zipPath
 Test-ReleaseArchive -ArchivePath $zipPath -ExpectedRootName $name
 
+Write-Host "[6/7] 生成 SHA-256 校验文件..."
 $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $checksumPath = "$zipPath.sha256"
 Set-Content -LiteralPath $checksumPath -Value "$hash *$([System.IO.Path]::GetFileName($zipPath))" -Encoding ascii
 
+Write-Host "[7/7] 创建本地 Git tag $tagName..."
 & git -C $projectRoot tag -a $tagName -m "Enput Method $Version"
 if ($LASTEXITCODE -ne 0) { throw "Failed to create local Git tag: $tagName" }
 

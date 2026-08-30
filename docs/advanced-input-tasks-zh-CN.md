@@ -6,7 +6,7 @@
 
 ## 数据边界
 
-翻译、词性、例句与短语属于内容数据，不应由程序猜测或伪造权威性。程序将提供可追溯的 JSON 词典格式、来源字段和内置演示数据。要发布大规模词典前，必须导入已确认授权的来源数据，并保留许可证和出处。
+翻译、词性、例句与短语属于内容数据，不应由程序猜测或伪造权威性。程序应提供可追溯的数据格式、来源字段和内置演示数据。发布大规模词典前，必须导入已确认授权的来源数据，并保留许可证和出处。
 
 ## 任务 9：候选排序和大小写
 
@@ -15,10 +15,10 @@
 - Caps Lock 开启时生成全大写候选，并在候选窗显示大写模式标记。
 - 验收：`heal`、`I`、`Ent` 和 Caps Lock 场景的首项与大小写正确。
 
-## Task 9 verification record
+## 任务 9 验证记录
 
-- Completed: full exact matches are retained and sorted before prefix matches; candidate casing observes `preserveCase`, with a CAPS marker when Caps Lock is on.
-- Static verification: Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors.
+- 已完成：完整匹配会保留并排在前缀匹配前；候选大小写遵循 `preserveCase`，Caps Lock 开启时显示 `CAPS` 标记。
+- 静态验证：2026-08-27 的 `Release|x64` 构建通过，0 个警告、0 个错误。
 
 ## 任务 10：鼠标和位置
 
@@ -27,78 +27,77 @@
 - 新增 `avoidScreenEdges` 配置，在靠近屏幕边缘时自动选择可见位置。
 - 验收：鼠标选择、鼠标翻页及边缘位置均不抢焦点且文本正确。
 
-## Task 10 verification record
+## 任务 10 验证记录
 
-- Completed: mouse clicks select a candidate or activate the previous/next page controls through a TSF edit session, without activating the candidate window.
-- Completed: `avoidScreenEdges` defaults to `true` and clamps the window to the active monitor work area, preferring placement above the text when there is no room below.
-- Static verification: Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors.
+- 已完成：鼠标点击可通过 TSF 编辑会话提交候选，或触发上一页/下一页控件，不会激活候选窗口。
+- 已完成：`avoidScreenEdges` 默认 `true`，窗口会限制在活动显示器工作区内；下方没有空间时优先显示在文本上方。
+- 静态验证：2026-08-27 的 `Release|x64` 构建通过，0 个警告、0 个错误。
 
 ## 任务 11：连续联想和短语词典
 
 - 选择一个候选后保留候选窗，并基于已提交词显示下一个建议。
 - 支持词组、短句和固定搭配；候选提交以短语为单位。
-- 词典迁移为 JSON，支持词条、短语、排序和下一词关联。
+- 早期设计曾将词典迁移为 JSON；当前实现已迁移为 SQLite，此处只保留历史任务背景。
 - 验收：输入并选择 `hello` 后显示关联建议；选择短语得到完整短语文本。
 
-## Task 11 verification record
+## 任务 11 验证记录
 
-- Completed: `suggestions.json` supports ordered entries, phrase candidates, and next-word associations while keeping the existing `dictionary.txt` compatible.
-- Completed: choosing a candidate (or committing a word with Space) ends the active composition, then creates a detached follow-up suggestion state at the caret only when an association exists, so the next suggestions remain visible without extending the committed text.
-- Completed: Escape or either Shift dismisses a detached follow-up suggestion without changing the already committed word; mouse dismiss uses the same no-text-write path.
-- Static verification: Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors.
+- 已完成：早期 `suggestions.json` 支持有序词条、短语候选和下一词关联，同时与 `dictionary.txt` 兼容；当前正式词库已改为 SQLite。
+- 已完成：选择候选或按空格提交单词会结束活动组合输入；仅在存在关联时，于光标位置创建独立的后续建议状态，因此后续建议可见但不会延长已提交文本。
+- 已完成：Escape 或任一 Shift 可关闭独立后续建议而不改变已提交单词；鼠标关闭采用同一条不写入文本的路径。
+- 静态验证：2026-08-27 的 `Release|x64` 构建通过，0 个警告、0 个错误。
 
 ## 任务 12：Emoji 模式
 
-- 在 `shortcut.json` 中新增 emoji 模式切换动作。
-- emoji 模式将关键词映射为 emoji 候选，例如 `smile` 显示笑脸。
+- 在 `shortcut.json` 中新增 Emoji 模式切换动作。
+- Emoji 模式将关键词映射为 Emoji 候选，例如 `smile` 显示笑脸。
 - 验收：模式切换、关键词候选、选择提交和退出行为正确。
 
-## Task 12 verification record
+## 任务 12 验证记录
 
-- Completed: `toggleEmojiMode` is a configurable shortcut with the default `F2`; the candidate window shows an `EMOJI` mode marker.
-- Completed: `emoji.json` maps editable keyword arrays to Unicode emoji candidates; the default `smile` keyword returns a grinning face.
-- Static verification: Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors.
+- 已完成：`toggleEmojiMode` 是可配置动作，默认快捷键为 `F2`；候选框显示 `EMOJI` 模式标记。
+- 已完成：早期 `emoji.json` 把可编辑关键词数组映射为 Unicode Emoji 候选，默认 `smile` 返回露齿笑脸；当前正式数据已进入 SQLite。
+- 静态验证：2026-08-27 的 `Release|x64` 构建通过，0 个警告、0 个错误。
 
 ## 任务 13：翻译模式
 
 - 在 `shortcut.json` 中新增翻译窗口切换动作。
-- 新增非激活翻译窗口，显示当前高亮词/短语的词性、多语言释义、例句和来源。
-- JSON 词典支持每个词条的多语言映射、词性、例句与来源。
+- 新增不抢焦点的翻译窗口，显示当前高亮词/短语的词性、多语言释义、例句和来源。
+- 早期 JSON 词典支持每个词条的多语言映射、词性、例句与来源；当前正式翻译数据已迁移到 SQLite。
 - 验收：高亮候选变化时翻译窗口同步更新；窗口可由快捷键开关。
 
-## Task 13 verification record
+## 任务 13 验证记录
 
-- Completed: `toggleTranslationWindow` is configurable with the default `F3`; a separate non-activating window tracks the highlighted candidate.
-- Completed: `translations.json` supports part of speech, multiple language mappings, example text, and a source field. Bundled entries are explicitly demonstration data, not an authoritative corpus.
-- Static verification: Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors.
+- 已完成：`toggleTranslationWindow` 可配置，默认快捷键为 `F3`；独立的不抢焦点窗口会跟随当前高亮候选。
+- 已完成：早期 `translations.json` 支持词性、多语言映射、例句和来源字段；内置条目明确为演示数据，不是权威语料库。当前正式词库已改用 SQLite。
+- 静态验证：2026-08-27 的 `Release|x64` 构建通过，0 个警告、0 个错误。
 
 ## 任务 14：发布准备
 
 - 更新 README、架构、配置说明和安装验证矩阵。
-- 全量 Release 构建通过，默认配置和数据文件均进入安装器输出。
+- 完整发布构建通过，默认配置和数据文件均进入安装器输出。
 - 所有实现完成后等待用户进行安装后手工测试。
 
-## Task 14 verification record
+## 任务 14 验证记录
 
-- Completed: README documents candidate priority, mouse interaction, continuous suggestions, case and edge settings, emoji mode, translation mode, shortcuts, and all installed data files.
-- Completed: installer output contains `suggestions.json`, `emoji.json`, and `translations.json` alongside the existing configuration and dictionary files.
-- Static verification: final Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors. Manual installation testing is intentionally deferred until all tasks are complete.
+- 已完成：README 记录候选优先级、鼠标交互、连续联想、大小写和边缘设置、Emoji 模式、翻译模式、快捷键及全部安装数据文件。
+- 已完成：早期安装器输出含有 `suggestions.json`、`emoji.json`、`translations.json` 以及原有配置和词典文件；当前发布包改为部署 SQLite 词库。
+- 静态验证：2026-08-27 的最终 `Release|x64` 构建通过，0 个警告、0 个错误。按当时计划，全部任务完成后才进行安装后人工测试。
 
-## Post-release correction: candidate lookup performance
+## 发布后修正：候选查询性能
 
-- Cause: duplicate detection added for phrase integration used a linear scan for every matching dictionary word, which made short prefixes grow quadratically against the large word list.
-- Correction: both regular and associated candidate paths use case-insensitive hash sets for duplicate detection.
-- Static verification: Release|x64 build passed on 2026-08-27 with 0 warnings and 0 errors.
+- 原因：短语集成时新增的重复检测，会对每个匹配词典词执行线性扫描；短前缀面对大型词表时，复杂度会增长为平方级。
+- 修正：普通候选和关联候选路径均使用不区分大小写的哈希集合去重。
+- 静态验证：2026-08-27 的 `Release|x64` 构建通过，0 个警告、0 个错误。
 
-## Pending manual verification: full translation dictionary
+## 待人工验证：完整翻译词典
 
-- Change: commit `5983741` adds an installer-managed ECDICT download and a file-backed lookup path for 770,000+ English-to-Chinese entries.
-- Source and license: ECDICT 1.0.28 under the MIT License; see `docs/dictionary-sources-zh-CN.md`.
-- Current status: the small installed JSON dictionary and window placement are verified. The local full dictionary has been generated successfully and contains the non-demo entry `abandon`; the first-install UI flow and non-demo window display remain pending consolidated manual verification.
-- Follow-up test: after installation completes with network access, enter a non-demo word such as `abandon`, open translation with `F3`, and verify English definition, Chinese meaning, and part of speech.
+- 变更：提交 `5983741` 曾增加由安装器管理的 ECDICT 下载，以及对 77 万余条英汉词条的文件查询路径。
+- 来源和许可证：ECDICT 1.0.28 采用 MIT License；参见 `docs/dictionary-sources-zh-CN.md`。
+- 当时状态：已验证小型安装 JSON 词典和窗口位置；本地完整词典已成功生成，包含非演示词条 `abandon`，首次安装界面流程和非演示词条窗口显示仍等待统一人工验证。
+- 后续测试：有网络时完成安装后，输入如 `abandon` 的非演示词，按 `F3` 打开翻译，确认英文释义、中文释义和词性。
 
-All advanced-feature defects, deferred work, and consolidated acceptance cases are also tracked in `docs/development-issue-ledger-zh-CN.md`.
-
+所有高级功能缺陷、延期工作和统一验收用例也记录在 `docs/development-issue-ledger-zh-CN.md`。
 
 ## 2026-08-29 后续修复
 

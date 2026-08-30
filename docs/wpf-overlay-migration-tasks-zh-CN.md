@@ -10,19 +10,19 @@
 - C++ Host 独占 `ITfTextInputProcessorEx`、composition、`ITfEditSession`、键盘拦截、caret 查询和文本提交。
 - WPF 不加载进目标应用，不实现 COM host，不直接操作 `ITfContext` 或目标应用文本。
 - WPF Overlay 通过本地 IPC 接收不可变视图状态，只回传用户意图（选择、翻页、关闭）。
-- Overlay 失联、超时或崩溃时，C++ Host 必须保持 TSF composition 和按键路径可用；本项目采用 WPF-only 候选与翻译 UI，不回退显示原生候选窗。
+- Overlay 失联、超时或崩溃时，C++ 宿主必须保持 TSF 组合输入（composition）和按键路径可用；本项目仅使用 WPF 候选与翻译界面，不回退显示原生候选窗。
 
 ## IPC 契约
 
 传输使用当前用户会话内的命名管道。每个 Host 连接使用稳定 `clientId`，每个会话状态含递增 `stateId`，避免多应用之间串线或迟到的鼠标动作提交已经过期的候选。
 
-### Host -> Overlay
+### 宿主 -> Overlay
 
 - `showCandidates`：状态 ID、屏幕坐标、候选文本、当前页、总页数、高亮项、布局、主题和模式标记。
 - `showTranslation`：状态 ID、候选窗边界和翻译视图模型。
 - `hide`：状态 ID 和窗口种类。
 
-### Overlay -> Host
+### Overlay -> 宿主
 
 - `selectCandidate`：状态 ID 与候选索引。
 - `previousPage`、`nextPage`：状态 ID。
@@ -46,7 +46,7 @@ Host 只接受与其当前状态 ID 相同的动作，并在收到有效动作�
 
 当前进度：候选和翻译窗口、`WS_EX_NOACTIVATE`、候选点击及翻页动作回传、基础翻译滚动、主题/字体/透明度映射和高 DPI 坐标换算已实现；解决方案包含独立的 `EnputMethod.Overlay.TestHost` 管道测试宿主。Emoji 专用绘制和人工焦点验收仍待完成。
 
-## 任务 3：Native Host 连接与 WPF-only 行为
+## 任务 3：原生宿主连接与仅 WPF 界面行为
 
 - [x] C++ Host 在需要显示候选时发布视图状态；Overlay 动作转换为已有候选窗动作。
 - [x] 安装器构建、打包并部署 Overlay 运行时文件到 `Program Files\Enput Method\Overlay`。
@@ -72,12 +72,12 @@ Host 只接受与其当前状态 ID 相同的动作，并在收到有效动作�
 先完成任务 1 的契约与独立可运行 Overlay，再接入 Native Host。不得先删除或禁用原生候选窗。
 
 
-## 2026-08-29 Progress Update
+## 2026-08-29 进度更新
 
-- [x] Overlay UI is the only candidate and translation renderer in installed builds; the native windows are no longer a visual fallback.
-- [x] A client/session model isolates windows and actions per host, suppresses background-host windows, rejects stale `stateId` actions, and hides surfaces after empty candidate updates or focus loss.
-- [x] Installation, Overlay deployment, protocol, multi-host routing, foreground arbitration, color Emoji assets, pager edge placement, and 18pt-to-WPF font conversion have automated coverage.
-- [x] The installed Overlay now receives the native theme and 18pt configuration; it handles literal escaped translation line breaks.
-- [~] Real-application verification remains required for Notepad, EmEditor, VS Code, browsers, and ChatGPT. Automated tests cannot assert that Windows selected Enput rather than another active IME.
+- [x] 已安装构建中，Overlay 是唯一的候选和翻译渲染界面；原生窗口不再作为视觉回退。
+- [x] 客户端/会话模型按宿主隔离窗口和动作，抑制后台宿主窗口，拒绝过期 `stateId` 动作，并在候选为空或失焦后隐藏界面。
+- [x] 安装、Overlay 部署、协议、多宿主路由、前景仲裁、彩色 Emoji 资源、翻页器边缘布局以及 18pt 到 WPF 字号换算均已有自动化覆盖。
+- [x] 已安装的 Overlay 现可接收原生主题和 18pt 配置，并能处理翻译文本中的字面量转义换行。
+- [~] 仍需在记事本、EmEditor、VS Code、浏览器和 ChatGPT 中进行真实应用验证。自动测试无法断言 Windows 选择的是 Enput，而不是另一个活动输入法。
 
-The original task checkboxes above are historical. The consolidated current manual matrix is `development-issue-ledger-zh-CN.md`.
+上方原始任务勾选仅作历史记录。当前统一的人工验收矩阵见 `development-issue-ledger-zh-CN.md`。

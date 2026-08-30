@@ -76,12 +76,12 @@ there
 输入至少三个字符后，普通候选、短语和 Emoji 关键字支持保序但不连续的匹配：`hpy` 可找到 `happy`，`pignose` 可找到 `pig_nose`，`empirestate` 可找到 `empire state building`。精确匹配、短语续写和前缀匹配始终优先于这类近似结果。Emoji 模式也支持配置的 `-`、`+` 和小键盘加减键翻页。
 
 
-## 2026-08-29 UI and Data Corrections
+## 2026-08-29 界面与数据修正
 
-- The default `fontSize` is now `18` points. A WPF `FontSize` is measured in device-independent pixels, not points; the Overlay therefore renders the configured value at `fontSize * 96 / 72`. Do not set 24 merely to obtain an 18pt visual size.
-- Emoji candidates use installed Twemoji color assets and an expanded catalog. The installer merges the supplied keyword and priority updates without replacing user-added entries. The C++ JSON reader now combines escaped UTF-16 surrogate pairs, so an installed entry such as `"emoji":"\\uD83D\\uDD25"` is read as `🔥`.
-- Full ECDICT translations may store line breaks as literal `\\n` or `\\r\\n`. The input service now converts those markers to real line breaks before the WPF translation window displays them. `block` is a regression example.
-- Candidate pager placement is a three-region layout: previous button at the left frame edge, page text centered in available space, next button at the right frame edge. Its hover state is enabled only when movement is available.
+- 默认 `fontSize` 现在为 `18` 点。WPF 的 `FontSize` 使用设备无关像素而非点数，因此 Overlay 会按 `fontSize * 96 / 72` 渲染配置值。不要为得到 18pt 的视觉大小而把值写成 24。
+- Emoji 候选使用已安装的 Twemoji 彩色资源和扩充目录。安装器会合并提供的关键词和优先级更新，不替换用户新增词条。C++ JSON 读取器现会合并转义的 UTF-16 代理对，因此已安装词条如 `"emoji":"\\uD83D\\uDD25"` 会读取为 `🔥`。
+- 完整 ECDICT 翻译可能把换行保存为字面量 `\\n` 或 `\\r\\n`。输入服务会在 WPF 翻译窗口显示前将其转换为真实换行；`block` 是回归用例。
+- 候选翻页器采用三区布局：上一页按钮固定在左侧边缘，页码文字在可用空间中居中，下一页按钮固定在右侧边缘。只有确实可以翻动时才启用悬停状态。
 
 ## 2026-08-29 翻译窗口与数据修正
 

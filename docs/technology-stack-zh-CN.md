@@ -39,7 +39,7 @@
 
 ## 3. 输入法核心：TSF 与 COM
 
-`EnputMethod.Tsf.dll` 是 in-process COM 服务器，主要实现：
+`EnputMethod.Tsf.dll` 是进程内（in-process）COM 服务器，主要实现：
 
 - `ITfTextInputProcessorEx`：激活、停用和线程管理器对接。
 - `ITfKeyEventSink`：处理按键、决定是否吃掉按键或透传给应用。

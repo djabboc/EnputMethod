@@ -97,7 +97,7 @@
 | I-38 | 翻译窗尺寸不能由用户调整，文本布局不适合词性、语言和例句。 | 原实现是 `TextBlock + ScrollViewer` 且 `SizeToContent`。改为只读 `RichTextBox + FlowDocument`、四边/四角无激活命中测试、`config.json` 初始尺寸和 250ms 防抖写回。 | WPF 自动化通过；待真实鼠标缩放与持久化验收。 |
 | I-39 | `saw -> 🪚` 在 VS Code 变方框，Saint Helena Flag 视觉上被误认作瑞士。 | 服务端提交 `U+1FA9A` 正确；方框由目标编辑器字体缺字决定。Saint Helena 正确为 `🇸🇭`（区域指示符 S/H），瑞士为 `🇨🇭`（C/H）。清理重复关键字并增加码点回归。 | 码点和安装数据测试通过；VS Code 字体兼容性需按宿主单列观察。 |
 | I-40 | SQLite 迁移后 F2 无 Emoji、F3 无翻译，普通英文候选部分可用。 | `enput.db` 已生成并删除 JSON/JSONL，但已打开的 Notepad 仍映射旧 JSON 版 TSF DLL；旧 DLL 可继续读取保留的 `dictionary.txt`，却找不到已删除的 Emoji/翻译文件。安装并注册 SQLite DLL 后关闭重开宿主即可。 | 已安装新 DLL，SQLite 自检通过；F2 `fire` 与 F3 `braces`/`hug` 待重开真实宿主后验收。 |
-| I-41 | 翻译窗使用富文本但无法鼠标选择、复制，且主题只能统一设置正文颜色。 | RichTextBox 被禁用文档交互；主题协议缺少语义 Run 的样式字段。开放只读文档交互并提供右键 Copy；将词性、标签、例句的颜色和例句背景纳入每套主题。 | Overlay 自动化覆盖结构、选择与复制菜单；手工复制验收见 `translation-candidate-polish-tasks-zh-CN.md`。 |
+| I-41 | 翻译窗需要富文本层级、可复制完整内容，并可由主题分别设置正文、词性、标签和例句样式。 | 主题协议缺少语义文本片段的样式字段；早期曾尝试在不抢焦点窗口中实现鼠标拖选和右键复制，已因焦点语义冲突而废弃。现由标题栏 `Copy` 按钮复制完整翻译。 | Overlay 自动化覆盖富文本结构、主题语义色和 Copy 成功反馈；人工验收确认按钮可复制。 |
 | I-42 | Emoji 模式中 `-`、`+` 可能未由 TSF 优先捕获，且严格前缀不能容忍省略字符或 Emoji 关键字分隔符。 | Emoji 有候选时显式捕获配置的分页键；在前缀匹配之后追加首字符一致、长度至少 3 的 SQLite 保序查询，Emoji 比较忽略 `_`、`-`、空白。 | 原生单元覆盖 `hpy`、`pignose` 和反序拒绝；Release 构建通过，实际宿主翻页待手工验收。 |
 | I-43 | `pignose` 和 `empirestate` 不能分别找到 `pig_nose` 与 Empire State Building。 | 已确认 `pig_nose` 存在于 SQLite 且 SQL 查询可命中，故需部署新 TSF；短语表缺少 Empire State Building，补为内置短语，并将无空格保序匹配扩展到 suggestions。 | 单元与 SQLite 验证覆盖；本轮安装后在真实宿主复测。 |
 | I-44 | `install-and-verify.ps1` 在 SQLite 验证实际成功后仍报告失败。 | PowerShell 对 GUI 子进程的 `&` 调用不保证填充 `$LASTEXITCODE`。改为 `Start-Process -Wait -PassThru` 并检查显式 `ExitCode`。 | 修复后重新执行系统安装与 SQLite 验证。 |
@@ -186,9 +186,10 @@
 
 对于当前已发布的修复，用户不需要在每次安装/卸载后重启；真实 UAC 链路已经验证可以立即重装。只有旧版半注册状态已经让某个已打开应用持有异常 TSF 会话时，关闭该应用或重启一次才是清除历史缓存的恢复手段，而不是新版安装流程的常规要求。
 
-## 2026-08-30: Translation-window selection regression
+## 2026-08-30：翻译窗口文本拖选方案复盘（已废弃）
 
-- Symptom: a F3 translation window could render rich text and expose Copy, but mouse drag did not create a usable selection.
-- Cause: WS_EX_NOACTIVATE preserves the editor's TSF focus, while the default RichTextBox selection route tries to acquire keyboard focus.
-- Fix: explicit preview-mouse selection maps drag coordinates to TextPointer ranges; right-click opens Copy without clearing the range; scrollbar input remains native.
-- Verification: Overlay automation uses rendered text coordinates to select text, checks that keyboard focus remains outside the overlay, and confirms the Copy menu exists.
+- 现象：F3 翻译窗口可渲染富文本并提供 Copy，但鼠标拖动无法形成可用选区。
+- 原因：`WS_EX_NOACTIVATE` 用于保持编辑器的 TSF 焦点，而默认 `RichTextBox` 选区路径会尝试获取键盘焦点；两种行为互相冲突。
+- 早期尝试：曾实现预览鼠标选区，将拖动坐标映射至 `TextPointer` 范围，并保留滚动条的原生输入。该实现使产品语义复杂且没有满足实际需求。
+- 最终决定：已删除这套鼠标拖选和右键复制实现。翻译窗口保持不抢焦点；用户通过标题栏 `Copy` 按钮复制完整翻译，成功后短暂显示 `✓ Copied`。
+- 验证：Overlay 自动化验证 Copy 动作、剪贴板写入和成功反馈的超时恢复；不再声称支持鼠标框选文本。

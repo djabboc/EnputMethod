@@ -70,7 +70,7 @@ dotnet --info
 ## 4. 安装后排查顺序
 
 1. 运行完整回归并确认退出码为零。
-2. 查看 `%LOCALAPPDATA%\Enput Method\UserData\install-verification.log`。成功记录应为 SQLite lexicon verification passed。
+2. 查看 `%LOCALAPPDATA%\Enput Method\UserData\install-verification.log`。成功记录应包含 SQLite 词库验证通过（日志原文为 `SQLite lexicon verification passed`）。
 3. 确认 `C:\Program Files\Enput Method\Resources\enput.db`、`enput.db.ready` 和 `enput.ico` 存在；验证 Enput Profile 的 `IconFile` 也在该 Resources 目录且 `IconIndex=0`。
 4. 检查 `shortcut.json` 的 `cancelComposition` 已保留预期数组；默认应为 `Escape, Shift`。
 5. 关闭所有待测宿主，再重新打开。TSF DLL 在编辑器进程内加载，已打开的应用不会自动切换到新 DLL。

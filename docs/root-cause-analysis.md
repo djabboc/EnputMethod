@@ -1,55 +1,54 @@
-# Enput Method Incident Review
+# Enput Method 事故复盘
 
-## Outcome
+## 最终结果
 
-The final verified behavior is a TSF English input method in the Chinese input-method group. It displays a floating candidate window near the text cursor, keeps the typed prefix in the application, and commits the visible candidate with `1` through `9`. Two consecutive selections were verified in Notepad without a crash.
+最终已确认的行为是：Enput 是归入中文输入法组的 TSF 英文输入法。它会在文本光标附近显示悬浮候选框，在应用程序中保留用户已输入的前缀，并可通过 `1` 至 `9` 提交当前可见候选词。已在记事本中连续两次选词验证，不会崩溃。
 
-## Why The Work Took So Long
+## 为什么耗时很长
 
-Several independent faults looked like one symptom: switching to Enput without getting usable suggestions. We initially treated this as a suggestion-logic problem and repeated installation tests before proving which DLL Windows had actually loaded. That was the main process failure.
+多个彼此独立的问题表现为同一个现象：切换到 Enput 后没有可用联想。早期错误地把它当成联想算法问题，在证明 Windows 实际加载了哪个 DLL 之前反复安装测试。这是当时最主要的排查流程失误。
 
-| Layer | Fault | Observable symptom | Correct evidence |
+| 层级 | 问题 | 可观察症状 | 有效证据 |
 | --- | --- | --- | --- |
-| Native deployment | The initial DLL used Debug C++ runtime dependencies. Normal applications could not load those dependencies. | Enput could appear in the input list but provided no behavior. | COM activation failed with `0x8007007E`; dependency inspection showed Debug CRT DLLs. |
-| COM registration | An old `HKCU\\Software\\Classes\\CLSID` Enput entry pointed to a Debug DLL. `HKCR` gives that entry precedence over the correct `HKLM` entry. | Reinstalling copied the Release DLL, but applications still loaded the Debug path. | Separate HKCU/HKLM inspection showed conflicting paths; deleting only the Enput HKCU key made COM activation succeed. |
-| Updating in-use DLLs | TSF DLLs remain mapped in text-service hosts and applications, including the Codex/ChatGPT process. Copying over the fixed filename failed. | Installer reported failure when updating an otherwise valid build. | Process-module inspection showed the old DLL loaded by ChatGPT. |
-| Candidate feature | The first implementation was inline completion, which did not match the requested candidate-window interaction. | `he` became `hello` rather than showing selectable alternatives. | Product behavior review, not a loading failure. |
-| Candidate crash | The candidate word array declared 40 elements but contained 38. A lookup with fewer than four matches reached null entries and constructed a string from a null pointer. | First selection could work; a later selection could crash Notepad or EmEditor. | Source count check found `40 != 38`; correcting it and repeating two selections removed the crash. |
+| 原生部署 | 最初的 DLL 依赖 Debug 版 C++ 运行库，普通应用无法加载这些依赖。 | Enput 出现在输入法列表中，但没有任何输入行为。 | COM 激活失败，错误为 `0x8007007E`；依赖检查显示 Debug CRT DLL。 |
+| COM 注册 | 旧的 `HKCU\\Software\\Classes\\CLSID` Enput 项指向 Debug DLL。`HKCR` 会让该项优先于正确的 `HKLM` 项。 | 重装复制了发布版 DLL，但应用仍加载 Debug 路径。 | 分别检查 HKCU/HKLM 后发现路径冲突；仅删除 Enput 的 HKCU 键即可让 COM 激活成功。 |
+| 更新正在使用的 DLL | TSF DLL 会持续映射在文本服务宿主和应用程序中，包括 Codex/ChatGPT 进程。覆盖固定文件名会失败。 | 安装器在更新本身有效的构建时报告失败。 | 进程模块检查显示旧 DLL 被 ChatGPT 加载。 |
+| 候选功能 | 第一版是行内补全，不符合要求的候选框交互。 | 输入 `he` 直接变成 `hello`，而不是显示可选候选。 | 产品行为复核，非加载故障。 |
+| 候选崩溃 | 候选词数组声明 40 个元素，实际只有 38 个。匹配数少于 4 时会访问空项，并以空指针构造字符串。 | 首次选词可能正常，之后选词可令记事本或 EmEditor 崩溃。 | 源码计数发现 `40 != 38`；修正后连续两次选词不再崩溃。 |
 
-## Corrective Changes
+## 修正措施
 
-1. Release builds link the C++ runtime statically, so the TSF DLL has no Debug runtime dependency.
-2. Installer and uninstaller explicitly load the adjacent native DLL instead of relying on DLL search order.
-3. Installation removes only the legacy Enput user-level CLSID registration before writing the machine-level registration.
-4. Deployment uses versioned DLL filenames (`EnputMethod.Tsf.8.dll` for the current release), avoiding overwrite failures when an older DLL is mapped.
-5. Suggestions publish a non-activating WPF Overlay and keep a paged candidate list with up to nine visible items.
-6. Candidate-word capacity is derived from the real count and is checked before Release builds during this repair cycle.
+1. 发布版静态链接 C++ 运行库，因此 TSF DLL 不再依赖 Debug 运行库。
+2. 安装器与卸载器显式加载其相邻的原生 DLL，不依赖 DLL 搜索顺序。
+3. 安装时只删除旧版 Enput 的用户级 CLSID 注册，再写入计算机级注册。
+4. 部署使用带版本的 DLL 文件名，例如当前发布版的 `EnputMethod.Tsf.8.dll`，避免旧 DLL 仍被映射时无法覆盖。
+5. 联想界面通过不抢焦点的 WPF 悬浮界面（Overlay）发布，并保留最多九项可见的分页候选列表。
+6. 候选词容量由真实词数推导，并在此次修复周期内于发布构建前检查。
 
-## Required Validation Order
+## 必须遵循的验证顺序
 
-Do these checks before asking for a manual typing test:
+在要求人工输入测试前，先完成以下检查：
 
-1. Verify the installed DLL hash equals the Release output and has no Debug CRT dependencies.
-2. Read both HKLM and HKCU COM paths, then verify the effective HKCR path points at the installed Release DLL.
-3. Create the COM class by CLSID. Failure here means an application test is not meaningful.
-4. Open a new target application and confirm it has loaded the expected versioned DLL.
-5. Test the requested workflow: show candidates, select one candidate, then select a second candidate in the same application.
+1. 确认已安装 DLL 的哈希与发布输出一致，且没有 Debug CRT 依赖。
+2. 读取 HKLM 与 HKCU 的 COM 路径，确认实际生效的 HKCR 路径指向已安装的发布版 DLL。
+3. 通过 CLSID 创建 COM 类。此步骤失败时，应用程序输入测试没有意义。
+4. 新开一个目标应用程序，确认它加载的是预期的带版本 DLL。
+5. 测试需求流程：显示候选、选择一个候选，再在同一应用中选择第二个候选。
 
-This order separates deployment, registration, loading, and input behavior. It prevents repeated reinstall-and-guess cycles.
+这个顺序把部署、注册、加载和输入行为分开验证，避免反复“重装后猜测”的循环。
 
-## Configuration Compatibility
+## 配置兼容性
 
-The native configuration reader accepts valid UTF-8 JSON both with and without a UTF-8 byte-order mark. This matters because Windows editors can add the mark when users save `config.json`. Invalid JSON falls back to safe defaults. The installer recognizes the legacy `conf.json` filename and migrates custom content to `config.json`; it replaces only the known old default of `candidateCount: 4` with the current default configuration.
+原生配置读取器接受带或不带 UTF-8 字节顺序标记（BOM）的有效 JSON。Windows 编辑器保存 `config.json` 时可能加入该标记，因此需要兼容。无效 JSON 会回退到安全默认值。安装器识别旧文件名 `conf.json`，并把自定义内容迁移至 `config.json`；它只会把已知的旧默认值 `candidateCount: 4` 替换为当前默认配置。
 
-## Why A Target Application Must Be Reopened After A DLL Update
+## 为什么更新 DLL 后必须重新打开目标应用
 
-TSF activates the COM text service inside each target application's process. The process keeps the active service object and its DLL mapped for its lifetime. Updating COM registration changes only future activation; it does not replace an already-loaded service in an existing Notepad or editor process. Close and reopen a target application before testing a DLL update, then confirm the process loaded the expected versioned DLL. This is required for DLL updates, not for ordinary edits to `conf.json` or `dictionary.txt`, which the service reads for the next candidate query.
+TSF 会在每个目标应用程序的进程内激活 COM 文本服务。进程会在其生命周期内保留活动服务对象及其 DLL 映射。更新 COM 注册只影响将来的激活，不能替换已在记事本或编辑器进程中加载的服务。测试 DLL 更新前，应关闭并重新打开目标应用程序，再确认该进程加载了预期的带版本 DLL。此要求只针对 DLL 更新；普通修改 `conf.json` 或 `dictionary.txt` 时，服务会在下一次候选查询中读取它们。
 
+## 2026-08-29 后续：服务与界面拆分后的故障
 
-## 2026-08-29 Follow-up: Service/UI Split Incidents
+上面的事故复盘描述的是早期原生候选窗，现仅作历史记录。当前生产形态为进程内 C++ TSF 服务加进程外 WPF 悬浮界面（Overlay）。这带来了另一类故障：候选状态已发布但窗口不可见、旧管道操作作用到较新的页面、多个编辑器留下多个可点击窗口、安装与运行中的 Overlay 竞争，以及自动测试把文本输进了错误的活动输入法。
 
-The earlier incident review describes the original native candidate window. It is historical. The current production shape is a C++ in-process TSF service plus an out-of-process WPF Overlay. This introduced a separate class of failures: candidate state could be published without a visible window, old pipe actions could target a newer page, multiple editors could leave multiple clickable windows, installation could race a running Overlay, and tests could type into the wrong active IME.
+现已明确修正约定：每个宿主有自己的 `clientId`；每个视图有单调递增的 `stateId`；Overlay 只返回用户意图；C++ 校验状态并完成 TSF 编辑。管道工作为异步且有上限，窗口不抢焦点并受前台窗口限制，安装器除 TSF DLL 外还会验证已部署的 Overlay 文件。`run-regression.ps1` 覆盖这些机械性不变量，但无法证明 Windows 在任意应用中实际选择了 Enput。
 
-The corrective contract is now explicit: every host has a `clientId`; every view has a monotonic `stateId`; Overlay returns intention only; C++ validates the state and performs TSF edits. Pipe work is asynchronous and bounded, windows are non-activating and foreground-gated, and the installer verifies deployed Overlay files as well as the TSF DLL. `run-regression.ps1` covers these mechanical invariants, but it cannot establish that Windows selected Enput inside an arbitrary application.
-
-Two data-format incidents were also added to the validation order. First, an installer-written Unicode surrogate pair such as `\\uD83D\\uDD25` must decode as a single four-byte UTF-8 Emoji; otherwise a present `fire` entry is unusable. Second, an ECDICT value containing literal `\\n` or `\\r\\n` must be normalized before display. Both now have native regression tests. The WPF font contract is likewise explicit: configuration uses points; the renderer converts to 96-DPI WPF units.
+数据格式相关的两项故障也加入了验证顺序。第一，安装器写入的 Unicode 代理对，例如 `\\uD83D\\uDD25`，必须解码为一个四字节 UTF-8 Emoji，否则已有的 `fire` 词条也无法使用。第二，ECDICT 值中的字面量 `\\n` 或 `\\r\\n` 必须在显示前标准化。两者现在都有原生回归测试。WPF 字体约定也已明确：配置使用点数，渲染器转换为 96 DPI 的 WPF 单位。

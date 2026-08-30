@@ -15,6 +15,6 @@
 - 翻页和切换高亮时，候选框位置保持稳定。
 
 
-## 2026-08-29 Review
+## 2026-08-29 复核结论
 
-This navigation-axis decision remains intentionally deferred. The new WPF pager has stable left/right edge controls and does not change keyboard-axis semantics. Do not fold this deferred design change into a visual pager regression.
+这个导航轴决策仍有意延后。新的 WPF 翻页器已使用稳定的左右边缘控件，但没有改变键盘方向语义。不要把这项延后的设计变更混入翻页器视觉回归问题。

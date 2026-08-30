@@ -120,7 +120,9 @@ internal sealed class CandidateOverlayWindow : Window
         _content.Children.Add(footer);
 
         if (!IsVisible && OverlayFocus.IsForegroundWindow(_ownerWindow)) Show();
-        Point position = OverlayPositioning.Constrain(this, view.X, view.Y);
+        Point position = view.HasCompositionBounds
+            ? OverlayPositioning.NearComposition(this, new Rect(view.CompositionLeft, view.CompositionTop, view.CompositionRight - view.CompositionLeft, view.CompositionBottom - view.CompositionTop))
+            : OverlayPositioning.Constrain(this, view.X, view.Y);
         Left = position.X;
         Top = position.Y;
     }

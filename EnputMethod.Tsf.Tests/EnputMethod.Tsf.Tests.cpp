@@ -1,4 +1,5 @@
 #include "../EnputMethod.Tsf/CandidateRanking.h"
+#include "../EnputMethod.Tsf/CandidatePositioning.h"
 #include "../EnputMethod.Tsf/CandidateSelection.h"
 #include "../EnputMethod.Tsf/ApproximateMatch.h"
 #include "../EnputMethod.Tsf/JsonObjectReader.h"
@@ -40,6 +41,24 @@ void VerifyCandidateBounds() {
         }
     }
     Expect(!enput::TryGetCandidateIndex('1', 0, nullptr), "No digit can select when no candidates are visible.");
+}
+
+void VerifyCandidateWindowPlacement() {
+    const RECT workArea{ 0, 0, 1920, 1080 };
+    const SIZE candidateSize{ 280, 260 };
+    const RECT bottomComposition{ 640, 1040, 720, 1064 };
+    const enput::CandidateWindowPlacement bottomPlacement = enput::PlaceCandidateWindow(bottomComposition, candidateSize, workArea);
+    Expect(bottomPlacement.placedAbove, "A bottom-edge composition must place candidates above the composition.");
+    Expect(bottomPlacement.y + candidateSize.cy <= bottomComposition.top - 2, "Candidates above a bottom-edge composition must not overlap it.");
+
+    const RECT topComposition{ 32, 16, 112, 40 };
+    const enput::CandidateWindowPlacement topPlacement = enput::PlaceCandidateWindow(topComposition, candidateSize, workArea);
+    Expect(!topPlacement.placedAbove, "A top-edge composition must keep candidates below the composition.");
+    Expect(topPlacement.y >= topComposition.bottom + 2, "Candidates below a top-edge composition must not overlap it.");
+
+    const RECT rightComposition{ 1880, 900, 1910, 924 };
+    const enput::CandidateWindowPlacement rightPlacement = enput::PlaceCandidateWindow(rightComposition, candidateSize, workArea);
+    Expect(rightPlacement.x + candidateSize.cx <= workArea.right, "Right-edge candidates must remain in the monitor work area.");
 }
 
 void VerifyEmojiJsonEscapes() {
@@ -117,6 +136,7 @@ int main() {
     VerifyDetachedSuggestionCancellation();
     VerifyFrequencyRanking();
     VerifyCandidateBounds();
+    VerifyCandidateWindowPlacement();
     std::cout << "TSF candidate selection tests passed.\n";
     return 0;
 }

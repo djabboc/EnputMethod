@@ -101,6 +101,8 @@
 | I-42 | Emoji 模式中 `-`、`+` 可能未由 TSF 优先捕获，且严格前缀不能容忍省略字符或 Emoji 关键字分隔符。 | Emoji 有候选时显式捕获配置的分页键；在前缀匹配之后追加首字符一致、长度至少 3 的 SQLite 保序查询，Emoji 比较忽略 `_`、`-`、空白。 | 原生单元覆盖 `hpy`、`pignose` 和反序拒绝；Release 构建通过，实际宿主翻页待手工验收。 |
 | I-43 | `pignose` 和 `empirestate` 不能分别找到 `pig_nose` 与 Empire State Building。 | 已确认 `pig_nose` 存在于 SQLite 且 SQL 查询可命中，故需部署新 TSF；短语表缺少 Empire State Building，补为内置短语，并将无空格保序匹配扩展到 suggestions。 | 单元与 SQLite 验证覆盖；本轮安装后在真实宿主复测。 |
 | I-44 | `install-and-verify.ps1` 在 SQLite 验证实际成功后仍报告失败。 | PowerShell 对 GUI 子进程的 `&` 调用不保证填充 `$LASTEXITCODE`。改为 `Start-Process -Wait -PassThru` 并检查显式 `ExitCode`。 | 修复后重新执行系统安装与 SQLite 验证。 |
+| I-45 | Enput 在语言栏/输入法列表回退为“拼音”式图标。 | TSF Profile 的 `IconFile` 错误指向没有图标资源的 DLL。新增多尺寸 `enput.ico`，只从 Program Files Resources 登记；重装前移除并重加 Enput 自身 profile，刷新缓存。 | 原生/Overlay 自动化通过；Release 安装验证检查 IconFile、IconIndex 和 ICO 文件；Windows 视觉缓存待人工验收。 |
+| I-46 | Copy 点击没有可见确认；候选框在屏幕底部可能压住 composition。 | Copy 成功后没有状态转换；候选协议只有光标下方锚点，边缘收束会反向覆盖 composition。Copy 改为短暂 `✓ Copied` 状态；协议传递完整 composition 矩形，WPF/原生优先上下避让。 | 原生边缘定位和 WPF Copy 超时/协议回归通过；真实底部输入待人工验收。 |
 
 ### 当前自动化证据
 

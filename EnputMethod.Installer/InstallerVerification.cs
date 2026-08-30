@@ -21,7 +21,7 @@ internal static class InstallerVerifier
     [
         "EnputMethod.Tsf.dll",
         "Overlay\\EnputMethod.Overlay.exe", "Overlay\\EnputMethod.Overlay.dll", "Overlay\\EnputMethod.Overlay.deps.json", "Overlay\\EnputMethod.Overlay.runtimeconfig.json", "Overlay\\EmojiAssets\\1f600.png", "Overlay\\EmojiAssets\\2764.png", "Overlay\\TWEMOJI-LICENSE.txt",
-        "Resources\\config.json", "Resources\\shortcut.json", "Resources\\dictionary.txt", "Resources\\enput.seed.db", "Resources\\wordnet-phrases.txt", "Resources\\WORDNET-ATTRIBUTION.txt",
+        "Resources\\config.json", "Resources\\shortcut.json", "Resources\\dictionary.txt", "Resources\\enput.seed.db", "Resources\\wordnet-phrases.txt", "Resources\\WORDNET-ATTRIBUTION.txt", "Resources\\enput.ico",
         "Resources\\themes\\dark.json", "Resources\\themes\\eye-care.json", "Resources\\themes\\light.json", "Resources\\themes\\paper.json",
     ];
 
@@ -57,6 +57,19 @@ internal static class InstallerVerifier
         if (profile is null || keyboardCategory is null)
         {
             return InstallerVerification.Failure("Installed TSF profile or keyboard category is missing.");
+        }
+
+        string? profileDescription = profile.GetValue("Description") as string;
+        string? iconFile = profile.GetValue("IconFile") as string;
+        int iconIndex = profile.GetValue("IconIndex") is int value ? value : -1;
+        if (!string.Equals(profileDescription, "Enput Method - English", StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(iconFile) ||
+            !iconFile.StartsWith(ProductLayout.StaticResourceDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(Path.GetExtension(iconFile), ".ico", StringComparison.OrdinalIgnoreCase) ||
+            !File.Exists(iconFile) ||
+            iconIndex != 0)
+        {
+            return InstallerVerification.Failure("Installed TSF profile does not reference a valid Enput ICO file.");
         }
 
         string sourceOverlay = Path.Combine(payloadDirectory, "Overlay");

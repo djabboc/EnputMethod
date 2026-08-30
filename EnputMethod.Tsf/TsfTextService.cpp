@@ -6,6 +6,7 @@
 #include <winsqlite/winsqlite3.h>
 #include "ApproximateMatch.h"
 #include "CandidateRanking.h"
+#include "CandidatePositioning.h"
 #include "CandidateSelection.h"
 #include "JsonObjectReader.h"
 #include "OverlayClient.h"
@@ -167,6 +168,7 @@ struct RuntimeConfiguration {
     std::wstring fontFamily = L"Segoe UI";
     int fontSize = 18;
     BYTE opacity = 255;
+    std::wstring inputMethodIcon = L"enput.ico";
     std::vector<std::wstring> translationLanguages{ L"en", L"zh-CN" };
     int translationWindowWidth = 380;
     int translationWindowHeight = 280;
@@ -313,6 +315,7 @@ RuntimeConfiguration LoadRuntimeConfiguration() {
         configuration.fontSize = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "fontSize", configuration.fontSize))), 10, 32);
         const double opacity = std::clamp(enput::json::NumberOr(object, "opacity", 1.0), 0.2, 1.0);
         configuration.opacity = static_cast<BYTE>(std::lround(opacity * 255.0));
+        configuration.inputMethodIcon = Utf8ToWide(enput::json::StringOr(object, "inputMethodIcon", "enput.ico"));
         if (const std::vector<std::string>* languages = enput::json::StringArray(object, "translationLanguages")) {
             configuration.translationLanguages.clear();
             for (const std::string& language : *languages) {
@@ -921,14 +924,9 @@ public:
             MONITORINFO monitorInfo{ sizeof(monitorInfo) };
             const HMONITOR monitor = MonitorFromRect(&textRect, MONITOR_DEFAULTTONEAREST);
             if (monitor && GetMonitorInfoW(monitor, &monitorInfo)) {
-                const RECT& workArea = monitorInfo.rcWork;
-                if (positionY + size.cy > workArea.bottom && textRect.top - 2 - size.cy >= workArea.top) positionY = textRect.top - 2 - size.cy;
-                const int left = static_cast<int>(workArea.left);
-                const int top = static_cast<int>(workArea.top);
-                const int maximumX = static_cast<int>(workArea.right) - size.cx;
-                const int maximumY = static_cast<int>(workArea.bottom) - size.cy;
-                positionX = maximumX < left ? left : std::clamp(positionX, left, maximumX);
-                positionY = maximumY < top ? top : std::clamp(positionY, top, maximumY);
+                const enput::CandidateWindowPlacement placement = enput::PlaceCandidateWindow(textRect, size, monitorInfo.rcWork);
+                positionX = placement.x;
+                positionY = placement.y;
             }
         }
         const bool candidateSelectionChanged = IsWindowVisible(window_) && previousCandidates == candidates_ &&
@@ -2100,10 +2098,12 @@ private:
         return changed ? RefreshCandidatesAtCurrentPosition(context, cookie) : S_OK;
     }
 
-    std::string CandidateOverlayMessage(const RECT& bounds, std::uintptr_t ownerWindow, std::uint64_t stateId) const {
+    std::string CandidateOverlayMessage(const RECT& bounds, const RECT& compositionBounds, std::uintptr_t ownerWindow, std::uint64_t stateId) const {
         std::string message = "{\"type\":\"showCandidates\",\"clientId\":\"" + overlayClient_->ClientId() +
             "\",\"stateId\":" + std::to_string(stateId) + ",\"candidates\":{\"x\":" + std::to_string(bounds.left) +
-            ",\"y\":" + std::to_string(bounds.top) + ",\"ownerWindow\":" + std::to_string(ownerWindow) + ",\"items\":[";
+            ",\"y\":" + std::to_string(bounds.top) + ",\"compositionLeft\":" + std::to_string(compositionBounds.left) +
+            ",\"compositionTop\":" + std::to_string(compositionBounds.top) + ",\"compositionRight\":" + std::to_string(compositionBounds.right) +
+            ",\"compositionBottom\":" + std::to_string(compositionBounds.bottom) + ",\"ownerWindow\":" + std::to_string(ownerWindow) + ",\"items\":[";
         for (size_t index = 0; index < candidates_.size(); ++index) {
             if (index) message += ',';
             message += JsonString(candidates_[index]);
@@ -2203,7 +2203,7 @@ private:
         RECT candidateBounds{ textBounds.left, textBounds.bottom + 2, textBounds.right, textBounds.bottom };
         const TranslationEntry* translation = translationEnabled_ && selectedIndex_ < candidates_.size() ? FindTranslation(candidates_[selectedIndex_]) : nullptr;
         const std::uint64_t stateId = ++overlayStateId_;
-        std::vector<std::string> messages{ CandidateOverlayMessage(candidateBounds, reinterpret_cast<std::uintptr_t>(ownerWindow), stateId) };
+        std::vector<std::string> messages{ CandidateOverlayMessage(candidateBounds, textBounds, reinterpret_cast<std::uintptr_t>(ownerWindow), stateId) };
         if (translation) messages.push_back(TranslationOverlayMessage(*translation, candidateBounds, reinterpret_cast<std::uintptr_t>(ownerWindow), stateId));
         else messages.push_back("{\"type\":\"hide\",\"clientId\":\"" + overlayClient_->ClientId() + "\",\"stateId\":" + std::to_string(stateId) + ",\"surface\":\"translation\"}");
         if (!overlayClient_->PublishBatch(std::move(messages))) {
@@ -2524,6 +2524,24 @@ HRESULT RegisterComServer() {
     const wchar_t* apartment = L"Apartment"; RegSetValueExW(key, L"ThreadingModel", 0, REG_SZ, reinterpret_cast<const BYTE*>(apartment), static_cast<DWORD>((wcslen(apartment) + 1) * sizeof(wchar_t))); RegCloseKey(key); return S_OK;
 }
 
+bool IsSafeProfileIconFileName(const std::wstring& fileName) {
+    if (fileName.empty() || fileName.size() > 128 || fileName.find(L"..") != std::wstring::npos ||
+        fileName.find_first_of(L"\\/:") != std::wstring::npos) return false;
+    if (_wcsicmp(std::filesystem::path(fileName).extension().c_str(), L".ico") != 0) return false;
+    return std::all_of(fileName.begin(), fileName.end(), [](wchar_t character) { return character >= L' ' && character != 0x7f; });
+}
+
+std::wstring RegisteredProfileIconPath() {
+    std::wstring installedDll;
+    if (FAILED(InstalledDllPath(&installedDll))) return {};
+    const std::wstring resources = std::filesystem::path(installedDll).parent_path().append(L"Resources").wstring();
+    const RuntimeConfiguration configuration = LoadRuntimeConfiguration();
+    const std::wstring fileName = IsSafeProfileIconFileName(configuration.inputMethodIcon) ? configuration.inputMethodIcon : L"enput.ico";
+    const std::wstring requested = resources + L"\\" + fileName;
+    if (GetFileAttributesW(requested.c_str()) != INVALID_FILE_ATTRIBUTES) return requested;
+    return resources + L"\\enput.ico";
+}
+
 HRESULT RegisterProfile() {
     SetRegistrationStage(20);
     ITfInputProcessorProfiles* profiles{};
@@ -2533,6 +2551,8 @@ HRESULT RegisterProfile() {
     std::wstring path;
     HRESULT pathHr = InstalledDllPath(&path);
     if (FAILED(pathHr)) { profiles->Release(); return pathHr; }
+    const std::wstring iconPath = RegisteredProfileIconPath();
+    if (iconPath.empty()) { profiles->Release(); return E_FAIL; }
 
     const wchar_t* description = L"Enput Method - English";
     SetRegistrationStage(21);
@@ -2542,8 +2562,11 @@ HRESULT RegisterProfile() {
 
     profiles->RemoveLanguageProfile(kTextServiceClsid, kLegacyEnglishUs, kProfileGuid);
     RegDeleteTreeW(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\CTF\\TIP\\{9C8945D5-01DF-48F4-A8DB-57E8B6A1EB10}\\LanguageProfile\\0x00000409");
+    // AddLanguageProfile does not update an existing profile. Removing only Enput's
+    // own profile forces Windows to refresh the registered name and ICO path.
+    profiles->RemoveLanguageProfile(kTextServiceClsid, kChineseSimplified, kProfileGuid);
     SetRegistrationStage(22);
-    hr = profiles->AddLanguageProfile(kTextServiceClsid, kChineseSimplified, kProfileGuid, description, static_cast<ULONG>(wcslen(description)), path.c_str(), static_cast<ULONG>(path.size()), 0);
+    hr = profiles->AddLanguageProfile(kTextServiceClsid, kChineseSimplified, kProfileGuid, description, static_cast<ULONG>(wcslen(description)), iconPath.c_str(), static_cast<ULONG>(iconPath.size()), 0);
     if (hr == TF_E_ALREADY_EXISTS) hr = S_OK;
     if (FAILED(hr)) { profiles->Release(); return hr; }
 

@@ -225,6 +225,7 @@ public partial class MainWindow : Window
         MigrateLegacyConfiguration(userData);
         CopyDefaultUserFile("config.json", userData);
         CopyDefaultUserFile("shortcut.json", userData);
+        MergeMissingConfigurationFields(userData);
     }
 
     private static void MigrateLegacyUserFile(string fileName)

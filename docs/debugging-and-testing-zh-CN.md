@@ -1,6 +1,6 @@
 # 调试与测试方案
 
-最后更新：2026-08-29。本方案将“构建成功”“自动化通过”“系统安装已验证”“真实输入法宿主已验收”严格分开。任何一层通过都不能自动代表更高层通过。
+最后更新：2026-08-30。本方案将“构建成功”“自动化通过”“系统安装已验证”“真实输入法宿主已验收”严格分开。任何一层通过都不能自动代表更高层通过。
 
 ## 1. 测试层级与结论标准
 
@@ -44,6 +44,7 @@ dotnet --info
 - 词性句点与 `{{or}}` 标记清洗。
 - 自适应候选排序与关闭排序后的字典顺序。
 - 保序不完整匹配：`hpy -> happy`、`pignose -> pig_nose`、`empirestate -> Empire State Building`、`newyork -> new york`、`machinelearning -> machine learning`。
+- 原生候选定位：顶部保持下方、底部翻到 composition 上方、右侧收束到工作区。
 
 ### 3.2 Overlay 协议和 WPF 自动化
 
@@ -54,7 +55,7 @@ dotnet --info
 该脚本先运行原生测试，再构建 Overlay，并执行：
 
 - `EnputMethod.Overlay.ProtocolTests`：JSON Lines、连接/断连、`clientId`、`stateId`、诊断消息。
-- `EnputMethod.Overlay.AutomationTests`：候选页脚三段布局、边缘避让、候选/翻译隐藏、前景编辑器仲裁、非激活交互、emoji 彩色资源、18pt 换算、翻译富文本、复制菜单、尺寸保存和旧消息不得覆盖用户手动尺寸。
+- `EnputMethod.Overlay.AutomationTests`：候选页脚三段布局、composition 矩形协议、顶部/底部/右侧避让、候选/翻译隐藏、前景编辑器仲裁、非激活交互、emoji 彩色资源、18pt 换算、翻译富文本、Copy 的成功勾选和超时恢复、尺寸保存和旧消息不得覆盖用户手动尺寸。
 
 ### 3.3 完整发布与安装
 
@@ -70,7 +71,7 @@ dotnet --info
 
 1. 运行完整回归并确认退出码为零。
 2. 查看 `%LOCALAPPDATA%\Enput Method\UserData\install-verification.log`。成功记录应为 SQLite lexicon verification passed。
-3. 确认 `C:\Program Files\Enput Method\Resources\enput.db` 和 `enput.db.ready` 存在。
+3. 确认 `C:\Program Files\Enput Method\Resources\enput.db`、`enput.db.ready` 和 `enput.ico` 存在；验证 Enput Profile 的 `IconFile` 也在该 Resources 目录且 `IconIndex=0`。
 4. 检查 `shortcut.json` 的 `cancelComposition` 已保留预期数组；默认应为 `Escape, Shift`。
 5. 关闭所有待测宿主，再重新打开。TSF DLL 在编辑器进程内加载，已打开的应用不会自动切换到新 DLL。
 6. 在语言栏明确选择 Enput Method；不要用“脚本已经输入了 he”判断输入法切换成功。

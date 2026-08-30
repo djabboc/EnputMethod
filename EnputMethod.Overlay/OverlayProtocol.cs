@@ -56,6 +56,10 @@ internal sealed record CandidateView
 {
     public int X { get; init; }
     public int Y { get; init; }
+    public int CompositionLeft { get; init; }
+    public int CompositionTop { get; init; }
+    public int CompositionRight { get; init; }
+    public int CompositionBottom { get; init; }
     public long OwnerWindow { get; init; }
     public IReadOnlyList<string> Items { get; init; } = [];
     public int Page { get; init; }
@@ -65,6 +69,9 @@ internal sealed record CandidateView
     public string Layout { get; init; } = "vertical";
     public string? ModeMarker { get; init; }
     public OverlayTheme? Theme { get; init; }
+
+    [JsonIgnore]
+    public bool HasCompositionBounds => CompositionRight > CompositionLeft && CompositionBottom > CompositionTop;
 
     [JsonIgnore]
     public bool IsValid => Items.Count > 0 && Page >= 0 && Page < PageCount && SelectedIndex >= 0 && SelectedIndex < Items.Count && Layout is "vertical" or "horizontal";

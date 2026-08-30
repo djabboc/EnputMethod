@@ -27,6 +27,7 @@
   "fontFamily": "Segoe UI",
   "fontSize": 18,
   "opacity": 1.0,
+  "inputMethodIcon": "enput.ico",
   "translationLanguages": ["en", "zh-CN"],
   "translationWindowWidth": 380,
   "translationWindowHeight": 280,
@@ -41,6 +42,7 @@
 - `adaptiveCandidateRanking`：是否根据当前用户的历史选词频率调整候选排序。默认 `true`；设为 `false` 后保持词典顺序，且不再记录新的选择频率。
 - `fontFamily` 与 `fontSize`：候选窗和翻译窗字体；`fontSize` 单位为点（pt），默认 `18`。WPF Overlay 会按 96/72 换算为设备无关像素，因此 18pt 实际渲染为 24 DIP。
 - `opacity`：范围为 `0.2` 到 `1.0`。
+- `inputMethodIcon`：语言栏和输入法列表使用的 ICO 文件名。默认 `enput.ico`，文件必须位于 `C:\Program Files\Enput Method\Resources`。可以放入自定义 `.ico` 后填写其文件名；拒绝外部绝对路径、目录名和非 ICO 扩展名，缺失文件回退默认图标。该配置只有重新运行安装程序并重开待测宿主后才会写入 Windows TSF Profile。
 - `translationLanguages`：翻译窗显示的语言代码数组。默认仅为 `"en"` 与 `"zh-CN"`；添加 `"ja-JP"` 后才显示随词典提供的日文映射。例如可设为 `["en", "zh-CN", "ja-JP"]`。未列出的语言不会显示。
 - `translationWindowWidth` 与 `translationWindowHeight`：翻译窗初始宽高，合法范围分别为 `260`-`1200` 和 `160`-`900` WPF DIP。可以直接编辑；也可以拖动翻译窗任意边或角，停止拖动后会自动写回这两个值。
 - `theme`：`dark`、`light`、`eye-care` 或 `paper`。
@@ -67,7 +69,7 @@ there
 
 主题目录为 `%LOCALAPPDATA%\Enput Method\themes`，包含四个默认文件：`dark.json`、`light.json`、`eye-care.json`、`paper.json`。主题文件可控制背景、前景、首选项颜色、边框、圆角、内边距、行高和阴影尺寸。主题修改会在下一次显示候选窗时读取。
 
-翻译窗使用独立的主题字段：`translationBackground`、`translationForeground`、`translationTitleForeground`、`translationPartForeground`、`translationLabelForeground`、`translationExampleForeground`、`translationExampleBackground`、`translationBorder`、`translationBorderWidth`、`translationCornerRadius`、`translationPadding`、`translationScrollbarTrack` 和 `translationScrollbarThumb`。窗口尺寸由 `config.json` 的 `translationWindowWidth` 与 `translationWindowHeight` 统一控制并持久化；旧主题中的 `translationWidth` 与 `translationMaxHeight` 仅为旧版本兼容字段，不再决定实际窗口大小。翻译正文使用只读富文本 `FlowDocument`，词性、语言标签、义项和例句分别渲染，长内容可以滚动；可鼠标拖选文本并通过右键 `Copy` 复制，窗口仍保持不抢输入焦点。
+翻译窗使用独立的主题字段：`translationBackground`、`translationForeground`、`translationTitleForeground`、`translationPartForeground`、`translationLabelForeground`、`translationExampleForeground`、`translationExampleBackground`、`translationBorder`、`translationBorderWidth`、`translationCornerRadius`、`translationPadding`、`translationScrollbarTrack` 和 `translationScrollbarThumb`。窗口尺寸由 `config.json` 的 `translationWindowWidth` 与 `translationWindowHeight` 统一控制并持久化；旧主题中的 `translationWidth` 与 `translationMaxHeight` 仅为旧版本兼容字段，不再决定实际窗口大小。翻译正文使用只读富文本 `FlowDocument`，词性、语言标签、义项和例句分别渲染，长内容可以滚动；标题栏 Copy 按钮复制完整翻译，成功后短暂显示 `✓ Copied`，窗口仍保持不抢输入焦点。
 
 ## 保序不完整匹配
 

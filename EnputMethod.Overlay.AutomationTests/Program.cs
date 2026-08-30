@@ -6,6 +6,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Interop;
+using System.Windows.Threading;
 
 namespace EnputMethod.Overlay.AutomationTests;
 
@@ -23,7 +24,9 @@ internal static class Program
             VerifyCandidateWindowWarmup();
             VerifyPointFontSizeUsesWpfDips();
             VerifyPaginationLayoutAndHover();
+            VerifyCandidatePositioningAvoidsComposition();
             VerifyTranslationWindowUsesRichTextAndConfiguredSize();
+            VerifyTranslationCopyFeedback();
             Console.WriteLine("Overlay foreground automation tests passed.");
             return 0;
         }
@@ -46,8 +49,9 @@ internal static class Program
 
     private static void VerifyOwnerWindowProtocol()
     {
-        const string message = """{"type":"showCandidates","clientId":"host-1","stateId":4,"candidates":{"x":120,"y":80,"ownerWindow":42,"items":["hello"],"page":0,"pageCount":1,"selectedIndex":0,"layout":"vertical"}}""";
+        const string message = """{"type":"showCandidates","clientId":"host-1","stateId":4,"candidates":{"x":120,"y":80,"compositionLeft":120,"compositionTop":56,"compositionRight":168,"compositionBottom":80,"ownerWindow":42,"items":["hello"],"page":0,"pageCount":1,"selectedIndex":0,"layout":"vertical"}}""";
         Assert(OverlayProtocol.TryParse(message, out OverlayMessage? parsed) && parsed?.Candidates?.OwnerWindow == 42, "The candidate owner window must survive protocol parsing.");
+        Assert(parsed?.Candidates?.HasCompositionBounds == true, "Candidate messages must carry the complete composition bounds for collision avoidance.");
     }
 
     private static void VerifyEmojiAssetNaming()
@@ -155,6 +159,23 @@ internal static class Program
             overlay.Close();
         }
     }
+    private static void VerifyCandidatePositioningAvoidsComposition()
+    {
+        Rect workArea = new(0, 0, 1920, 1080);
+        Size candidateSize = new(280, 260);
+        Rect bottomComposition = new(640, 1040, 80, 24);
+        Point bottom = OverlayPositioning.PlaceCandidate(bottomComposition, candidateSize, workArea);
+        Assert(bottom.Y + candidateSize.Height <= bottomComposition.Top - 2, "Bottom-edge candidates must move above the composition instead of covering it.");
+
+        Rect topComposition = new(32, 16, 80, 24);
+        Point top = OverlayPositioning.PlaceCandidate(topComposition, candidateSize, workArea);
+        Assert(top.Y >= topComposition.Bottom + 2, "Top-edge candidates must remain below the composition.");
+
+        Rect rightComposition = new(1880, 900, 30, 24);
+        Point right = OverlayPositioning.PlaceCandidate(rightComposition, candidateSize, workArea);
+        Assert(right.X + candidateSize.Width <= workArea.Right, "Right-edge candidates must remain inside the work area.");
+    }
+
     private static void VerifyTranslationWindowUsesRichTextAndConfiguredSize()
     {
         const string translationText = "noun\nen: n. a dental appliance\nzh-CN: 牙套\nExample: She wears braces.";
@@ -196,6 +217,34 @@ internal static class Program
             overlay.Close();
         }
     }
+    private static void VerifyTranslationCopyFeedback()
+    {
+        string copied = string.Empty;
+        var overlay = new TranslationOverlayWindow(text => copied = text);
+        try
+        {
+            overlay.ShowTranslation("copy-test", new TranslationView { Title = "hello", Content = "en: greeting" }, null);
+            overlay.CopyTranslation();
+            Assert(copied == "en: greeting", "Copy must write the full translation text to the clipboard target.");
+            Assert(overlay.IsCopyFeedbackVisible && overlay.CopyButtonText == "✓ Copied", "A successful copy must show a visible confirmed state.");
+
+            var frame = new DispatcherFrame();
+            var wait = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1750) };
+            wait.Tick += (_, _) =>
+            {
+                wait.Stop();
+                frame.Continue = false;
+            };
+            wait.Start();
+            Dispatcher.PushFrame(frame);
+            Assert(!overlay.IsCopyFeedbackVisible && overlay.CopyButtonText == "Copy", "The copy confirmation must return to the normal button state after its timeout.");
+        }
+        finally
+        {
+            overlay.Close();
+        }
+    }
+
     private static HwndSource CreateEditorWindow(string name)
     {
         return new HwndSource(new HwndSourceParameters(name)

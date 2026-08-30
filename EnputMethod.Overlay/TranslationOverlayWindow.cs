@@ -30,6 +30,7 @@ internal sealed class TranslationOverlayWindow : Window
     private const int HtBottomLeft = 16;
     private const int HtBottomRight = 17;
     private const int ResizeBorderPixels = 8;
+    private const int CopyFeedbackDurationMilliseconds = 1600;
     private readonly TextBlock _title = new()
     {
         FontWeight = FontWeights.SemiBold,
@@ -57,6 +58,7 @@ internal sealed class TranslationOverlayWindow : Window
     private readonly Border _frame;
     private readonly Grid _panel;
     private readonly DispatcherTimer _saveSizeTimer;
+    private readonly DispatcherTimer _copyFeedbackTimer;
     private readonly Action<string> _clipboardWriter;
     private string? _clientId;
     private string _copyText = string.Empty;
@@ -64,8 +66,10 @@ internal sealed class TranslationOverlayWindow : Window
     private bool _hasTranslation;
     private bool _applyingTheme;
     private bool _hasUserSized;
+    private bool _copyFeedbackVisible;
     private Brush _copyButtonBackground = Brushes.DimGray;
     private Brush _copyButtonHoverBackground = Brushes.SteelBlue;
+    private static readonly Brush CopyConfirmedBackground = new SolidColorBrush(Color.FromRgb(45, 106, 79));
 
     public TranslationOverlayWindow(Action<string>? clipboardWriter = null)
     {
@@ -99,8 +103,14 @@ internal sealed class TranslationOverlayWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Child = _copyLabel,
         };
-        _copyButton.MouseEnter += (_, _) => _copyButton.Background = _copyButtonHoverBackground;
-        _copyButton.MouseLeave += (_, _) => _copyButton.Background = _copyButtonBackground;
+        _copyButton.MouseEnter += (_, _) =>
+        {
+            if (!_copyFeedbackVisible) _copyButton.Background = _copyButtonHoverBackground;
+        };
+        _copyButton.MouseLeave += (_, _) =>
+        {
+            if (!_copyFeedbackVisible) _copyButton.Background = _copyButtonBackground;
+        };
         _copyButton.MouseLeftButtonUp += (_, _) => CopyTranslation();
 
         var header = new Grid();
@@ -133,13 +143,20 @@ internal sealed class TranslationOverlayWindow : Window
             _saveSizeTimer.Stop();
             PersistSize();
         };
+        _copyFeedbackTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(CopyFeedbackDurationMilliseconds) };
+        _copyFeedbackTimer.Tick += (_, _) => ResetCopyFeedback();
         SizeChanged += OnSizeChanged;
-        Closed += (_, _) => _saveSizeTimer.Stop();
+        Closed += (_, _) =>
+        {
+            _saveSizeTimer.Stop();
+            _copyFeedbackTimer.Stop();
+        };
     }
 
     public void ShowTranslation(string clientId, TranslationView view, Rect? candidateBounds)
     {
         _clientId = clientId;
+        ResetCopyFeedback();
         _copyText = view.Content;
         _ownerWindow = view.OwnerWindow;
         _hasTranslation = true;
@@ -160,6 +177,7 @@ internal sealed class TranslationOverlayWindow : Window
         if (!string.Equals(_clientId, clientId, StringComparison.Ordinal)) return;
         _hasTranslation = false;
         _copyText = string.Empty;
+        ResetCopyFeedback();
         Hide();
     }
 
@@ -197,8 +215,8 @@ internal sealed class TranslationOverlayWindow : Window
             _copyLabel.Foreground = Brush(theme.TranslationTitleForeground, Brushes.White);
             _copyButtonBackground = Brush(theme.TranslationScrollbarTrack, Brushes.DimGray);
             _copyButtonHoverBackground = Brush(theme.SelectedBackground, Brushes.SteelBlue);
-            _copyButton.Background = _copyButtonBackground;
             _copyButton.BorderBrush = Brush(theme.TranslationBorder, Brushes.Gray);
+            UpdateCopyButtonAppearance();
             _content.FontFamily = new FontFamily(theme.FontFamily);
             _content.FontSize = theme.WpfFontSize;
             _content.Foreground = Brush(theme.TranslationForeground, Brushes.WhiteSmoke);
@@ -291,17 +309,45 @@ internal sealed class TranslationOverlayWindow : Window
         return parts.All(part => part.TrimEnd('.').ToLowerInvariant() is "n" or "noun" or "v" or "verb" or "vt" or "vi" or "adj" or "adjective" or "adv" or "adverb" or "pron" or "pronoun" or "prep" or "preposition" or "conj" or "conjunction" or "interj" or "interjection");
     }
 
+    internal string CopyButtonText => _copyLabel.Text;
+    internal bool IsCopyFeedbackVisible => _copyFeedbackVisible;
+
     internal void CopyTranslation()
     {
         if (string.IsNullOrWhiteSpace(_copyText)) return;
         try
         {
             _clipboardWriter(_copyText);
+            ShowCopyFeedback();
         }
         catch (ExternalException)
         {
             // Another process can temporarily own the Windows clipboard.
         }
+    }
+
+    private void ShowCopyFeedback()
+    {
+        _copyFeedbackVisible = true;
+        _copyLabel.Text = "✓ Copied";
+        _copyButton.ToolTip = "Copied";
+        UpdateCopyButtonAppearance();
+        _copyFeedbackTimer.Stop();
+        _copyFeedbackTimer.Start();
+    }
+
+    private void ResetCopyFeedback()
+    {
+        _copyFeedbackTimer.Stop();
+        _copyFeedbackVisible = false;
+        _copyLabel.Text = "Copy";
+        _copyButton.ToolTip = "Copy translation";
+        UpdateCopyButtonAppearance();
+    }
+
+    private void UpdateCopyButtonAppearance()
+    {
+        _copyButton.Background = _copyFeedbackVisible ? CopyConfirmedBackground : _copyButtonBackground;
     }
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs eventArgs)

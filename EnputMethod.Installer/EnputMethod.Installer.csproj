@@ -16,6 +16,7 @@
     <None Update="enput.seed.db"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
     <None Update="wordnet-phrases.txt"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
     <None Update="WORDNET-ATTRIBUTION.txt"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
+    <None Update="enput.ico"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
     <None Update="themes\*.json"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
   </ItemGroup>
   <Target Name="BuildTsfService" BeforeTargets="CopyTsfService">
@@ -39,6 +40,7 @@
       <PayloadStaticFiles Include="$(MSBuildThisFileDirectory)enput.seed.db" />
       <PayloadStaticFiles Include="$(MSBuildThisFileDirectory)wordnet-phrases.txt" />
       <PayloadStaticFiles Include="$(MSBuildThisFileDirectory)WORDNET-ATTRIBUTION.txt" />
+      <PayloadStaticFiles Include="$(MSBuildThisFileDirectory)enput.ico" />
       <PayloadThemeFiles Include="$(MSBuildThisFileDirectory)themes\*.json" />
       <PayloadOverlayFiles Include="$(OutputPath)Overlay\**\*" />
     </ItemGroup>

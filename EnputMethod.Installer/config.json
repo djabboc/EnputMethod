@@ -8,6 +8,7 @@
   "fontFamily": "Segoe UI",
   "fontSize": 18,
   "opacity": 1.0,
+  "inputMethodIcon": "enput.ico",
   "translationLanguages": ["en", "zh-CN"],
   "translationWindowWidth": 380,
   "translationWindowHeight": 280,

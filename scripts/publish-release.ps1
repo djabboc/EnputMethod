@@ -42,6 +42,39 @@ function Test-ReleaseSource {
     }
 }
 
+function Test-RemoteTag {
+    param([Parameter(Mandatory = $true)][string]$TagName)
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = "git"
+    $startInfo.Arguments = "-C `"$projectRoot`" ls-remote --tags origin refs/tags/$TagName"
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) { throw "Unable to start remote Git tag check." }
+        $standardOutput = $process.StandardOutput.ReadToEndAsync()
+        $standardError = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(15000)) {
+            $process.Kill()
+            $process.WaitForExit()
+            throw "Remote tag query timed out after 15 seconds. Check SSH and network, then retry. No build, ZIP, or local tag was created."
+        }
+
+        $output = $standardOutput.GetAwaiter().GetResult().Trim()
+        $error = $standardError.GetAwaiter().GetResult().Trim()
+        if ($process.ExitCode -ne 0) { throw "Remote tag query failed: $error" }
+        if (-not [string]::IsNullOrWhiteSpace($output)) {
+            throw "Remote Git tag already exists: $TagName. A release version cannot be reused."
+        }
+    }
+    finally {
+        $process.Dispose()
+    }
+}
 function Test-ReleaseArchive {
     param(
         [Parameter(Mandatory = $true)]
@@ -73,17 +106,19 @@ function Test-ReleaseArchive {
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $tagName = "v$Version"
-Write-Host "[1/7] 检查分支、工作区、版本和敏感内容..."
+Write-Host "[1/8] 检查分支、工作区、版本和敏感内容..."
 Test-ReleaseSource -TagName $tagName
+Write-Host "[2/8] 检查远端 Git tag（最多等待 15 秒）..."
+Test-RemoteTag -TagName $tagName
 
-Write-Host "[2/7] 构建 Release 安装器、卸载器、TSF 和 Overlay..."
+Write-Host "[3/8] 构建 Release 安装器、卸载器、TSF 和 Overlay..."
 & (Join-Path $PSScriptRoot "build-local-package.ps1") -Configuration Release
 if (-not $?) { throw "Release local package build failed." }
 
 $name = "EnputMethod-$Version-win-x64"
 $destination = Join-Path $projectRoot "artifacts\release\$name"
 if (Test-Path -LiteralPath $destination) { throw "Release directory already exists and will not be overwritten: $destination" }
-Write-Host "[3/7] 组装版本化发布目录..."
+Write-Host "[4/8] 组装版本化发布目录..."
 New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot "artifacts\local\Release") -Destination $destination -Recurse
 
@@ -103,23 +138,23 @@ $readmeLines = @(
 $readme = [string]::Join([Environment]::NewLine, [string[]]$readmeLines)
 Set-Content -LiteralPath (Join-Path $destination "README.txt") -Value $readme -Encoding utf8NoBOM
 
-Write-Host "[4/7] 验证发布目录内容..."
+Write-Host "[5/8] 验证发布目录内容..."
 $installer = Join-Path $destination "Install Enput Method.exe"
 $verification = Start-Process -FilePath $installer -ArgumentList "--verify-package" -WorkingDirectory $destination -Wait -PassThru
 if ($verification.ExitCode -ne 0) { throw "Release package verification failed with exit code $($verification.ExitCode)." }
 
 $zipPath = Join-Path $projectRoot "artifacts\release\$name.zip"
 if (Test-Path -LiteralPath $zipPath) { throw "Release archive already exists and will not be overwritten: $zipPath" }
-Write-Host "[5/7] 创建 ZIP 并验证解压后的实际安装包..."
+Write-Host "[6/8] 创建 ZIP 并验证解压后的实际安装包..."
 Compress-Archive -LiteralPath $destination -DestinationPath $zipPath
 Test-ReleaseArchive -ArchivePath $zipPath -ExpectedRootName $name
 
-Write-Host "[6/7] 生成 SHA-256 校验文件..."
+Write-Host "[7/8] 生成 SHA-256 校验文件..."
 $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $checksumPath = "$zipPath.sha256"
 Set-Content -LiteralPath $checksumPath -Value "$hash *$([System.IO.Path]::GetFileName($zipPath))" -Encoding ascii
 
-Write-Host "[7/7] 创建本地 Git tag $tagName..."
+Write-Host "[8/8] 创建本地 Git tag $tagName..."
 & git -C $projectRoot tag -a $tagName -m "Enput Method $Version"
 if ($LASTEXITCODE -ne 0) { throw "Failed to create local Git tag: $tagName" }
 

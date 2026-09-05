@@ -48,6 +48,12 @@ long g_registrationStage = 0;
 void SetRegistrationStage(LONG stage) { InterlockedExchange(&g_registrationStage, stage); }
 LONG RegistrationStage() { return InterlockedCompareExchange(&g_registrationStage, 0, 0); }
 
+bool IsExplorerForegroundWindow() {
+    wchar_t className[256]{};
+    const HWND foreground = GetForegroundWindow();
+    return foreground && GetClassNameW(foreground, className, ARRAYSIZE(className)) && enput::IsExplorerWindowClass(className);
+}
+
 std::wstring UserDataDirectory() {
     wchar_t localAppData[MAX_PATH]{};
     if (!GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, ARRAYSIZE(localAppData))) return {};
@@ -1837,9 +1843,11 @@ private:
 
     bool ShouldHandleKey(WPARAM key) const {
         const bool hasInputContext = composition_ || detachedSuggestionActive_;
+        const bool isEmojiShortcut = HasShortcut(configuration_.shortcuts.toggleEmojiMode, key);
+        const bool canStartEmojiMode = isEmojiShortcut && (!IsExplorerForegroundWindow() || hasInputContext);
         const bool isConfiguredInputAction =
             HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key) ||
-            HasShortcut(configuration_.shortcuts.toggleEmojiMode, key) ||
+            canStartEmojiMode ||
             HasShortcut(configuration_.shortcuts.cancelComposition, key) ||
             HasShortcut(configuration_.shortcuts.previousPage, key) ||
             HasShortcut(configuration_.shortcuts.nextPage, key) ||
@@ -1849,7 +1857,7 @@ private:
         if (!enput::ShouldClaimConfiguredShortcut(hasInputContext, isConfiguredInputAction)) return false;
         if (!enput::ShouldClaimFunctionKey(key, hasInputContext, isConfiguredInputAction)) return false;
         if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key)) return true;
-        if (HasShortcut(configuration_.shortcuts.toggleEmojiMode, key)) return true;
+        if (canStartEmojiMode) return true;
         if (HasShortcut(configuration_.shortcuts.cancelComposition, key)) return true;
         if (emojiMode_ && !allCandidates_.empty() &&
             (HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key))) return true;

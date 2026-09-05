@@ -38,6 +38,9 @@ void VerifyFunctionKeyRouting() {
     Expect(!enput::ShouldClaimFunctionKey(VK_F5, true, false), "An unconfigured F5 must reach the application while candidates are visible.");
     Expect(!enput::ShouldClaimConfiguredShortcut(false, true), "An idle Escape or Shift shortcut must reach the application.");
     Expect(enput::ShouldClaimConfiguredShortcut(true, true), "A configured shortcut must remain available during active input.");
+    Expect(enput::IsExplorerWindowClass(L"CabinetWClass"), "Explorer folder windows must be identified by their top-level class.");
+    Expect(enput::IsExplorerWindowClass(L"ExploreWClass"), "Legacy Explorer windows must be identified by their top-level class.");
+    Expect(!enput::IsExplorerWindowClass(L"Notepad"), "Text editors must not lose the idle F2 Emoji entry point.");
     Expect(enput::ShouldClaimFunctionKey('A', false, true), "Non-function keys must retain normal input routing.");
 }
 

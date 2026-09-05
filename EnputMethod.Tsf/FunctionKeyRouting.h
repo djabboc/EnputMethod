@@ -1,11 +1,16 @@
 #pragma once
 
+#include <string_view>
 #include <windows.h>
 
 namespace enput {
 
 constexpr bool IsFunctionKey(WPARAM key) noexcept {
     return key >= VK_F1 && key <= VK_F24;
+}
+
+constexpr bool IsExplorerWindowClass(std::wstring_view className) noexcept {
+    return className == L"CabinetWClass" || className == L"ExploreWClass";
 }
 
 constexpr bool ShouldClaimConfiguredShortcut(bool hasInputContext, bool isConfiguredInputAction) noexcept {

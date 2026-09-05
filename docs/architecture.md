@@ -57,7 +57,7 @@ Overlay 进程异步启动和连接。WPF 应用空闲时会创建并隐藏一�
 
 安装器将 Princeton WordNet 3.1 派生的 62,319 条多词短语一次性导入 SQLite `suggestions`，并用 `metadata.builtinPhraseVersion` 确保已有用户数据库只升级一次。高优先级补充覆盖通用地名和经济、商业、心理学、计算机、工程、法律术语；`newyork`、`machinelearning` 等无空格输入由紧凑保序短语匹配召回。`wordnet-phrases.txt` 仅用于安装导入，TSF 运行时仍只读 `enput.db`。
 
-`shortcut.json` 的 `cancelComposition` 是多按键动作，默认 `["Escape", "Shift"]`。配置中的任一按键都会先被 TSF 捕获并执行同一取消路径：终止当前未确认的组合输入、隐藏候选；Emoji 模式无输入时退出模式。安装只补充缺失配置字段，不覆盖用户已自定义的数组。
+`shortcut.json` 的 `cancelComposition` 是多按键动作，默认 `["Escape", "Shift"]`。仅在活动组合输入或候选联想存在时，配置中的任一按键才会被 TSF 捕获并执行同一取消路径：终止当前未确认的组合输入、隐藏候选；Emoji 模式无输入时退出模式。空闲状态仍交给当前应用。安装只补充缺失配置字段，不覆盖用户已自定义的数组。
 
 ## 发布与资源边界（2026-08-29）
 

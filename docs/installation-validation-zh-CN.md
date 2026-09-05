@@ -1,6 +1,6 @@
 # 安装与联合验证流程
 
-最后更新：2026-08-29。本文区分本地包验证、系统安装验证与真实宿主验收；前一层通过不代表后一层已通过。
+最后更新：2026-09-05。本文区分本地包验证、系统安装验证与真实宿主验收；前一层通过不代表后一层已通过。
 
 ## 1. 生成可用发布包
 
@@ -61,4 +61,4 @@ payload\Resources\...
 
 安装或更新后完全关闭并重新打开 Notepad、VS Code、浏览器/ChatGPT 等测试宿主，再在语言栏明确选择 Enput Method。TSF DLL 是进程内 COM 服务，已打开应用不会自动加载新 DLL；自动输入 `he` 也不能证明实际已切换到 Enput。
 
-至少验证：基础 composition、数字/Tab/鼠标选词、`+`/`-` 翻页、Shift/Escape 取消、F2 Emoji、F3 富文本翻译、两个宿主的前景切换，以及目标编辑器字体对新 Emoji 的显示。完整矩阵见 `debugging-and-testing-zh-CN.md` 和 `development-issue-ledger-zh-CN.md`。
+至少验证：基础 composition、数字/Tab/鼠标选词、`+`/`-` 翻页、活动输入中的 Shift/Escape 取消、输入关键词后的 F2 Emoji、F3 富文本翻译、两个宿主的前景切换，以及目标编辑器字体对新 Emoji 的显示。对于资源管理器，Enput 激活但没有活动组合输入时，F2 必须重命名、F5 必须刷新、Escape/Shift 必须保持应用原语义。完整矩阵见 `debugging-and-testing-zh-CN.md` 和 `development-issue-ledger-zh-CN.md`。

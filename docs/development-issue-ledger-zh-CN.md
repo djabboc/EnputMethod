@@ -204,3 +204,9 @@
 | P-15 | 如何向不会编译的用户交付。 | 发布者手工推送 `main` 和本地 tag，再在 GitHub Release 页面上传 ZIP 与 `.sha256`。完整步骤见 `release-manual-zh-CN.md`。 |
 | P-16 | 首次 SSH 推送 `main` 报权限或没有 upstream。 | 远程地址必须为 `git@github.com:djabboc/EnputMethod.git`，不得写成 `git\@github.com`；多 key 环境可在仓库级设置 `core.sshCommand` 与 `IdentitiesOnly=yes`，但不记录真实私钥文件名。首次使用 `git push -u origin main` 建立 `origin/main` 跟踪；之后普通 `git push` 即可。已于 2026-08-30 成功推送。 |
 | P-17 | `publish-release.ps1` 在 Windows PowerShell 5.1 的第 4 步报 `utf8NoBOM` 参数绑定错误。 | PowerShell 5.1 的 `Set-Content` 不识别 `utf8NoBOM`。README 改用 .NET `UTF8Encoding(false)` 写入，发布目录可继续在 PowerShell 5.1 下创建。 | 待完成 `0.1.0` 实际打包、解压校验和本地 tag 验证。 |
+
+## 2026-09-05：空闲快捷键透传
+
+| 编号 | 问题与现象 | 根因与处理 | 验证状态 |
+| --- | --- | --- | --- |
+| I-48 | Enput 已激活但没有活动 composition 时，文件资源管理器的 F2 无法重命名；候选或联想状态下 F5 也可能不能刷新。空闲 Escape/Shift 同样可能被吞掉。 | `OnTestKeyDown` 将配置的 F2/F3/Escape/Shift 和候选状态中的非修饰键过早声明为已处理。新增独立键路由规则：配置快捷键只在活动 composition 或候选联想存在时捕获；未配置的功能键始终交给宿主。 | 提交 `1b6acb7`、`e16bf43`；原生回归、Release x64 TSF DLL 构建、本地包校验和 UAC 安装/SQLite 验证通过。Explorer 已重启以卸载旧 DLL；用户确认问题已解决。 |

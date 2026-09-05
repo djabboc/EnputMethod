@@ -134,7 +134,7 @@ WPF 的字号单位是 DIP，而配置的 `fontSize` 是 pt。Overlay 固定使�
 用户配置目录是 `%LOCALAPPDATA%\Enput Method\UserData`。
 
 - `config.json`：候选数、纵横布局、选词后空格、候选排序、字体、透明度、主题、翻译语言、翻译框初始尺寸。
-- `shortcut.json`：每个动作映射一个或多个按键。默认 F2 为 Emoji，F3 为翻译，`cancelComposition` 为 `["Escape", "Shift"]`。
+- `shortcut.json`：每个动作映射一个或多个按键。默认 F2 为 Emoji，F3 为翻译，`cancelComposition` 为 `["Escape", "Shift"]`；这些快捷键只在活动组合输入或候选联想存在时由 Enput 捕获。
 - `themes/*.json`：候选与翻译窗口的颜色、边框、圆角、内边距、行高、阴影、滚动条和语义文本色。
 
 安装器仅在 UserData 中的配置或快捷键文件不存在时复制默认文件，绝不覆盖已有用户值。因此用户移除 `Shift` 后，更新不会重新强制加入它。

@@ -126,7 +126,7 @@ dotnet --info
 | Escape 取消 | `he` 后按 Escape | 候选隐藏，活动 composition 不提交。 |
 | Shift 取消 | `he` 后按 Shift | 与 Escape 完全等价；不遗留 `he` 或候选窗。 |
 | 自定义取消键 | 从 `cancelComposition` 移除 Shift 后按 Shift | Shift 恢复普通修饰键，不取消 composition。 |
-| 空闲功能键 | 在文件资源管理器或候选已关闭的编辑器中按 F2、F5 | 分别执行重命名和刷新；Enput 不应收到或吞掉按键。 |
+| 空闲快捷键 | 在文件资源管理器或候选已关闭的编辑器中按 F2、F5、Escape、Shift | 分别执行重命名、刷新和应用自身的按键行为；Enput 不应收到或吞掉按键。 |
 | 组合中的 F2 | 输入 `fire` 后按 F2 | 当前输入切换为 Emoji 查询，候选显示 `EMOJI` 标记。 |
 | Emoji 退出 | 输入 `fire` 后按 F2，删除全部输入后按 Escape/Shift | 退出 Emoji 模式。 |
 | 近似词组 | `newyork`、`machinelearning` | 出现带空格的目标短语。 |

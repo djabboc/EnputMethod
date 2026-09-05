@@ -36,6 +36,8 @@ void VerifyFunctionKeyRouting() {
     Expect(!enput::ShouldClaimFunctionKey(VK_F2, false, true), "F2 must reach the application when Enput has no active input context.");
     Expect(enput::ShouldClaimFunctionKey(VK_F2, true, true), "A configured F2 action must remain available during active input.");
     Expect(!enput::ShouldClaimFunctionKey(VK_F5, true, false), "An unconfigured F5 must reach the application while candidates are visible.");
+    Expect(!enput::ShouldClaimConfiguredShortcut(false, true), "An idle Escape or Shift shortcut must reach the application.");
+    Expect(enput::ShouldClaimConfiguredShortcut(true, true), "A configured shortcut must remain available during active input.");
     Expect(enput::ShouldClaimFunctionKey('A', false, true), "Non-function keys must retain normal input routing.");
 }
 

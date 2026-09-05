@@ -1846,6 +1846,7 @@ private:
             HasShortcut(configuration_.shortcuts.selectPrevious, key) ||
             HasShortcut(configuration_.shortcuts.selectNext, key) ||
             HasShortcut(configuration_.shortcuts.selectCurrent, key);
+        if (!enput::ShouldClaimConfiguredShortcut(hasInputContext, isConfiguredInputAction)) return false;
         if (!enput::ShouldClaimFunctionKey(key, hasInputContext, isConfiguredInputAction)) return false;
         if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key)) return true;
         if (HasShortcut(configuration_.shortcuts.toggleEmojiMode, key)) return true;

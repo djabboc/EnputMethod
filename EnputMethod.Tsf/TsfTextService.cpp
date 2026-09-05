@@ -7,7 +7,9 @@
 #include "ApproximateMatch.h"
 #include "CandidateRanking.h"
 #include "CandidatePositioning.h"
+#include "CandidatePreview.h"
 #include "CandidateSelection.h"
+#include "CompositionEditing.h"
 #include "FunctionKeyRouting.h"
 #include "JsonObjectReader.h"
 #include "OverlayClient.h"
@@ -163,6 +165,7 @@ struct ShortcutConfiguration {
     std::vector<WPARAM> cancelComposition{ VK_ESCAPE, VK_SHIFT };
     std::vector<WPARAM> toggleEmojiMode{ VK_F2 };
     std::vector<WPARAM> toggleTranslationWindow{ VK_F3 };
+    std::vector<WPARAM> bypassCandidateSelectionModifiers{ VK_CONTROL };
 };
 
 struct RuntimeConfiguration {
@@ -172,6 +175,7 @@ struct RuntimeConfiguration {
     bool adaptiveCandidateRanking = true;
     bool preserveCase = true;
     bool avoidScreenEdges = true;
+    bool previewSelectedCandidateInComposition = true;
     std::wstring fontFamily = L"Segoe UI";
     int fontSize = 18;
     BYTE opacity = 255;
@@ -201,7 +205,7 @@ WPARAM ShortcutKey(const std::string& name) {
         { "Tab", VK_TAB }, { "Minus", VK_OEM_MINUS }, { "Plus", VK_OEM_PLUS },
         { "NumpadSubtract", VK_SUBTRACT }, { "NumpadAdd", VK_ADD },
         { "Up", VK_UP }, { "Down", VK_DOWN }, { "Space", VK_SPACE },
-        { "Enter", VK_RETURN }, { "Escape", VK_ESCAPE }, { "Shift", VK_SHIFT }, { "F2", VK_F2 }, { "F3", VK_F3 }
+        { "Enter", VK_RETURN }, { "Escape", VK_ESCAPE }, { "Shift", VK_SHIFT }, { "Control", VK_CONTROL }, { "Alt", VK_MENU }, { "F2", VK_F2 }, { "F3", VK_F3 }
     };
     const auto named = keys.find(name);
     if (named != keys.end()) return named->second;
@@ -235,11 +239,25 @@ ShortcutConfiguration LoadShortcutConfiguration() {
     shortcuts.cancelComposition = ShortcutKeys(object, "cancelComposition", shortcuts.cancelComposition);
     shortcuts.toggleEmojiMode = ShortcutKeys(object, "toggleEmojiMode", shortcuts.toggleEmojiMode);
     shortcuts.toggleTranslationWindow = ShortcutKeys(object, "toggleTranslationWindow", shortcuts.toggleTranslationWindow);
+    shortcuts.bypassCandidateSelectionModifiers = ShortcutKeys(object, "bypassCandidateSelectionModifiers", shortcuts.bypassCandidateSelectionModifiers);
     return shortcuts;
 }
 
 bool HasShortcut(const std::vector<WPARAM>& keys, WPARAM key) {
     return enput::HasConfiguredShortcut(keys, key);
+}
+
+bool IsShiftKey(WPARAM key) {
+    return key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT;
+}
+
+bool IsConfiguredModifierDown(const std::vector<WPARAM>& modifiers) {
+    for (const WPARAM modifier : modifiers) {
+        if (modifier == VK_CONTROL && (GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_LCONTROL) < 0 || GetKeyState(VK_RCONTROL) < 0)) return true;
+        if (modifier == VK_MENU && (GetKeyState(VK_MENU) < 0 || GetKeyState(VK_LMENU) < 0 || GetKeyState(VK_RMENU) < 0)) return true;
+        if (modifier == VK_SHIFT && (GetKeyState(VK_SHIFT) < 0 || GetKeyState(VK_LSHIFT) < 0 || GetKeyState(VK_RSHIFT) < 0)) return true;
+    }
+    return false;
 }
 
 bool IsSafeThemeName(const std::string& name) {
@@ -317,6 +335,7 @@ RuntimeConfiguration LoadRuntimeConfiguration() {
         configuration.adaptiveCandidateRanking = enput::json::BooleanOr(object, "adaptiveCandidateRanking", configuration.adaptiveCandidateRanking);
         configuration.preserveCase = enput::json::BooleanOr(object, "preserveCase", configuration.preserveCase);
         configuration.avoidScreenEdges = enput::json::BooleanOr(object, "avoidScreenEdges", configuration.avoidScreenEdges);
+        configuration.previewSelectedCandidateInComposition = enput::json::BooleanOr(object, "previewSelectedCandidateInComposition", configuration.previewSelectedCandidateInComposition);
         configuration.fontFamily = Utf8ToWide(enput::json::StringOr(object, "fontFamily", "Segoe UI"));
         if (configuration.fontFamily.empty()) configuration.fontFamily = L"Segoe UI";
         configuration.fontSize = std::clamp(static_cast<int>(std::lround(enput::json::NumberOr(object, "fontSize", configuration.fontSize))), 10, 32);
@@ -759,7 +778,7 @@ LexiconDatabase& Lexicon() { static LexiconDatabase database; return database; }
 std::wstring PrefixLimit(const std::wstring& prefix) { return prefix + static_cast<wchar_t>(0xffff); }
 
 std::vector<std::wstring> QueryWords(const std::wstring& prefix) {
-    SqliteStatement query(Lexicon().Open(), L"SELECT text FROM words WHERE normalized >= ?1 AND normalized < ?2 ORDER BY ordinal;");
+    SqliteStatement query(Lexicon().Open(), L"SELECT text FROM (SELECT text, ordinal, priority FROM word_case_variant WHERE normalized >= ?1 AND normalized < ?2 UNION ALL SELECT w.text, w.ordinal, 0 FROM words w WHERE w.normalized >= ?1 AND w.normalized < ?2 AND NOT EXISTS (SELECT 1 FROM word_case_variant v WHERE v.normalized = w.normalized)) ORDER BY priority DESC, ordinal;");
     if (!query) return {};
     query.Bind(1, prefix); query.Bind(2, PrefixLimit(prefix));
     std::vector<std::wstring> results;
@@ -769,7 +788,7 @@ std::vector<std::wstring> QueryWords(const std::wstring& prefix) {
 
 std::vector<std::wstring> QueryApproximateWords(const std::wstring& queryText) {
     if (queryText.size() < 3) return {};
-    SqliteStatement query(Lexicon().Open(), L"SELECT text, normalized FROM words WHERE normalized >= ?2 AND normalized < ?3 AND normalized LIKE ?1 ESCAPE '\\' ORDER BY ordinal LIMIT 96;");
+    SqliteStatement query(Lexicon().Open(), L"SELECT text, normalized FROM (SELECT text, normalized, ordinal, priority FROM word_case_variant WHERE normalized >= ?2 AND normalized < ?3 AND normalized LIKE ?1 ESCAPE '\\' UNION ALL SELECT w.text, w.normalized, w.ordinal, 0 FROM words w WHERE w.normalized >= ?2 AND w.normalized < ?3 AND w.normalized LIKE ?1 ESCAPE '\\' AND NOT EXISTS (SELECT 1 FROM word_case_variant v WHERE v.normalized = w.normalized)) ORDER BY priority DESC, ordinal LIMIT 96;");
     if (!query) return {};
     const std::wstring firstCharacter(1, queryText.front());
     query.Bind(1, enput::LikeOrderedSubsequencePattern(queryText)); query.Bind(2, firstCharacter); query.Bind(3, PrefixLimit(firstCharacter));
@@ -784,7 +803,7 @@ std::vector<std::wstring> QueryApproximateWords(const std::wstring& queryText) {
 struct StoredSuggestion { std::wstring trigger; std::wstring candidate; int kind = 0; };
 
 std::vector<StoredSuggestion> QuerySuggestionPrefixes(const std::wstring& prefix) {
-    SqliteStatement query(Lexicon().Open(), L"SELECT trigger, kind, candidate FROM suggestions WHERE kind = 1 AND candidate >= ?1 AND candidate < ?2 ORDER BY priority DESC, ordinal;");
+    SqliteStatement query(Lexicon().Open(), L"SELECT trigger, kind, candidate FROM suggestions WHERE kind = 1 AND candidate COLLATE NOCASE >= ?1 AND candidate COLLATE NOCASE < ?2 ORDER BY priority DESC, ordinal;");
     if (!query) return {};
     query.Bind(1, prefix); query.Bind(2, PrefixLimit(prefix));
     std::vector<StoredSuggestion> results;
@@ -794,7 +813,7 @@ std::vector<StoredSuggestion> QuerySuggestionPrefixes(const std::wstring& prefix
 
 std::vector<StoredSuggestion> QueryApproximateSuggestions(const std::wstring& queryText) {
     if (queryText.size() < 3) return {};
-    SqliteStatement query(Lexicon().Open(), L"SELECT trigger, kind, candidate FROM suggestions WHERE candidate >= ?2 AND candidate < ?3 AND candidate LIKE ?1 ESCAPE '\\' ORDER BY priority DESC, ordinal LIMIT 48;");
+    SqliteStatement query(Lexicon().Open(), L"SELECT trigger, kind, candidate FROM suggestions WHERE candidate COLLATE NOCASE >= ?2 AND candidate COLLATE NOCASE < ?3 AND candidate LIKE ?1 ESCAPE '\\' ORDER BY priority DESC, ordinal LIMIT 48;");
     if (!query) return {};
     const std::wstring firstCharacter(1, queryText.front());
     query.Bind(1, enput::LikeOrderedSubsequencePattern(queryText)); query.Bind(2, firstCharacter); query.Bind(3, PrefixLimit(firstCharacter));
@@ -851,9 +870,9 @@ std::vector<StoredEmoji> QueryApproximateEmoji(const std::wstring& queryText) {
 
 const TranslationEntry* FindTranslation(const std::wstring& text) {
     const std::wstring key = Lowercase(text);
-    SqliteStatement entries(Lexicon().Open(), L"SELECT source, text FROM translation_entry WHERE key = ?1 ORDER BY rank;");
+    SqliteStatement entries(Lexicon().Open(), L"SELECT source, text FROM translation_entry WHERE key = ?1 ORDER BY CASE WHEN text = ?2 THEN 0 ELSE 1 END, rank;");
     if (!entries) return nullptr;
-    entries.Bind(1, key);
+    entries.Bind(1, key); entries.Bind(2, text);
     TranslationEntry merged;
     bool found = false;
     const auto appendUnique = [](std::vector<std::wstring>* values, const std::wstring& value) {
@@ -1661,9 +1680,9 @@ public:
         return S_OK;
     }
     STDMETHODIMP OnTestKeyDown(ITfContext*, WPARAM key, LPARAM, BOOL* eaten) override { if (!eaten) return E_INVALIDARG; *eaten = ShouldHandleKey(key); return S_OK; }
-    STDMETHODIMP OnTestKeyUp(ITfContext*, WPARAM, LPARAM, BOOL* eaten) override { if (!eaten) return E_INVALIDARG; *eaten = FALSE; return S_OK; }
+    STDMETHODIMP OnTestKeyUp(ITfContext*, WPARAM key, LPARAM, BOOL* eaten) override { if (!eaten) return E_INVALIDARG; *eaten = shiftCancelPending_ && IsShiftKey(key); return S_OK; }
     STDMETHODIMP OnKeyDown(ITfContext* context, WPARAM key, LPARAM, BOOL* eaten) override;
-    STDMETHODIMP OnKeyUp(ITfContext*, WPARAM, LPARAM, BOOL* eaten) override { if (!eaten) return E_INVALIDARG; *eaten = FALSE; return S_OK; }
+    STDMETHODIMP OnKeyUp(ITfContext* context, WPARAM key, LPARAM, BOOL* eaten) override;
     STDMETHODIMP OnPreservedKey(ITfContext*, REFGUID, BOOL* eaten) override { if (!eaten) return E_INVALIDARG; *eaten = FALSE; return S_OK; }
     STDMETHODIMP OnCompositionTerminated(TfEditCookie, ITfComposition* composition) override {
         if (composition == composition_) ClearComposition();
@@ -1671,6 +1690,11 @@ public:
     }
 
     HRESULT ApplyKey(ITfContext* context, TfEditCookie cookie, WPARAM key) {
+        if (IsShiftKey(key) && HasShortcut(configuration_.shortcuts.cancelComposition, key)) {
+            shiftCancelPending_ = true;
+            return S_OK;
+        }
+        if (shiftCancelPending_) shiftCancelPending_ = false;
         if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key)) {
             configuration_ = LoadRuntimeConfiguration();
             translationEnabled_ = !translationEnabled_;
@@ -1703,6 +1727,7 @@ public:
         }
         if (key >= 'A' && key <= 'Z') {
             ClearDetachedSuggestions();
+            candidatePreviewActive_ = false;
             const bool uppercase = (GetKeyState(VK_SHIFT) < 0) ^ ((GetKeyState(VK_CAPITAL) & 1) != 0);
             typed_.insert(cursor_, 1, static_cast<wchar_t>(uppercase ? key : key + (L'a' - L'A')));
             ++cursor_;
@@ -1714,6 +1739,7 @@ public:
             return UpdateComposition(context, cookie);
         }
         if (key == VK_BACK && cursor_ > 0) {
+            candidatePreviewActive_ = false;
             typed_.erase(cursor_ - 1, 1);
             --cursor_;
             configuration_ = LoadRuntimeConfiguration();
@@ -1727,27 +1753,63 @@ public:
         if (HasShortcut(configuration_.shortcuts.nextPage, key)) return MovePage(context, cookie, 1);
         if (HasShortcut(configuration_.shortcuts.selectPrevious, key)) return MoveSelection(context, cookie, -1);
         if (HasShortcut(configuration_.shortcuts.selectNext, key)) return MoveSelection(context, cookie, 1);
-        if (key == VK_LEFT && cursor_ > 0) { --cursor_; return UpdateComposition(context, cookie); }
-        if (key == VK_RIGHT && cursor_ < typed_.size()) { ++cursor_; return UpdateComposition(context, cookie); }
+        if (key == VK_LEFT || key == VK_RIGHT) {
+            if (enput::PromoteCandidatePreview(&typed_, &cursor_, candidates_, selectedIndex_, candidatePreviewActive_)) {
+                candidatePreviewActive_ = false;
+                configuration_ = LoadRuntimeConfiguration();
+                allCandidates_ = emojiMode_ ? FindEmojiCandidates(typed_) : FindCandidates(typed_);
+                currentPage_ = 0;
+                selectedIndex_ = 0;
+                UpdateCurrentPage();
+            }
+            if (key == VK_LEFT && cursor_ > 0) --cursor_;
+            else if (key == VK_RIGHT && cursor_ < typed_.size()) ++cursor_;
+            return UpdateComposition(context, cookie);
+        }
         std::size_t candidateIndex{};
         const wchar_t selectionTrailing = configuration_.appendSpaceAfterSelection ? L' ' : L'\0';
-        if (enput::TryGetCandidateIndex(key, candidates_.size(), &candidateIndex)) return CommitCandidate(context, cookie, candidates_[candidateIndex], selectionTrailing);
+        const bool cursorAtEnd = enput::IsCompositionCursorAtEnd(cursor_, typed_.size());
+        const bool bypassCandidateSelection = IsConfiguredModifierDown(configuration_.shortcuts.bypassCandidateSelectionModifiers);
+        if (enput::ShouldSelectCandidate(key, GetKeyState(VK_SHIFT) < 0, bypassCandidateSelection, cursorAtEnd, candidates_.size(), &candidateIndex)) return CommitCandidate(context, cookie, candidates_[candidateIndex], selectionTrailing);
         if (HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size()) return CommitCandidate(context, cookie, candidates_[selectedIndex_], selectionTrailing);
+        if (key == VK_SPACE && enput::ShouldInsertIntoComposition(cursor_, typed_.size())) return CommitWithCharacter(context, cookie, L' ');
         if (key == VK_SPACE && detachedSuggestionActive_) return CommitDetachedSuggestion(context, cookie, L"", L' ');
         if (key == VK_SPACE && IsSuggestionActive()) return FinishComposition(cookie, L"", L' ');
-        if (key == VK_SPACE) return FinishWithSuggestions(context, cookie, typed_, L' ');
-        if (key == VK_RETURN) return FinishComposition(cookie, typed_, L'\r');
+        if (key == VK_SPACE) return FinishWithSuggestions(context, cookie, CompositionText(), L' ');
+        if (key == VK_RETURN) return FinishComposition(cookie, CompositionText(), L'\r');
         return S_FALSE;
     }
 
     HRESULT CommitForPassthrough(ITfContext* context, TfEditCookie cookie) {
         if (detachedSuggestionActive_) return CommitDetachedSuggestion(context, cookie, L"", L'\0');
-        return FinishComposition(cookie, typed_, L'\0');
+        return FinishComposition(cookie, CompositionText(), L'\0');
     }
 
     HRESULT CommitWithCharacter(ITfContext* context, TfEditCookie cookie, wchar_t character) {
         if (detachedSuggestionActive_) return CommitDetachedSuggestion(context, cookie, L"", character);
-        return FinishComposition(cookie, typed_ + character, L'\0');
+        candidatePreviewActive_ = false;
+        if (!enput::InsertCompositionCharacter(&typed_, &cursor_, character)) return E_UNEXPECTED;
+        configuration_ = LoadRuntimeConfiguration();
+        allCandidates_ = emojiMode_ ? FindEmojiCandidates(typed_) : FindCandidates(typed_);
+        currentPage_ = 0;
+        selectedIndex_ = 0;
+        UpdateCurrentPage();
+        return UpdateComposition(context, cookie);
+    }
+
+    HRESULT CommitPendingShiftCancellation(TfEditCookie cookie) {
+        if (!shiftCancelPending_) return S_OK;
+        shiftCancelPending_ = false;
+        switch (enput::ResolveCandidateCancellationAction(detachedSuggestionActive_, emojiMode_, typed_.empty())) {
+        case enput::CandidateCancellationAction::DismissDetachedSuggestion:
+            return DismissDetachedSuggestions();
+        case enput::CandidateCancellationAction::ExitEmptyEmojiMode:
+            emojiMode_ = false;
+            return S_OK;
+        case enput::CandidateCancellationAction::FinishComposition:
+            return FinishComposition(cookie, typed_, L'\0');
+        }
+        return E_UNEXPECTED;
     }
 
 private:
@@ -1874,7 +1936,7 @@ private:
             if (!hasModifier && key >= 'A' && key <= 'Z') return false;
             if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key) || HasShortcut(configuration_.shortcuts.cancelComposition, key) || key == VK_SPACE || HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key)) return false;
             if (HasShortcut(configuration_.shortcuts.selectPrevious, key) || HasShortcut(configuration_.shortcuts.selectNext, key)) return false;
-            if (enput::TryGetCandidateIndex(key, candidates_.size(), nullptr)) return false;
+            if (enput::ShouldSelectCandidate(key, GetKeyState(VK_SHIFT) < 0, IsConfiguredModifierDown(configuration_.shortcuts.bypassCandidateSelectionModifiers), true, candidates_.size())) return false;
             return !(HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size());
         }
         const bool hasModifier = GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0;
@@ -1883,13 +1945,26 @@ private:
         if (HasShortcut(configuration_.shortcuts.cancelComposition, key)) return false;
         if (!hasModifier && key >= 'A' && key <= 'Z') return false;
         if (key == VK_BACK) return cursor_ == 0;
-        if (key == VK_SPACE || key == VK_RETURN || key == VK_ESCAPE) return false;
+        if (key == VK_SPACE) return enput::ShouldInsertIntoComposition(cursor_, typed_.size());
+        if (key == VK_RETURN || key == VK_ESCAPE) return false;
         if (HasShortcut(configuration_.shortcuts.previousPage, key) || HasShortcut(configuration_.shortcuts.nextPage, key)) return false;
         if (HasShortcut(configuration_.shortcuts.selectPrevious, key) || HasShortcut(configuration_.shortcuts.selectNext, key)) return false;
         if (key == VK_LEFT) return cursor_ == 0;
         if (key == VK_RIGHT) return cursor_ == typed_.size();
-        if (enput::TryGetCandidateIndex(key, candidates_.size(), nullptr)) return false;
+        if (enput::ShouldSelectCandidate(key, GetKeyState(VK_SHIFT) < 0, IsConfiguredModifierDown(configuration_.shortcuts.bypassCandidateSelectionModifiers), enput::IsCompositionCursorAtEnd(cursor_, typed_.size()), candidates_.size())) return false;
         return !(HasShortcut(configuration_.shortcuts.selectCurrent, key) && selectedIndex_ < candidates_.size());
+    }
+
+    bool IsBypassedCandidateSelectionDigit(WPARAM key) const {
+        return enput::CandidateIndex(key) >= 0 &&
+               IsConfiguredModifierDown(configuration_.shortcuts.bypassCandidateSelectionModifiers) &&
+               enput::IsCompositionCursorAtEnd(cursor_, typed_.size());
+    }
+
+    static wchar_t DigitCharacter(WPARAM key) {
+        if (key >= '0' && key <= '9') return static_cast<wchar_t>(key);
+        if (key >= VK_NUMPAD0 && key <= VK_NUMPAD9) return static_cast<wchar_t>(L'0' + key - VK_NUMPAD0);
+        return L'\0';
     }
 
     static wchar_t PrintableCharacter(WPARAM key, LPARAM keyData) {
@@ -1916,44 +1991,20 @@ private:
         std::transform(text->begin(), text->end(), text->begin(), [](wchar_t character) { return static_cast<wchar_t>(towupper(character)); });
     }
 
-    static bool IsAllUpper(const std::wstring& text) {
-        bool hasLetter = false;
-        for (const wchar_t character : text) {
-            if (!iswalpha(character)) continue;
-            hasLetter = true;
-            if (!iswupper(character)) return false;
-        }
-        return hasLetter;
-    }
-
-    static bool IsTitleCase(const std::wstring& text) {
-        if (text.empty() || !iswupper(text.front())) return false;
-        return std::all_of(text.begin() + 1, text.end(), [](wchar_t character) { return !iswalpha(character) || iswlower(character); });
-    }
-
-    static std::wstring DisplayCandidate(const std::wstring& candidate, const std::wstring& typed, const RuntimeConfiguration& configuration) {
-        if (candidate.find(static_cast<wchar_t>(0x1F)) != std::wstring::npos) return candidate;
-        std::wstring display = candidate;
-        if (configuration.preserveCase && IsAllUpper(typed)) {
-            ToUpperInPlace(&display);
-        } else if (configuration.preserveCase && IsTitleCase(typed)) {
-            ToLowerInPlace(&display);
-            if (!display.empty()) display.front() = static_cast<wchar_t>(towupper(display.front()));
-        } else if (configuration.preserveCase && !typed.empty() && std::all_of(typed.begin(), typed.end(), [](wchar_t character) { return !iswalpha(character) || iswlower(character); })) {
-            ToLowerInPlace(&display);
-        }
-        return display;
-    }
+    // Candidate capitalization is lexicon data, never a rendering transformation.
+    static const std::wstring& DisplayCandidate(const std::wstring& candidate, const std::wstring&, const RuntimeConfiguration&) { return candidate; }
 
     std::vector<std::wstring> FindCandidates(const std::wstring& typed) {
         if (typed.empty()) return {};
         std::wstring lower = typed;
         ToLowerInPlace(&lower);
         std::vector<std::wstring> exactMatches;
+        std::vector<std::wstring> exactCaseMatches;
         std::vector<std::wstring> continuationMatches;
         std::vector<std::wstring> prefixMatches;
         std::vector<std::wstring> approximateMatches;
         std::unordered_set<std::wstring> exactKeys;
+        std::unordered_set<std::wstring> exactCaseKeys;
         std::unordered_set<std::wstring> continuationKeys;
         std::unordered_set<std::wstring> prefixKeys;
         std::unordered_set<std::wstring> approximateKeys;
@@ -1965,12 +2016,15 @@ private:
             std::wstring candidate = word;
             ToLowerInPlace(&candidate);
             if (!candidate.starts_with(lower)) continue;
-            if (candidate == lower) appendUnique(&exactMatches, &exactKeys, word);
+            if (word == typed) appendUnique(&exactCaseMatches, &exactCaseKeys, word);
+            else if (candidate == lower) appendUnique(&exactMatches, &exactKeys, word);
             else appendUnique(&prefixMatches, &prefixKeys, word);
         }
         for (const StoredSuggestion& entry : QuerySuggestionPrefixes(lower)) {
             const std::wstring candidate = Lowercase(entry.candidate);
-            if (Lowercase(entry.trigger) == lower && candidate.starts_with(lower + L" ")) {
+            if (entry.candidate == typed) {
+                appendUnique(&exactCaseMatches, &exactCaseKeys, entry.candidate);
+            } else if (Lowercase(entry.trigger) == lower && candidate.starts_with(lower + L" ")) {
                 appendUnique(&continuationMatches, &continuationKeys, entry.candidate);
             } else if (candidate == lower) {
                 appendUnique(&exactMatches, &exactKeys, entry.candidate);
@@ -1993,18 +2047,20 @@ private:
         std::vector<std::wstring> matches;
         if (configuration_.adaptiveCandidateRanking) {
             const enput::CandidateFrequencyMap& frequencies = CandidateFrequencies();
+            enput::RankCandidatesByFrequency(&exactCaseMatches, frequencies);
             enput::RankCandidatesByFrequency(&exactMatches, frequencies);
             enput::RankCandidatesByFrequency(&continuationMatches, frequencies);
             enput::RankCandidatesByFrequency(&prefixMatches, frequencies);
             enput::RankCandidatesByFrequency(&approximateMatches, frequencies);
         }
-        matches.reserve(exactMatches.size() + continuationMatches.size() + prefixMatches.size() + approximateMatches.size());
+        matches.reserve(exactCaseMatches.size() + exactMatches.size() + continuationMatches.size() + prefixMatches.size() + approximateMatches.size());
         std::unordered_set<std::wstring> matchKeys;
         const auto appendMatches = [&matches, &matchKeys](const std::vector<std::wstring>& source) {
             for (const std::wstring& candidate : source) {
                 if (matchKeys.insert(Lowercase(candidate)).second) matches.push_back(candidate);
             }
         };
+        appendMatches(exactCaseMatches);
         appendMatches(exactMatches);
         appendMatches(continuationMatches);
         appendMatches(prefixMatches);
@@ -2088,6 +2144,12 @@ private:
         }
     }
 
+    const std::wstring& CompositionText() const {
+        return enput::CompositionPreviewText(
+            typed_, candidates_, selectedIndex_, configuration_.previewSelectedCandidateInComposition,
+            candidatePreviewActive_ && composition_ && !emojiMode_ && !detachedSuggestionActive_);
+    }
+
     HRESULT MovePage(ITfContext* context, TfEditCookie cookie, int direction) {
         const size_t pageCount = PageCount();
         if (pageCount < 2) return S_OK;
@@ -2097,6 +2159,7 @@ private:
         if (currentPage_ == previousPage) return S_OK;
         UpdateCurrentPage();
         selectedIndex_ = 0;
+        candidatePreviewActive_ = false;
         return RefreshCandidatesAtCurrentPosition(context, cookie);
     }
 
@@ -2116,7 +2179,9 @@ private:
             selectedIndex_ = 0;
             changed = true;
         }
-        return changed ? RefreshCandidatesAtCurrentPosition(context, cookie) : S_OK;
+        if (!changed) return S_OK;
+        candidatePreviewActive_ = true;
+        return RefreshCandidatesAtCurrentPosition(context, cookie);
     }
 
     std::string CandidateOverlayMessage(const RECT& bounds, const RECT& compositionBounds, std::uintptr_t ownerWindow, std::uint64_t stateId) const {
@@ -2251,13 +2316,15 @@ private:
         }
         ITfRange* range{}; HRESULT hr = composition_->GetRange(&range);
         if (FAILED(hr)) return hr;
-        hr = range->SetText(cookie, 0, typed_.data(), static_cast<LONG>(typed_.size()));
+        const std::wstring& compositionText = CompositionText();
+        hr = range->SetText(cookie, 0, compositionText.data(), static_cast<LONG>(compositionText.size()));
         if (SUCCEEDED(hr)) {
             ITfRange* caret{}; hr = range->Clone(&caret);
             if (SUCCEEDED(hr)) {
                 caret->Collapse(cookie, TF_ANCHOR_START);
                 LONG shifted{};
-                hr = caret->ShiftStart(cookie, static_cast<LONG>(cursor_), &shifted, nullptr);
+                const LONG compositionCursor = candidatePreviewActive_ ? static_cast<LONG>(compositionText.size()) : static_cast<LONG>(cursor_);
+                hr = caret->ShiftStart(cookie, compositionCursor, &shifted, nullptr);
                 if (SUCCEEDED(hr)) caret->Collapse(cookie, TF_ANCHOR_START);
                 TF_SELECTION selection{ caret, { TF_AE_NONE, FALSE } };
                 if (SUCCEEDED(hr)) hr = context->SetSelection(cookie, 1, &selection);
@@ -2276,7 +2343,7 @@ private:
         if (trailing) finalText += trailing;
         if (SUCCEEDED(hr)) { hr = range->SetText(cookie, 0, finalText.data(), static_cast<LONG>(finalText.size())); range->Release(); }
         ITfComposition* composition = composition_; composition_ = nullptr;
-        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; HideOverlay(); candidateWindow_.Hide(); translationWindow_.Hide();
+        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidatePreviewActive_ = false; HideOverlay(); candidateWindow_.Hide(); translationWindow_.Hide();
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
         if (SUCCEEDED(hr)) hr = composition->EndComposition(cookie);
         composition->Release();
@@ -2381,7 +2448,7 @@ private:
         if (composition_) { composition_->Release(); composition_ = nullptr; }
         ClearDetachedSuggestions();
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
-        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; HideOverlay(); candidateWindow_.Hide(); translationWindow_.Hide();
+        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidatePreviewActive_ = false; HideOverlay(); candidateWindow_.Hide(); translationWindow_.Hide();
     }
 
     long refs_ = 1;
@@ -2398,6 +2465,8 @@ private:
     size_t selectedIndex_ = 0;
     std::wstring lastCommittedText_;
     bool emojiMode_ = false;
+    bool candidatePreviewActive_ = false;
+    bool shiftCancelPending_ = false;
     bool translationEnabled_ = false;
     bool detachedSuggestionActive_ = false;
     bool isFocused_ = true;
@@ -2413,13 +2482,13 @@ private:
 
 class KeyEditSession final : public ITfEditSession {
 public:
-    KeyEditSession(TextService* service, ITfContext* context, WPARAM key, bool passThrough, wchar_t printableCharacter) : service_(service), context_(context), key_(key), passThrough_(passThrough), printableCharacter_(printableCharacter) { service_->AddRef(); context_->AddRef(); }
+    KeyEditSession(TextService* service, ITfContext* context, WPARAM key, bool passThrough, wchar_t printableCharacter, bool shiftCancellation = false) : service_(service), context_(context), key_(key), passThrough_(passThrough), printableCharacter_(printableCharacter), shiftCancellation_(shiftCancellation) { service_->AddRef(); context_->AddRef(); }
     ~KeyEditSession() { context_->Release(); service_->Release(); }
     STDMETHODIMP QueryInterface(REFIID iid, void** result) override { if (!result) return E_INVALIDARG; *result = nullptr; if (iid != IID_IUnknown && iid != IID_ITfEditSession) return E_NOINTERFACE; *result = static_cast<ITfEditSession*>(this); AddRef(); return S_OK; }
     STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&refs_); }
     STDMETHODIMP_(ULONG) Release() override { const auto refs = InterlockedDecrement(&refs_); if (!refs) delete this; return refs; }
-    STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return passThrough_ ? service_->CommitForPassthrough(context_, cookie) : printableCharacter_ ? service_->CommitWithCharacter(context_, cookie, printableCharacter_) : service_->ApplyKey(context_, cookie, key_); }
-private: long refs_ = 1; TextService* service_; ITfContext* context_; WPARAM key_; bool passThrough_; wchar_t printableCharacter_;
+    STDMETHODIMP DoEditSession(TfEditCookie cookie) override { return shiftCancellation_ ? service_->CommitPendingShiftCancellation(cookie) : passThrough_ ? service_->CommitForPassthrough(context_, cookie) : printableCharacter_ ? service_->CommitWithCharacter(context_, cookie, printableCharacter_) : service_->ApplyKey(context_, cookie, key_); }
+private: long refs_ = 1; TextService* service_; ITfContext* context_; WPARAM key_; bool passThrough_; wchar_t printableCharacter_; bool shiftCancellation_;
 };
 
 class CandidateClickEditSession final : public ITfEditSession {
@@ -2481,13 +2550,27 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM key, LPARAM keyD
     *eaten = FALSE;
     if (!ShouldHandleKey(key)) return S_OK;
     const bool shouldPassThrough = ShouldPassThrough(key);
-    const wchar_t printableCharacter = shouldPassThrough ? PrintableCharacter(key, keyData) : L'\0';
+    wchar_t printableCharacter = shouldPassThrough ? PrintableCharacter(key, keyData) : L'\0';
+    if (!printableCharacter && shouldPassThrough && IsBypassedCandidateSelectionDigit(key)) printableCharacter = DigitCharacter(key);
     const bool passThrough = shouldPassThrough && !printableCharacter;
     auto* session = new (std::nothrow) KeyEditSession(this, context, key, passThrough, printableCharacter);
     if (!session) return E_OUTOFMEMORY;
     HRESULT sessionResult{}; const HRESULT hr = context->RequestEditSession(clientId_, session, TF_ES_SYNC | TF_ES_READWRITE, &sessionResult);
     session->Release();
     *eaten = !passThrough && SUCCEEDED(hr) && SUCCEEDED(sessionResult);
+    return hr;
+}
+
+STDMETHODIMP TextService::OnKeyUp(ITfContext* context, WPARAM key, LPARAM, BOOL* eaten) {
+    if (!eaten) return E_INVALIDARG;
+    *eaten = FALSE;
+    if (!shiftCancelPending_ || !IsShiftKey(key)) return S_OK;
+    auto* session = new (std::nothrow) KeyEditSession(this, context, key, false, L'\0', true);
+    if (!session) return E_OUTOFMEMORY;
+    HRESULT sessionResult{};
+    const HRESULT hr = context->RequestEditSession(clientId_, session, TF_ES_SYNC | TF_ES_READWRITE, &sessionResult);
+    session->Release();
+    *eaten = SUCCEEDED(hr) && SUCCEEDED(sessionResult);
     return hr;
 }
 

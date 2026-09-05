@@ -4,6 +4,7 @@
   "appendSpaceAfterSelection": true,
   "adaptiveCandidateRanking": true,
   "preserveCase": true,
+  "previewSelectedCandidateInComposition": true,
   "avoidScreenEdges": true,
   "fontFamily": "Segoe UI",
   "fontSize": 18,

@@ -1,6 +1,8 @@
 #include "../EnputMethod.Tsf/CandidateRanking.h"
 #include "../EnputMethod.Tsf/CandidatePositioning.h"
 #include "../EnputMethod.Tsf/CandidateSelection.h"
+#include "../EnputMethod.Tsf/CandidatePreview.h"
+#include "../EnputMethod.Tsf/CompositionEditing.h"
 #include "../EnputMethod.Tsf/FunctionKeyRouting.h"
 #include "../EnputMethod.Tsf/ApproximateMatch.h"
 #include "../EnputMethod.Tsf/JsonObjectReader.h"
@@ -54,6 +56,51 @@ void VerifyCandidateBounds() {
         }
     }
     Expect(!enput::TryGetCandidateIndex('1', 0, nullptr), "No digit can select when no candidates are visible.");
+    Expect(enput::ShouldSelectCandidate('7', false, false, true, 9), "An unshifted top-row digit at the composition end must keep direct candidate selection.");
+    Expect(!enput::ShouldSelectCandidate('7', true, false, true, 9), "Shift+7 must remain printable '&', not select a candidate.");
+    Expect(enput::ShouldSelectCandidate(VK_NUMPAD7, true, false, true, 9), "Shift must not disable numpad candidate selection.");
+    Expect(!enput::ShouldSelectCandidate('7', false, false, false, 9), "A digit in the middle of composition must insert text, not select a candidate.");
+    Expect(!enput::ShouldSelectCandidate('7', false, true, true, 9), "The configured bypass modifier must turn a terminal digit into text input.");
+    Expect(enput::ShouldInsertIntoComposition(4, 10), "A cursor inside composition must use text editing rules.");
+    Expect(!enput::ShouldInsertIntoComposition(10, 10), "A cursor at the composition end may use confirmation shortcuts.");
+}
+
+void VerifyCandidatePreview() {
+    const std::wstring typed = L"Wash";
+    const std::vector<std::wstring> candidates{ L"Washington", L"Washington DC" };
+    Expect(enput::CompositionPreviewText(typed, candidates, 0, true, false) == L"Wash", "Composition must retain the query before candidate browsing.");
+    Expect(enput::CompositionPreviewText(typed, candidates, 1, true, true) == L"Washington DC", "Candidate browsing must preview the selected candidate in composition.");
+    Expect(enput::CompositionPreviewText(typed, candidates, 1, false, true) == L"Wash", "Disabled preview must retain the original composition.");
+
+    std::wstring editable = L"Wa";
+    std::size_t cursor = editable.size();
+    Expect(enput::PromoteCandidatePreview(&editable, &cursor, candidates, 1, true), "An active candidate preview must become editable.");
+    Expect(editable == L"Washington DC", "Editing a preview must retain the selected candidate text.");
+    Expect(cursor == editable.size(), "A promoted preview must place the cursor after the candidate.");
+    --cursor;
+    Expect(editable.substr(0, cursor) == L"Washington D" && editable.substr(cursor) == L"C", "Left after preview promotion must produce Washington D|C.");
+    Expect(!enput::PromoteCandidatePreview(&editable, &cursor, candidates, 1, false), "An inactive preview must not replace composition text.");
+}
+
+void VerifySymbolCompositionEditing() {
+    std::wstring at = L"AT";
+    std::size_t cursor = at.size();
+    Expect(enput::InsertCompositionCharacter(&at, &cursor, L'&'), "An ampersand must remain in active composition.");
+    Expect(enput::InsertCompositionCharacter(&at, &cursor, L'T'), "Composition must continue after an ampersand.");
+    Expect(at == L"AT&T" && cursor == at.size(), "AT&T must remain a single editable composition.");
+
+    std::wstring rhythm = L"R";
+    cursor = rhythm.size();
+    Expect(enput::InsertCompositionCharacter(&rhythm, &cursor, L'&'), "R&B must accept its ampersand in composition.");
+    Expect(enput::InsertCompositionCharacter(&rhythm, &cursor, L'B'), "R&B must continue after its ampersand.");
+    Expect(rhythm == L"R&B" && cursor == rhythm.size(), "R&B must remain a single editable composition.");
+
+    std::wstring editable = L"hello world";
+    cursor = 5;
+    Expect(enput::InsertCompositionCharacter(&editable, &cursor, L' '), "A space inside composition must insert instead of confirming a candidate.");
+    Expect(enput::InsertCompositionCharacter(&editable, &cursor, L'1'), "A digit inside composition must insert instead of selecting a candidate.");
+    Expect(enput::InsertCompositionCharacter(&editable, &cursor, L'!'), "A printable symbol inside composition must insert as text.");
+    Expect(editable == L"hello 1! world" && cursor == 8, "Middle composition edits must preserve text and cursor position.");
 }
 
 void VerifyCandidateWindowPlacement() {
@@ -150,6 +197,8 @@ int main() {
     VerifyDetachedSuggestionCancellation();
     VerifyFrequencyRanking();
     VerifyCandidateBounds();
+    VerifyCandidatePreview();
+    VerifySymbolCompositionEditing();
     VerifyCandidateWindowPlacement();
     std::cout << "TSF candidate selection tests passed.\n";
     return 0;

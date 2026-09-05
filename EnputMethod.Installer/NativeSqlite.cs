@@ -39,6 +39,29 @@ internal sealed class NativeSqliteConnection : IDisposable
         return Api.sqlite3_column_int(statement.Handle, 0);
     }
 
+    internal string ScalarText(string sql)
+    {
+        using NativeSqliteStatement statement = Prepare(sql);
+        int result = Api.sqlite3_step(statement.Handle);
+        if (result != Api.Row) throw new InvalidOperationException($"SQLite query failed ({result}): {ErrorMessage}");
+        IntPtr value = Api.sqlite3_column_text(statement.Handle, 0);
+        return value == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(value) ?? string.Empty;
+    }
+
+    internal IReadOnlyList<string> QueryTextColumn(string sql)
+    {
+        using NativeSqliteStatement statement = Prepare(sql);
+        var values = new List<string>();
+        while (true)
+        {
+            int result = Api.sqlite3_step(statement.Handle);
+            if (result == Api.Done) return values;
+            if (result != Api.Row) throw new InvalidOperationException($"SQLite query failed ({result}): {ErrorMessage}");
+            IntPtr value = Api.sqlite3_column_text(statement.Handle, 0);
+            values.Add(value == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(value) ?? string.Empty);
+        }
+    }
+
     public void Dispose()
     {
         if (_database == IntPtr.Zero) return;
@@ -69,6 +92,7 @@ internal sealed class NativeSqliteConnection : IDisposable
         [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Winapi)] internal static extern int sqlite3_clear_bindings(IntPtr statement);
         [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Winapi)] internal static extern int sqlite3_finalize(IntPtr statement);
         [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Winapi)] internal static extern int sqlite3_column_int(IntPtr statement, int column);
+        [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Winapi)] internal static extern IntPtr sqlite3_column_text(IntPtr statement, int column);
     }
 }
 

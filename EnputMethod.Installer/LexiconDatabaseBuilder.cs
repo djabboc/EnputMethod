@@ -5,8 +5,12 @@ namespace EnputMethod.Installer;
 
 internal static class LexiconDatabaseBuilder
 {
-    internal const int SchemaVersion = 1;
+    internal const int SchemaVersion = 2;
     private const string BuiltinPhraseVersion = "wordnet-3.1-20260829";
+    private const string ModernLexiconVersion = "modern-terms-20260905.3";
+    private const string ModernLexiconSource = "enput-modern-20260905.3";
+    private const string CaseLexiconVersion = "case-terms-20260905";
+    private const string CaseLexiconSource = "enput-case-20260905";
     private static readonly string[] CoreAcademicPhrases =
     [
         "machine learning", "deep learning", "artificial intelligence", "data science", "computer vision", "natural language processing", "software engineering", "distributed systems", "cloud computing", "database management", "operating system", "computer network", "information security", "cyber security", "human computer interaction",
@@ -16,6 +20,44 @@ internal static class LexiconDatabaseBuilder
         "constitutional law", "criminal law", "civil law", "contract law", "intellectual property", "due process", "legal liability", "court order", "burden of proof", "law enforcement",
         "new york", "los angeles", "san francisco", "washington dc", "united states", "united kingdom", "european union", "south korea", "hong kong", "silicon valley"
     ];
+    private static readonly string[] ModernWords = ["Spiderman", "AT&T", "R&B", "ChatGPT", "OpenAI", "TikTok", "GitHub", "Discord", "K-pop", "meme", "rizz", "stan", "slay", "doomscrolling", "deepfake", "livestream", "vlog", "cosplay", "e-sports"];
+    private static readonly string[] ModernPhrases = ["The White House", "Donald Trump", "Washington DC", "New York", "Monte Carlo", "Taylor Swift", "Michael Jackson"];
+    private static readonly string[] CaseWords = ["AT&T", "R&B", "ChatGPT", "OpenAI", "TikTok", "GitHub", "Discord", "K-pop", "Chicago", "Manhattan", "polish", "Polish"];
+    private sealed record ModernTranslation(string Key, string Text, string[] Parts, string[] ChineseMeanings);
+    private static readonly ModernTranslation[] ModernTranslations =
+    [
+        new("spiderman", "Spider-Man", ["proper noun"], ["蜘蛛侠（漫威超级英雄角色）"]),
+        new("bars", "bars", ["noun; informal, rap"], ["酒吧；（说唱/网络语境）歌词、押韵或说唱水平，常指“歌词很强”"]),
+        new("the white house", "The White House", ["proper noun"], ["白宫（美国总统官邸与行政办公地）"]),
+        new("washington dc", "Washington, D.C.", ["proper noun"], ["华盛顿哥伦比亚特区（美国首都）"]),
+        new("donald trump", "Donald Trump", ["proper noun"], ["唐纳德·特朗普（美国政治人物）"]),
+        new("at&t", "AT&T", ["proper noun"], ["美国电话电报公司（美国电信企业）"]),
+        new("r&b", "R&B", ["noun"], ["节奏布鲁斯（Rhythm and Blues）音乐风格"]),
+        new("chatgpt", "ChatGPT", ["proper noun"], ["OpenAI 开发的生成式人工智能对话服务"]),
+        new("openai", "OpenAI", ["proper noun"], ["人工智能研究与产品公司"]),
+        new("tiktok", "TikTok", ["proper noun"], ["短视频社交平台"]),
+        new("github", "GitHub", ["proper noun"], ["代码托管与协作平台"]),
+        new("discord", "Discord", ["proper noun"], ["社区聊天与语音平台"]),
+        new("k-pop", "K-pop", ["noun"], ["韩国流行音乐"]),
+        new("chicago", "Chicago", ["proper noun"], ["芝加哥（美国伊利诺伊州城市）"]),
+        new("manhattan", "Manhattan", ["proper noun"], ["曼哈顿（纽约市行政区）"]),
+        new("new york", "New York", ["proper noun"], ["纽约（美国城市与州名）"]),
+        new("monte carlo", "Monte Carlo", ["proper noun"], ["蒙特卡洛（摩纳哥地区）"]),
+        new("taylor swift", "Taylor Swift", ["proper noun"], ["泰勒·斯威夫特（美国歌手、词曲作者）"]),
+        new("michael jackson", "Michael Jackson", ["proper noun"], ["迈克尔·杰克逊（美国歌手、舞者）"]),
+        new("polish", "polish", ["verb/noun"], ["擦亮；润色；光泽剂"]),
+        new("polish", "Polish", ["adjective/noun"], ["波兰的；波兰人；波兰语"]),
+        new("meme", "meme", ["noun; internet"], ["网络模因；在网络中传播、模仿和再创作的内容"]),
+        new("rizz", "rizz", ["noun; slang"], ["魅力、撩人能力（网络俚语）"]),
+        new("stan", "stan", ["noun/verb; internet"], ["狂热粉丝；狂热追随（网络用语）"]),
+        new("slay", "slay", ["verb; slang"], ["表现惊艳、做得极好（网络俚语）"]),
+        new("doomscrolling", "doomscrolling", ["noun; internet"], ["刷看大量负面新闻或内容而难以停止"]),
+        new("deepfake", "deepfake", ["noun"], ["利用深度学习生成或篡改的逼真音视频"]),
+        new("livestream", "livestream", ["noun/verb"], ["直播；进行直播"]),
+        new("vlog", "vlog", ["noun"], ["视频博客"]),
+        new("cosplay", "cosplay", ["noun/verb"], ["角色扮演；进行角色扮演"]),
+        new("e-sports", "e-sports", ["noun"], ["电子竞技"])
+    ];
 
     internal static void CreateOrMigrate(string userDirectory, string packageDirectory)
     {
@@ -24,6 +66,7 @@ internal static class LexiconDatabaseBuilder
         if (File.Exists(databasePath) && File.Exists(readyMarker))
         {
             using var existing = new NativeSqliteConnection(databasePath);
+            MigrateSchema(existing);
             EnsureBuiltInCandidates(existing, packageDirectory);
             return;
         }
@@ -31,6 +74,11 @@ internal static class LexiconDatabaseBuilder
         {
             // Upgrades preserve an already valid static database. Earlier builds could
             // omit the marker while leaving a complete database in Program Files.
+            using (var existing = new NativeSqliteConnection(databasePath))
+            {
+                MigrateSchema(existing);
+                EnsureBuiltInCandidates(existing, packageDirectory);
+            }
             ValidateDatabase(databasePath);
             File.WriteAllText(readyMarker, SchemaVersion.ToString());
             return;
@@ -43,7 +91,7 @@ internal static class LexiconDatabaseBuilder
         if (!HasLegacyLexicon(userDirectory) && File.Exists(seed))
         {
             File.Copy(seed, pending, true);
-            using (var database = new NativeSqliteConnection(pending)) EnsureBuiltInCandidates(database, packageDirectory);
+            using (var database = new NativeSqliteConnection(pending)) { MigrateSchema(database); EnsureBuiltInCandidates(database, packageDirectory); }
             ValidateDatabase(pending);
             File.Move(pending, databasePath, true);
             File.WriteAllText(Path.Combine(userDirectory, "enput.db.ready"), SchemaVersion.ToString());
@@ -70,7 +118,7 @@ internal static class LexiconDatabaseBuilder
                 database.Execute("ROLLBACK;");
                 throw;
             }
-            if (database.ScalarInt("SELECT COUNT(*) FROM words;") < 100 || database.ScalarInt("SELECT COUNT(*) FROM emoji;") < 100) throw new InvalidOperationException("SQLite lexicon validation failed.");
+            if (database.ScalarInt("SELECT COUNT(*) FROM words;") < 100 || database.ScalarInt("SELECT COUNT(*) FROM word_case_variant;") < 2 || database.ScalarInt("SELECT COUNT(*) FROM emoji;") < 100) throw new InvalidOperationException("SQLite lexicon validation failed.");
         }
         File.Move(pending, databasePath, true);
         File.WriteAllText(Path.Combine(userDirectory, "enput.db.ready"), SchemaVersion.ToString());
@@ -129,18 +177,81 @@ internal static class LexiconDatabaseBuilder
         if (!File.Exists(databasePath) || !File.Exists(Path.Combine(userDirectory, "enput.db.ready"))) throw new InvalidOperationException("SQLite lexicon is not ready.");
         using var database = new NativeSqliteConnection(databasePath);
         if (database.ScalarInt("SELECT CAST(value AS INTEGER) FROM metadata WHERE key = 'schemaVersion';") != SchemaVersion) throw new InvalidOperationException("SQLite schema version is invalid.");
-        if (database.ScalarInt("SELECT COUNT(*) FROM words WHERE normalized >= 'he' AND normalized < 'he' || char(65535);") < 3) throw new InvalidOperationException("Word prefix lookup validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM words WHERE normalized >= 'he' AND normalized < 'he' || char(65535);") < 3 || database.ScalarInt("SELECT COUNT(*) FROM word_case_variant WHERE normalized IN ('at&t', 'r&b', 'polish');") < 4) throw new InvalidOperationException("Word prefix lookup validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE trigger = 'can' AND candidate = 'can i help you?';") != 1) throw new InvalidOperationException("Phrase suggestion validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE trigger = 'empire' AND candidate = 'empire state building';") != 1) throw new InvalidOperationException("Built-in compact phrase validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE candidate IN ('new york', 'computer science', 'machine learning', 'contract law');") < 4) throw new InvalidOperationException("Bundled domain phrase validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'fire';") < 1 || database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'saw';") < 1) throw new InvalidOperationException("Emoji lookup validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM words WHERE normalized >= 'h' AND normalized < ('h' || char(65535)) AND normalized LIKE '%h%p%y%';") < 1) throw new InvalidOperationException("Ordered word subsequence validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'pig_nose';") != 1) throw new InvalidOperationException("Ordered Emoji subsequence validation failed.");
-        if (database.ScalarInt("SELECT COUNT(*) FROM translation_entry WHERE key IN ('braces', 'hug');") < 2) throw new InvalidOperationException("Translation lookup validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM translation_entry WHERE key IN ('braces', 'hug', 'spiderman', 'bars', 'washington dc', 'at&t', 'r&b', 'chatgpt', 'meme', 'taylor swift', 'michael jackson');") < 11) throw new InvalidOperationException("Translation lookup validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM translation_meaning WHERE key = 'spiderman' AND language = 'zh-CN' AND value LIKE '%蜘蛛侠%';") < 1) throw new InvalidOperationException("Modern translation validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE candidate IN ('The White House', 'Donald Trump', 'Washington DC', 'New York', 'Monte Carlo', 'Taylor Swift', 'Michael Jackson');") < 7) throw new InvalidOperationException("Modern phrase validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM word_case_variant WHERE text IN ('AT&T', 'R&B', 'Chicago', 'Manhattan', 'polish', 'Polish');") < 6) throw new InvalidOperationException("Modern word validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE kind = 1 AND candidate COLLATE NOCASE >= 'donald' AND candidate COLLATE NOCASE < ('donald' || char(65535)) AND candidate = 'Donald Trump';") != 1) throw new InvalidOperationException("Case-insensitive modern phrase lookup validation failed.");
         foreach (string legacyName in new[] { "suggestions.json", "emoji.json", "translations.json", "translations.ecdict.jsonl", "translations.cc-cedict.jsonl" })
         {
             if (File.Exists(Path.Combine(userDirectory, legacyName))) throw new InvalidOperationException($"Legacy runtime lexicon file remains: {legacyName}");
         }
+    }
+
+    internal static string AuditInstalledDatabase(string userDirectory, string outputPath)
+    {
+        string databasePath = Path.Combine(userDirectory, "enput.db");
+        if (!File.Exists(databasePath) || !File.Exists(Path.Combine(userDirectory, "enput.db.ready"))) throw new InvalidOperationException("SQLite lexicon is not ready.");
+        using var database = new NativeSqliteConnection(databasePath);
+
+        // Each aggregate is a full-table assertion. The report deliberately records
+        // missing legacy metadata rather than inferring a category from spelling.
+        var report = new
+        {
+            generatedAtUtc = DateTimeOffset.UtcNow,
+            databasePath,
+            integrityCheck = database.ScalarText("PRAGMA integrity_check;"),
+            schemaVersion = database.ScalarInt("SELECT CAST(value AS INTEGER) FROM metadata WHERE key = 'schemaVersion';"),
+            tableCounts = new
+            {
+                words = database.ScalarInt("SELECT COUNT(*) FROM words;"),
+                wordCaseVariants = database.ScalarInt("SELECT COUNT(*) FROM word_case_variant;"),
+                suggestions = database.ScalarInt("SELECT COUNT(*) FROM suggestions;"),
+                emoji = database.ScalarInt("SELECT COUNT(*) FROM emoji;"),
+                emojiKeywords = database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword;"),
+                translationEntries = database.ScalarInt("SELECT COUNT(*) FROM translation_entry;"),
+                translationMeanings = database.ScalarInt("SELECT COUNT(*) FROM translation_meaning;"),
+                translationParts = database.ScalarInt("SELECT COUNT(*) FROM translation_part;"),
+                translationExamples = database.ScalarInt("SELECT COUNT(*) FROM translation_example;")
+            },
+            fullScanFindings = new
+            {
+                invalidWordRows = database.ScalarInt("SELECT COUNT(*) FROM words WHERE trim(normalized) = '' OR trim(text) = '';"),
+                wordNormalizedMismatches = database.ScalarInt("SELECT COUNT(*) FROM words WHERE lower(text) <> normalized;"),
+                invalidCaseVariantRows = database.ScalarInt("SELECT COUNT(*) FROM word_case_variant WHERE trim(normalized) = '' OR trim(text) = '' OR trim(source) = '';"),
+                caseVariantNormalizedMismatches = database.ScalarInt("SELECT COUNT(*) FROM word_case_variant WHERE lower(text) <> normalized;"),
+                ambiguousCaseVariantKeys = database.ScalarInt("SELECT COUNT(*) FROM (SELECT normalized FROM word_case_variant GROUP BY normalized HAVING COUNT(*) > 1);"),
+                ambiguousCaseVariantKeySamples = database.QueryTextColumn("SELECT normalized FROM word_case_variant GROUP BY normalized HAVING COUNT(*) > 1 ORDER BY normalized LIMIT 100;"),
+                invalidSuggestionRows = database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE trim(trigger) = '' OR trim(candidate) = '';"),
+                invalidTranslationRows = database.ScalarInt("SELECT COUNT(*) FROM translation_entry WHERE trim(key) = '' OR trim(source) = '' OR trim(text) = '';"),
+                translationsWithoutMeaning = database.ScalarInt("SELECT COUNT(*) FROM translation_entry e WHERE NOT EXISTS (SELECT 1 FROM translation_meaning m WHERE m.key = e.key AND m.source = e.source);"),
+                orphanTranslationParts = database.ScalarInt("SELECT COUNT(*) FROM translation_part p WHERE NOT EXISTS (SELECT 1 FROM translation_entry e WHERE e.key = p.key AND e.source = p.source);"),
+                orphanTranslationMeanings = database.ScalarInt("SELECT COUNT(*) FROM translation_meaning m WHERE NOT EXISTS (SELECT 1 FROM translation_entry e WHERE e.key = m.key AND e.source = m.source);"),
+                orphanTranslationExamples = database.ScalarInt("SELECT COUNT(*) FROM translation_example x WHERE NOT EXISTS (SELECT 1 FROM translation_entry e WHERE e.key = x.key AND e.source = x.source);"),
+                foreignKeyViolations = database.ScalarInt("SELECT COUNT(*) FROM pragma_foreign_key_check;")
+            },
+            provenance = new
+            {
+                metadataRows = database.ScalarInt("SELECT COUNT(*) FROM metadata;"),
+                wordRowsWithPerEntrySource = 0,
+                suggestionRowsWithPerEntrySource = 0,
+                wordRowsWithPerEntryType = 0,
+                suggestionRowsWithPerEntryType = 0,
+                note = "Legacy words and suggestions tables do not carry per-entry source or semantic type. The audit reports this gap; it does not infer proper nouns, meanings, or capitalization from spelling."
+            }
+        };
+
+        string directory = Path.GetDirectoryName(outputPath) ?? throw new InvalidOperationException("Audit output path has no directory.");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(outputPath, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+        return $"SQLite lexicon audit completed: {outputPath}";
     }
 
     private static string PickInput(string userDirectory, string packageDirectory, string name)
@@ -152,28 +263,86 @@ internal static class LexiconDatabaseBuilder
     private static void EnsureBuiltInCandidates(NativeSqliteConnection database, string packageDirectory)
     {
         database.Execute("INSERT OR IGNORE INTO suggestions(trigger, kind, candidate, ordinal, priority) VALUES('empire', 1, 'empire state building', 0, 100);");
-        if (database.ScalarInt($"SELECT COUNT(*) FROM metadata WHERE key = 'builtinPhraseVersion' AND value = '{BuiltinPhraseVersion}';") != 0) return;
-        using NativeSqliteStatement insert = database.Prepare("INSERT OR IGNORE INTO suggestions(trigger, kind, candidate, ordinal, priority) VALUES(?, 1, ?, ?, ?);");
-        int ordinal = 1000;
-        foreach (string phrase in CoreAcademicPhrases) InsertPhrase(insert, phrase, ordinal++, 50);
-        string wordNetPath = Path.Combine(packageDirectory, "wordnet-phrases.txt");
-        if (!File.Exists(wordNetPath)) throw new InvalidOperationException("Bundled WordNet phrase source is missing.");
-        foreach (string phrase in File.ReadLines(wordNetPath)) InsertPhrase(insert, phrase, ordinal++, 5);
-        database.Execute($"INSERT INTO metadata(key, value) VALUES('builtinPhraseVersion', '{BuiltinPhraseVersion}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
+        if (database.ScalarInt($"SELECT COUNT(*) FROM metadata WHERE key = 'builtinPhraseVersion' AND value = '{BuiltinPhraseVersion}';") == 0)
+        {
+            using NativeSqliteStatement insert = database.Prepare("INSERT OR IGNORE INTO suggestions(trigger, kind, candidate, ordinal, priority) VALUES(?, 1, ?, ?, ?);");
+            int ordinal = 1000;
+            foreach (string phrase in CoreAcademicPhrases) InsertPhrase(insert, phrase, ordinal++, 50);
+            string wordNetPath = Path.Combine(packageDirectory, "wordnet-phrases.txt");
+            if (!File.Exists(wordNetPath)) throw new InvalidOperationException("Bundled WordNet phrase source is missing.");
+            foreach (string phrase in File.ReadLines(wordNetPath)) InsertPhrase(insert, phrase, ordinal++, 5);
+            database.Execute($"INSERT INTO metadata(key, value) VALUES('builtinPhraseVersion', '{BuiltinPhraseVersion}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
+        }
+        EnsureModernLexicon(database);
+        EnsureCaseLexicon(database);
     }
 
-    private static void InsertPhrase(NativeSqliteStatement insert, string rawPhrase, int ordinal, int priority)
+    private static void EnsureModernLexicon(NativeSqliteConnection database)
     {
-        string phrase = rawPhrase.Trim().ToLowerInvariant();
+        if (database.ScalarInt($"SELECT COUNT(*) FROM metadata WHERE key = 'modernLexiconVersion' AND value = '{ModernLexiconVersion}';") != 0) return;
+
+        using (NativeSqliteStatement insertWord = database.Prepare("INSERT OR IGNORE INTO words(normalized, text, ordinal) VALUES(?, ?, ?);"))
+        {
+            int ordinal = -1000;
+            foreach (string word in ModernWords)
+            {
+                insertWord.BindText(1, word.ToLowerInvariant()); insertWord.BindText(2, word); insertWord.BindInt(3, ordinal++); insertWord.Execute();
+            }
+        }
+        using (NativeSqliteStatement insertPhrase = database.Prepare("INSERT OR IGNORE INTO suggestions(trigger, kind, candidate, ordinal, priority) VALUES(?, 1, ?, ?, ?);"))
+        {
+            int ordinal = 0;
+            foreach (string phrase in ModernPhrases) InsertPhrase(insertPhrase, phrase, ordinal++, 200, preserveCase: true);
+        }
+
+        database.Execute("DELETE FROM translation_part WHERE source LIKE 'enput-modern-%'; DELETE FROM translation_meaning WHERE source LIKE 'enput-modern-%'; DELETE FROM translation_example WHERE source LIKE 'enput-modern-%'; DELETE FROM translation_entry WHERE source LIKE 'enput-modern-%';");
+        using NativeSqliteStatement insertEntry = database.Prepare("INSERT INTO translation_entry(key, source, rank, text) VALUES(?, ?, 0, ?);");
+        using NativeSqliteStatement insertPart = database.Prepare("INSERT INTO translation_part(key, source, ordinal, value) VALUES(?, ?, ?, ?);");
+        using NativeSqliteStatement insertMeaning = database.Prepare("INSERT INTO translation_meaning(key, source, language, ordinal, value) VALUES(?, ?, 'zh-CN', ?, ?);");
+        foreach (ModernTranslation translation in ModernTranslations)
+        {
+            string source = $"{ModernLexiconSource}:{translation.Text}";
+            insertEntry.BindText(1, translation.Key); insertEntry.BindText(2, source); insertEntry.BindText(3, translation.Text); insertEntry.Execute();
+            for (int ordinal = 0; ordinal < translation.Parts.Length; ++ordinal)
+            {
+                insertPart.BindText(1, translation.Key); insertPart.BindText(2, source); insertPart.BindInt(3, ordinal); insertPart.BindText(4, translation.Parts[ordinal]); insertPart.Execute();
+            }
+            for (int ordinal = 0; ordinal < translation.ChineseMeanings.Length; ++ordinal)
+            {
+                insertMeaning.BindText(1, translation.Key); insertMeaning.BindText(2, source); insertMeaning.BindInt(3, ordinal); insertMeaning.BindText(4, translation.ChineseMeanings[ordinal]); insertMeaning.Execute();
+            }
+        }
+        database.Execute($"INSERT INTO metadata(key, value) VALUES('modernLexiconVersion', '{ModernLexiconVersion}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
+    }
+
+    private static void EnsureCaseLexicon(NativeSqliteConnection database)
+    {
+        if (database.ScalarInt($"SELECT COUNT(*) FROM metadata WHERE key = 'caseLexiconVersion' AND value = '{CaseLexiconVersion}';") != 0) return;
+        database.Execute($"DELETE FROM word_case_variant WHERE source LIKE '{CaseLexiconSource}%';");
+        using NativeSqliteStatement insert = database.Prepare("INSERT INTO word_case_variant(normalized, text, ordinal, priority, source) VALUES(?, ?, ?, 300, ?);");
+        int ordinal = 0;
+        foreach (string word in CaseWords)
+        {
+            insert.BindText(1, word.ToLowerInvariant()); insert.BindText(2, word); insert.BindInt(3, ordinal++); insert.BindText(4, CaseLexiconSource); insert.Execute();
+        }
+        database.Execute($"INSERT INTO metadata(key, value) VALUES('caseLexiconVersion', '{CaseLexiconVersion}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
+    }
+
+    private static void InsertPhrase(NativeSqliteStatement insert, string rawPhrase, int ordinal, int priority, bool preserveCase = false)
+    {
+        string phrase = rawPhrase.Trim();
+        if (!preserveCase) phrase = phrase.ToLowerInvariant();
         int separator = phrase.IndexOf(' ');
         if (separator is <= 0 || separator == phrase.Length - 1 || phrase.Length > 120) return;
-        insert.BindText(1, phrase[..separator]); insert.BindText(2, phrase); insert.BindInt(3, ordinal); insert.BindInt(4, priority); insert.Execute();
+        insert.BindText(1, phrase[..separator].ToLowerInvariant()); insert.BindText(2, phrase); insert.BindInt(3, ordinal); insert.BindInt(4, priority); insert.Execute();
     }
 
     private static void CreateSchema(NativeSqliteConnection database) => database.Execute("""
         CREATE TABLE metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE words(normalized TEXT PRIMARY KEY, text TEXT NOT NULL, ordinal INTEGER NOT NULL);
         CREATE INDEX words_prefix ON words(normalized, ordinal);
+        CREATE TABLE word_case_variant(normalized TEXT NOT NULL, text TEXT NOT NULL, ordinal INTEGER NOT NULL, priority INTEGER NOT NULL, source TEXT NOT NULL, PRIMARY KEY(normalized, text));
+        CREATE INDEX word_case_variant_prefix ON word_case_variant(normalized, priority DESC, ordinal);
         CREATE TABLE suggestions(trigger TEXT NOT NULL, kind INTEGER NOT NULL, candidate TEXT NOT NULL, ordinal INTEGER NOT NULL, priority INTEGER NOT NULL, PRIMARY KEY(trigger, kind, candidate));
         CREATE INDEX suggestions_trigger ON suggestions(trigger, priority DESC, ordinal);
         CREATE TABLE emoji(emoji TEXT PRIMARY KEY, priority INTEGER NOT NULL);
@@ -185,6 +354,12 @@ internal static class LexiconDatabaseBuilder
         CREATE TABLE translation_example(key TEXT NOT NULL, source TEXT NOT NULL, ordinal INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(key, source, ordinal));
         CREATE INDEX translation_lookup ON translation_entry(key, rank);
         """);
+
+    private static void MigrateSchema(NativeSqliteConnection database)
+    {
+        database.Execute("CREATE TABLE IF NOT EXISTS word_case_variant(normalized TEXT NOT NULL, text TEXT NOT NULL, ordinal INTEGER NOT NULL, priority INTEGER NOT NULL, source TEXT NOT NULL, PRIMARY KEY(normalized, text)); CREATE INDEX IF NOT EXISTS word_case_variant_prefix ON word_case_variant(normalized, priority DESC, ordinal);");
+        database.Execute($"INSERT INTO metadata(key, value) VALUES('schemaVersion', '{SchemaVersion}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
+    }
 
     private static void ImportWords(NativeSqliteConnection database, string path)
     {

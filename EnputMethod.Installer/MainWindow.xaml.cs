@@ -226,6 +226,7 @@ public partial class MainWindow : Window
         CopyDefaultUserFile("config.json", userData);
         CopyDefaultUserFile("shortcut.json", userData);
         MergeMissingConfigurationFields(userData);
+        MergeMissingShortcutFields(userData);
     }
 
     private static void MigrateLegacyUserFile(string fileName)
@@ -264,6 +265,35 @@ public partial class MainWindow : Window
     {
         string destination = Path.Combine(destinationDirectory, fileName);
         if (!File.Exists(destination)) File.Copy(Path.Combine(ProductLayout.PackageResourceDirectory, fileName), destination);
+    }
+
+    private static void MergeMissingShortcutFields(string destinationDirectory)
+    {
+        string source = Path.Combine(ProductLayout.PackageResourceDirectory, "shortcut.json");
+        string destination = Path.Combine(destinationDirectory, "shortcut.json");
+        try
+        {
+            JsonObject? bundled = JsonNode.Parse(File.ReadAllText(source)) as JsonObject;
+            JsonObject? installed = JsonNode.Parse(File.ReadAllText(destination)) as JsonObject;
+            if (bundled is null || installed is null) return;
+
+            bool changed = false;
+            foreach ((string key, JsonNode? value) in bundled)
+            {
+                if (installed.ContainsKey(key)) continue;
+                installed[key] = value?.DeepClone();
+                changed = true;
+            }
+            if (changed) File.WriteAllText(destination, installed.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (JsonException)
+        {
+            // Preserve an intentionally user-authored but malformed shortcut file.
+        }
+        catch (IOException)
+        {
+            // A running input method can briefly hold the file while starting.
+        }
     }
 
     private static void EnsureStaticLexicon(IProgress<InstallationProgress>? progress)

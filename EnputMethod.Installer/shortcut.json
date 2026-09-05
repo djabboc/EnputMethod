@@ -5,6 +5,7 @@
   "selectPrevious": ["Up"],
   "selectNext": ["Down"],
   "cancelComposition": ["Escape", "Shift"],
+  "bypassCandidateSelectionModifiers": ["Control"],
   "toggleEmojiMode": ["F2"],
   "toggleTranslationWindow": ["F3"]
 }

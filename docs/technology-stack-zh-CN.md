@@ -1,6 +1,6 @@
 # 当前技术栈
 
-最后更新：2026-08-30。本文描述当前已安装、已验证版本的实际技术边界，不把计划中的替换方案当作现状。
+最后更新：2026-09-06。本文描述当前已安装、已验证版本的实际技术边界，不把计划中的替换方案当作现状。
 
 ## 1. 平台与构建基础
 
@@ -134,10 +134,25 @@ WPF 的字号单位是 DIP，而配置的 `fontSize` 是 pt。Overlay 固定使�
 用户配置目录是 `%LOCALAPPDATA%\Enput Method\UserData`。
 
 - `config.json`：候选数、纵横布局、选词后空格、候选排序、字体、透明度、主题、翻译语言、翻译框初始尺寸。
-- `shortcut.json`：每个动作映射一个或多个按键。默认 F2 为 Emoji，F3 为翻译，`cancelComposition` 为 `["Escape", "Shift"]`；这些快捷键只在活动组合输入或候选联想存在时由 Enput 捕获。
+- `previewSelectedCandidateInComposition`：方向键浏览候选时是否把 composition 显示为当前高亮候选；继续输入或退格保留原始查询文本重新匹配，左右方向键会将预览候选提升为可编辑 composition 后移动光标。
+- `shortcut.json`：每个动作映射一个或多个按键。默认 F2 为 Emoji，F3 为翻译，`cancelComposition` 为 `["Escape", "Shift"]`，`bypassCandidateSelectionModifiers` 为 `["Control"]`；这些快捷键只在活动组合输入或候选联想存在时由 Enput 捕获。
 - `themes/*.json`：候选与翻译窗口的颜色、边框、圆角、内边距、行高、阴影、滚动条和语义文本色。
 
-安装器仅在 UserData 中的配置或快捷键文件不存在时复制默认文件，绝不覆盖已有用户值。因此用户移除 `Shift` 后，更新不会重新强制加入它。
+安装器仅在 UserData 中的配置或快捷键文件不存在时复制默认文件；升级时只补充缺失字段，绝不覆盖已有用户值。因此用户移除 `Shift` 后，更新不会重新强制加入它，而新增 `bypassCandidateSelectionModifiers` 能安全进入旧快捷键文件。
+
+## 7.1 现代词库补充（2026-09-05）
+
+安装器使用版本化的 `enput-modern-20260905.3` 内置来源补充高频现代实体、地点、品牌、平台和俚语释义，包括 `Spider-Man`、说唱/网络语境的 `bars`、`The White House`、`Washington, D.C.`、`Donald Trump`、`AT&T`、`R&B`、`ChatGPT`、`OpenAI`、`TikTok`、`GitHub`、`Discord`、`K-pop`，以及 `meme`、`rizz`、`stan`、`slay`、`doomscrolling`、`deepfake`、`livestream`、`vlog`、`cosplay`、`e-sports`。这些条目与 ECDICT、CC-CEDICT 分来源合并，不宣称替代完整现代语料或实时网络语词典。专有名词短语保留指定显示大小写；候选 SQL 使用 `NOCASE` 范围筛选，紧凑保序匹配可召回 `thewhitehouse` 与 `washingtondc`。
+
+## 7.2 大小写词典与可编辑候选预览（2026-09-05）
+
+SQLite schema 2 使用 `word_case_variant` 保存同一小写检索键的多个规范词形。小写键只用于前缀和近似检索；候选、提交文本与翻译均以保存的文本为准。输入的精确大小写只用于优先选择已有变体，不会猜测专名格式。安装器会迁移已有数据库并通过 `--verify-lexicon` 校验新表和关键词条。
+
+候选预览不再只是临时渲染：在预览状态使用左右方向键会先把所选候选写回内部 composition 和光标，再执行移动。可打印符号也写入 composition；因此 `Shift+7` 的 `&` 能参与 `AT&T`、`R&B` 这类词条的完整检索和翻译。
+
+composition 光标位于中间时，空格、数字和任意可打印符号均走文本插入；只有光标位于末尾时，空格快速确认和 `1`-`9` 候选直选才生效。末尾需要输入数字时，默认按住 `Ctrl`；该绕过修饰键由 `shortcut.json.bypassCandidateSelectionModifiers` 配置，顶排和小键盘数字都适用。
+
+安装器提供 `--audit-lexicon` 只读审计命令，在用户数据目录生成 `lexicon-audit.json`。它对已安装 SQLite 做全表一致性与覆盖检查，并把旧 `words` / `suggestions` 表缺少逐条来源、词类和实体类别的事实报告出来。2026-09-06 已安装库审计得到 `integrity_check=ok`，所有无效/孤立记录计数为 0；唯一大小写变体键为预期的 `polish`。候选显示不依据词形推断这些信息；后续权威词源导入必须以原始标签、稳定标识、类别和许可作为数据。
 
 ## 8. 部署、注册与更新
 

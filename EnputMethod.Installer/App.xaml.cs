@@ -4,6 +4,7 @@ public partial class App : System.Windows.Application
 {
     private const string InstallVerificationLogFileName = "install-verification.log";
     private const string LexiconVerificationLogFileName = "lexicon-verification.log";
+    private const string LexiconAuditLogFileName = "lexicon-audit.log";
     private const string PackageVerificationLogFileName = "package-verification.log";
 
     protected override void OnStartup(System.Windows.StartupEventArgs e)
@@ -46,6 +47,16 @@ public partial class App : System.Windows.Application
             {
                 LexiconDatabaseBuilder.VerifyInstalledDatabase(ProductLayout.StaticResourceDirectory);
                 return "SQLite lexicon verification passed.";
+            });
+            return;
+        }
+
+        if (e.Args.Contains("--audit-lexicon", StringComparer.OrdinalIgnoreCase))
+        {
+            RunHeadless(LexiconAuditLogFileName, () =>
+            {
+                string output = System.IO.Path.Combine(ProductLayout.UserDataDirectory, "lexicon-audit.json");
+                return LexiconDatabaseBuilder.AuditInstalledDatabase(ProductLayout.StaticResourceDirectory, output);
             });
             return;
         }

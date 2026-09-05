@@ -8,7 +8,7 @@
 
 这也是此前更新时出现“安装已完成但行为没有变化”或“旧 DLL 无法覆盖”的关键原因。安装器现在采用版本化 DLL 路径，例如 `EnputMethod.Tsf.8.dll`，避免旧进程锁定文件后阻止更新；但已有应用仍需重开才能加载新版本。
 
-修改词库或候选数量不属于 DLL 更新。输入法会在下一次查询候选时读取配置文件，切换一次输入法或重新输入前缀即可生效。
+配置文件和用户维护的 `dictionary.txt` 在下一次候选查询时可重新读取；但安装器内置的现代词库写入 `C:\Program Files\Enput Method\Resources\enput.db`。这类词库更新必须使用包含新词库版本的安装包重新安装，安装器才会迁移 SQLite 数据库。若同时改了 TSF 查询代码，还必须关闭并重新打开目标应用以卸载旧 DLL；安装日志或源代码本身不能证明新词条已在运行时生效。
 
 ## 配置文件
 
@@ -24,6 +24,7 @@
   "layout": "vertical",
   "appendSpaceAfterSelection": true,
   "adaptiveCandidateRanking": true,
+  "previewSelectedCandidateInComposition": true,
   "fontFamily": "Segoe UI",
   "fontSize": 18,
   "opacity": 1.0,
@@ -40,6 +41,7 @@
 - `layout`：`vertical` 为竖排，`horizontal` 为横排。
 - `appendSpaceAfterSelection`：数字键或 `Tab` 选词后是否自动添加空格。
 - `adaptiveCandidateRanking`：是否根据当前用户的历史选词频率调整候选排序。默认 `true`；设为 `false` 后保持词典顺序，且不再记录新的选择频率。
+- `previewSelectedCandidateInComposition`：是否在用方向键浏览候选时，将编辑区内尚未提交的 composition 暂时显示为当前高亮候选。默认 `true`。继续输入或退格会回到原输入重新检索；按左右方向键则将当前预览提升为可编辑 composition 后移动光标。设为 `false` 后，候选高亮和翻译仍会更新，但 composition 保持原输入。
 - `fontFamily` 与 `fontSize`：候选窗和翻译窗字体；`fontSize` 单位为点（pt），默认 `18`。WPF Overlay 会按 96/72 换算为设备无关像素，因此 18pt 实际渲染为 24 DIP。
 - `opacity`：范围为 `0.2` 到 `1.0`。
 - `inputMethodIcon`：语言栏和输入法列表使用的 ICO 文件名。默认 `enput.ico`，文件必须位于 `C:\Program Files\Enput Method\Resources`。可以放入自定义 `.ico` 后填写其文件名；拒绝外部绝对路径、目录名和非 ICO 扩展名，缺失文件回退默认图标。该配置只有重新运行安装程序并重开待测宿主后才会写入 Windows TSF Profile。
@@ -105,6 +107,19 @@ there
 ## 2026-09-05：功能键交还给当前应用
 
 `F2` 和 `F3` 仍可在 `shortcut.json` 中配置为 Emoji 和翻译操作，但所有 Enput 快捷键都只有在已有活动组合输入或候选联想时才会捕获。空闲状态下它们会直接交给当前应用，因此资源管理器的 `F2` 重命名和 `F5` 刷新，以及应用自身的 Escape/Shift 行为，不会因 Enput 已激活而失效。要查询 Emoji，可先输入关键词（例如 `fire`），再按 F2 切换当前候选。
+
+## 2026-09-05：规范大小写、符号词条与候选编辑
+
+- 候选不再按照输入方式自动改写大小写。`Chicago`、`New York`、`The White House`、`Taylor Swift` 等使用词典记录的规范文本。
+- 新词库支持区分 `polish` 与 `Polish` 的候选和翻译，并补充 `AT&T`、`R&B`、地点、机构和现代人物词条。
+- `&` 现在保留在组合输入中。输入 `AT&T` 或 `R&B` 后仍可继续联想，并可用 F3 查询翻译。
+- 浏览候选后按左右方向键会开始编辑当前预览的候选，不会退回旧查询；例如 `Wa` 预览 `Washington DC` 后按左键显示 `Washington D|C`。
+
+## 2026-09-06：composition 中间编辑与词库审计
+
+- composition 光标在中间时，空格、数字和可打印符号会插入当前位置；光标在末尾时保留空格快速确认和 `1`-`9` 候选直选。
+- 末尾需要输入数字时，默认按住 `Ctrl`；可在 `shortcut.json` 的 `bypassCandidateSelectionModifiers` 调整绕过修饰键。
+- 安装器新增 `--audit-lexicon`，生成只读 SQLite 词库审计报告；报告不会根据拼写猜测词类或专名，而会明确记录当前旧索引表缺少逐条来源/类型信息。
 
 ## 一站式安装与卸载（2026-08-29）
 

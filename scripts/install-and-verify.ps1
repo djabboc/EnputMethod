@@ -22,7 +22,7 @@ $userData = $userDataRoot
 $configPath = Join-Path $userData "config.json"
 $shortcutPath = Join-Path $userData "shortcut.json"
 $configHashBefore = if (Test-Path -LiteralPath $configPath) { (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash } else { $null }
-$shortcutHashBefore = if (Test-Path -LiteralPath $shortcutPath) { (Get-FileHash -LiteralPath $shortcutPath -Algorithm SHA256).Hash } else { $null }
+$shortcutBefore = if (Test-Path -LiteralPath $shortcutPath) { Get-Content -LiteralPath $shortcutPath -Raw | ConvertFrom-Json } else { $null }
 
 $process = Start-Process -FilePath $installer -ArgumentList "--install-and-verify" -Verb RunAs -Wait -PassThru
 if ($process.ExitCode -ne 0) {
@@ -37,8 +37,19 @@ if (-not (Test-Path -LiteralPath $configPath) -or -not (Test-Path -LiteralPath $
 if ($null -ne $configHashBefore -and $configHashBefore -ne (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash) {
     throw "Installation unexpectedly overwrote the existing UserData config.json."
 }
-if ($null -ne $shortcutHashBefore -and $shortcutHashBefore -ne (Get-FileHash -LiteralPath $shortcutPath -Algorithm SHA256).Hash) {
-    throw "Installation unexpectedly overwrote the existing UserData shortcut.json."
+if ($null -ne $shortcutBefore) {
+    $shortcutAfter = Get-Content -LiteralPath $shortcutPath -Raw | ConvertFrom-Json
+    foreach ($property in $shortcutBefore.PSObject.Properties) {
+        $afterProperty = $shortcutAfter.PSObject.Properties[$property.Name]
+        if ($null -eq $afterProperty) { throw "Installation removed existing UserData shortcut setting: $($property.Name)." }
+        $beforeValue = $property.Value | ConvertTo-Json -Depth 16 -Compress
+        $afterValue = $afterProperty.Value | ConvertTo-Json -Depth 16 -Compress
+        if ($beforeValue -ne $afterValue) { throw "Installation overwrote existing UserData shortcut setting: $($property.Name)." }
+    }
+}
+if ($null -eq $shortcutAfter) { $shortcutAfter = Get-Content -LiteralPath $shortcutPath -Raw | ConvertFrom-Json }
+if ($shortcutAfter.bypassCandidateSelectionModifiers.Count -lt 1) {
+    throw "Installation did not initialize bypassCandidateSelectionModifiers in UserData shortcut.json."
 }
 if ($null -eq $configHashBefore) {
     $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json

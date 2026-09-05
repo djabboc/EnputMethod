@@ -8,6 +8,7 @@
 #include "CandidateRanking.h"
 #include "CandidatePositioning.h"
 #include "CandidateSelection.h"
+#include "FunctionKeyRouting.h"
 #include "JsonObjectReader.h"
 #include "OverlayClient.h"
 #include "OverlayDiagnostics.h"
@@ -1835,6 +1836,17 @@ private:
     }
 
     bool ShouldHandleKey(WPARAM key) const {
+        const bool hasInputContext = composition_ || detachedSuggestionActive_;
+        const bool isConfiguredInputAction =
+            HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key) ||
+            HasShortcut(configuration_.shortcuts.toggleEmojiMode, key) ||
+            HasShortcut(configuration_.shortcuts.cancelComposition, key) ||
+            HasShortcut(configuration_.shortcuts.previousPage, key) ||
+            HasShortcut(configuration_.shortcuts.nextPage, key) ||
+            HasShortcut(configuration_.shortcuts.selectPrevious, key) ||
+            HasShortcut(configuration_.shortcuts.selectNext, key) ||
+            HasShortcut(configuration_.shortcuts.selectCurrent, key);
+        if (!enput::ShouldClaimFunctionKey(key, hasInputContext, isConfiguredInputAction)) return false;
         if (HasShortcut(configuration_.shortcuts.toggleTranslationWindow, key)) return true;
         if (HasShortcut(configuration_.shortcuts.toggleEmojiMode, key)) return true;
         if (HasShortcut(configuration_.shortcuts.cancelComposition, key)) return true;

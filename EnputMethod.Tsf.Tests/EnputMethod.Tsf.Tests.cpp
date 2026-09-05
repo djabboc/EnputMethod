@@ -1,6 +1,7 @@
 #include "../EnputMethod.Tsf/CandidateRanking.h"
 #include "../EnputMethod.Tsf/CandidatePositioning.h"
 #include "../EnputMethod.Tsf/CandidateSelection.h"
+#include "../EnputMethod.Tsf/FunctionKeyRouting.h"
 #include "../EnputMethod.Tsf/ApproximateMatch.h"
 #include "../EnputMethod.Tsf/JsonObjectReader.h"
 #include "../EnputMethod.Tsf/SuggestionCancellation.h"
@@ -29,6 +30,13 @@ void VerifyDigitMappings() {
     ExpectIndex('0', -1, "Zero must not select a candidate.");
     ExpectIndex('A', -1, "Letters must not select a candidate.");
     ExpectIndex(VK_F1, -1, "Function keys must not select a candidate.");
+}
+
+void VerifyFunctionKeyRouting() {
+    Expect(!enput::ShouldClaimFunctionKey(VK_F2, false, true), "F2 must reach the application when Enput has no active input context.");
+    Expect(enput::ShouldClaimFunctionKey(VK_F2, true, true), "A configured F2 action must remain available during active input.");
+    Expect(!enput::ShouldClaimFunctionKey(VK_F5, true, false), "An unconfigured F5 must reach the application while candidates are visible.");
+    Expect(enput::ShouldClaimFunctionKey('A', false, true), "Non-function keys must retain normal input routing.");
 }
 
 void VerifyCandidateBounds() {
@@ -129,6 +137,7 @@ void VerifyDetachedSuggestionCancellation() {
 
 int main() {
     VerifyDigitMappings();
+    VerifyFunctionKeyRouting();
     VerifyEmojiJsonEscapes();
     VerifyTranslationLineBreaks();
     VerifyTranslationTextNormalization();

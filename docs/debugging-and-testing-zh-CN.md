@@ -126,9 +126,11 @@ dotnet --info
 | Escape 取消 | `he` 后按 Escape | 候选隐藏，活动 composition 不提交。 |
 | Shift 取消 | `he` 后按 Shift | 与 Escape 完全等价；不遗留 `he` 或候选窗。 |
 | 自定义取消键 | 从 `cancelComposition` 移除 Shift 后按 Shift | Shift 恢复普通修饰键，不取消 composition。 |
-| Emoji 退出 | F2 后无输入按 Escape/Shift | 退出 Emoji 模式。 |
+| 空闲功能键 | 在文件资源管理器或候选已关闭的编辑器中按 F2、F5 | 分别执行重命名和刷新；Enput 不应收到或吞掉按键。 |
+| 组合中的 F2 | 输入 `fire` 后按 F2 | 当前输入切换为 Emoji 查询，候选显示 `EMOJI` 标记。 |
+| Emoji 退出 | 输入 `fire` 后按 F2，删除全部输入后按 Escape/Shift | 退出 Emoji 模式。 |
 | 近似词组 | `newyork`、`machinelearning` | 出现带空格的目标短语。 |
-| Emoji 近似 | F2 后输入 `pignose` | 命中 `pig_nose` 的 Emoji。 |
+| Emoji 近似 | 输入 `pignose` 后按 F2 | 命中 `pig_nose` 的 Emoji。 |
 | 翻页 | Emoji/普通候选多页时按 `+`、`-` 和鼠标 `<`、`>` | 仅翻页，不将控制字符写入编辑器。 |
 
 组合文本下划线是正常现象：Enput 维持 active composition，宿主负责绘制样式。若用户要求候选仍在而下划线消失，属于“composition 与候选状态解耦”的新架构任务，不能通过简单隐藏 UI 修复。

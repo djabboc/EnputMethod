@@ -67,6 +67,24 @@ dotnet --info
 
 `install-and-verify.ps1` 使用 `Start-Process -Wait -PassThru` 检查 GUI 安装器的显式退出码，避免 PowerShell 对 WinExe 的 `$LASTEXITCODE` 误报。它还调用安装器的 `--verify-lexicon`，验证 `enput.db`、ready 标记、schema、基本词前缀、emoji、翻译、句子短语，以及 `new york`、`computer science`、`machine learning`、`contract law` 等领域短语。
 
+### 3.4 重置自适应候选频率
+
+候选学习次数位于 `HKCU\Software\Enput Method\CandidateFrequency`，不在 `config.json` 中。测试排序前不要删除整个 `UserData` 或配置文件；这会误删快捷键、窗口尺寸等无关设置。
+
+只重置候选学习数据：
+
+```powershell
+.\scripts\reset-candidate-frequency.ps1
+```
+
+构建本地包时一并重置：
+
+```powershell
+.\scripts\build-local-package.ps1 -Configuration Release -ResetCandidateFrequency
+```
+
+完整回归也可传入同名开关。脚本只在包成功构建并通过完整性校验后删除频率注册表键，并立即断言该键不存在；普通构建和回归默认保留真实用户学习数据。可先用 `-WhatIf` 查看目标而不删除。重置后必须完全关闭并重新打开待测编辑器，因为已加载的 TSF DLL 会在进程内缓存旧频率。自动 TSF 集成测试已通过进程级禁用持久化与前后快照实现隔离，不依赖清空用户数据。
+
 ## 4. 安装后排查顺序
 
 1. 运行完整回归并确认退出码为零。

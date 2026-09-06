@@ -61,7 +61,7 @@ internal sealed record CandidateView
     public int CompositionRight { get; init; }
     public int CompositionBottom { get; init; }
     public long OwnerWindow { get; init; }
-    public IReadOnlyList<string> Items { get; init; } = [];
+    public IReadOnlyList<CandidateItemView> Items { get; init; } = [];
     public int Page { get; init; }
     public int PageCount { get; init; }
     public int SelectedIndex { get; init; }
@@ -75,6 +75,12 @@ internal sealed record CandidateView
 
     [JsonIgnore]
     public bool IsValid => Items.Count > 0 && Page >= 0 && Page < PageCount && SelectedIndex >= 0 && SelectedIndex < Items.Count && Layout is "vertical" or "horizontal";
+}
+
+internal sealed record CandidateItemView
+{
+    public string Text { get; init; } = "";
+    public bool CanonicalCaseRequired { get; init; }
 }
 
 internal sealed record TranslationView

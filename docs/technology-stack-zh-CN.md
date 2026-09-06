@@ -90,7 +90,8 @@ WPF 的字号单位是 DIP，而配置的 `fontSize` 是 pt。Overlay 固定使�
 | `words` | SQLite | 已导入的基础单词索引。 |
 | `suggestions` | SQLite | 关联短语、多词短语、下一词建议。 |
 | `emoji`、`emoji_keyword` | SQLite | Emoji、关键词、优先级。 |
-| `translation_*` | SQLite | ECDICT、CC-CEDICT 和补充翻译记录。 |
+| `translation_*` | SQLite | ECDICT、CC-CEDICT 等旧式按小写键导入的翻译记录；仅在没有精确词条时回退。 |
+| `lexeme`、`lexeme_translation_*` | SQLite schema 3 | 受控词条的稳定 ID、规范词形、归一化索引、类别、来源、许可与独立释义；索引可为去除连字符或句点后的输入形式，F3 先精确查询此表。 |
 | `metadata` | SQLite | schema 版本、`builtinPhraseVersion` 等迁移标识。 |
 | 候选频率 | `HKCU\Software\Enput Method\CandidateFrequency` | 自适应候选排序；配置关闭后不再读取/写入学习数据。 |
 
@@ -115,9 +116,9 @@ WPF 的字号单位是 DIP，而配置的 `fontSize` 是 pt。Overlay 固定使�
 | 3. 普通前缀 | 有序词表和 SQLite 短语 candidate 以输入开头。短语按 `priority DESC, ordinal` 查询；普通单词保持词典 ordinal。 | `new` 可得到 `new york`，普通单词如 `newspaper` 同属本层。 |
 | 4. 保序近似匹配 | 仅输入至少 3 个字符后启用。SQL 先以首字符和 `LIKE %a%b%c%` 缩小集合，再逐字符验证字符顺序；短语比较忽略空格，Emoji 还忽略 `_`、`-`。 | `hpy -> happy`、`newyork -> new york`、`machinelearning -> machine learning`、`pignose -> pig_nose`。 |
 
-合并顺序永远是 `精确 -> 短语续写 -> 前缀 -> 近似`。每一层内部以不区分大小写的文本去重；前一层已经出现的候选不会在后一层重复。近似查询分别限制普通词 96 条、短语 48 条，以避免短输入把 SQLite 查询扩大成全表扫描。所有结果随后按 `candidateCount` 分页，当前配置上限为 9 项/页。
+合并顺序永远是 `精确 -> 短语续写 -> 前缀 -> 近似`。普通词按不区分大小写的文本身份去重；显式标记 `canonical_case_required` 的规范大小写词条使用独立身份，因此 `polish` 与 `Polish` 可以同时存在。前一层已经出现的同一身份不会在后一层重复。普通前缀查询限制 256 条、短语前缀限制 128 条；近似查询分别限制普通词 96 条、短语 48 条。所有结果随后按 `candidateCount` 分页，当前配置上限为 9 项/页。
 
-`adaptiveCandidateRanking=true` 时，`HKCU\Software\Enput Method\CandidateFrequency` 中已选过的候选只会在**所属层级内部**按降序频率稳定前移；未选过的候选保持原词典/数据 ordinal。因此学习不会把 `hpy` 的近似结果挪到精确 `happy` 或前缀结果之前。设为 `false` 后不重排，也不继续记录新的选词频率。
+`adaptiveCandidateRanking=true` 时，`HKCU\Software\Enput Method\CandidateFrequency` 中已选过的候选只会在**所属层级内部**按降序频率稳定前移；未选过的候选保持原词典/数据 ordinal。因此学习不会把 `hpy` 的近似结果挪到精确 `happy` 或前缀结果之前。普通项使用 `ordinary|<lowercase>` 频率身份，强制规范大小写项使用 `canonical|<exact text>`，所以 `polish` 与 `Polish` 独立学习；旧无前缀键仅迁移到普通项。同一前缀层在频率排序前先做输入大小写一致项的弱提升，已有学习可覆盖该提示。设为 `false` 后不重排，也不继续记录新的选词频率。
 
 ### 选词后的关联建议
 
@@ -142,11 +143,11 @@ WPF 的字号单位是 DIP，而配置的 `fontSize` 是 pt。Overlay 固定使�
 
 ## 7.1 现代词库补充（2026-09-05）
 
-安装器使用版本化的 `enput-modern-20260905.3` 内置来源补充高频现代实体、地点、品牌、平台和俚语释义，包括 `Spider-Man`、说唱/网络语境的 `bars`、`The White House`、`Washington, D.C.`、`Donald Trump`、`AT&T`、`R&B`、`ChatGPT`、`OpenAI`、`TikTok`、`GitHub`、`Discord`、`K-pop`，以及 `meme`、`rizz`、`stan`、`slay`、`doomscrolling`、`deepfake`、`livestream`、`vlog`、`cosplay`、`e-sports`。这些条目与 ECDICT、CC-CEDICT 分来源合并，不宣称替代完整现代语料或实时网络语词典。专有名词短语保留指定显示大小写；候选 SQL 使用 `NOCASE` 范围筛选，紧凑保序匹配可召回 `thewhitehouse` 与 `washingtondc`。
+安装器使用版本化的 `enput-curated-20260906.1` 内置来源补充高频现代实体、地点、品牌、平台和俚语释义，包括 `Spider-Man`、说唱/网络语境的 `bars`、`The White House`、`Washington, D.C.`、`Donald Trump`、`AT&T`、`R&B`、`ChatGPT`、`OpenAI`、`TikTok`、`GitHub`、`Discord`、`K-pop`，以及 `meme`、`rizz`、`stan`、`slay`、`doomscrolling`、`deepfake`、`livestream`、`vlog`、`cosplay`、`e-sports`。它们在 schema 3 以独立词条身份保存，精确词形命中时不会同 ECDICT、CC-CEDICT 的同小写键条目混合；这不宣称替代完整现代语料或实时网络语词典。专有名词短语保留指定显示大小写；候选 SQL 使用 `NOCASE` 范围筛选，紧凑保序匹配可召回 `thewhitehouse` 与 `washingtondc`。
 
 ## 7.2 大小写词典与可编辑候选预览（2026-09-05）
 
-SQLite schema 2 使用 `word_case_variant` 保存同一小写检索键的多个规范词形。小写键只用于前缀和近似检索；候选、提交文本与翻译均以保存的文本为准。输入的精确大小写只用于优先选择已有变体，不会猜测专名格式。安装器会迁移已有数据库并通过 `--verify-lexicon` 校验新表和关键词条。
+SQLite schema 2 的 `word_case_variant` 仍负责候选变体；schema 3 再以 `lexeme` 保存真正的词条身份。小写键只用于前缀和近似检索，不能作为翻译词条 ID；F3 先做二进制精确规范词形查询，再在无词条时兼容旧表。输入的精确大小写只用于选择已有记录，不会猜测专名格式。安装器会迁移已有数据库并通过 `--verify-lexicon` 校验词条与释义隔离。
 
 候选预览不再只是临时渲染：在预览状态使用左右方向键会先把所选候选写回内部 composition 和光标，再执行移动。可打印符号也写入 composition；因此 `Shift+7` 的 `&` 能参与 `AT&T`、`R&B` 这类词条的完整检索和翻译。
 

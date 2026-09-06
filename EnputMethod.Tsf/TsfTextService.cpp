@@ -418,10 +418,18 @@ std::wstring Lowercase(std::wstring text) {
 }
 
 constexpr wchar_t kCandidateFrequencyRegistryKey[] = L"Software\\Enput Method\\CandidateFrequency";
+constexpr wchar_t kDisableCandidateFrequencyPersistenceEnvironment[] = L"ENPUT_TEST_DISABLE_CANDIDATE_FREQUENCY_PERSISTENCE";
+
+bool CandidateFrequencyPersistenceDisabled() {
+    wchar_t value[8]{};
+    const DWORD length = GetEnvironmentVariableW(kDisableCandidateFrequencyPersistenceEnvironment, value, ARRAYSIZE(value));
+    return length > 0 && length < ARRAYSIZE(value) && (value[0] == L'1' || towlower(value[0]) == L't' || towlower(value[0]) == L'y');
+}
 
 enput::CandidateFrequencyMap& CandidateFrequencies() {
     static enput::CandidateFrequencyMap frequencies = [] {
         enput::CandidateFrequencyMap loaded;
+        if (CandidateFrequencyPersistenceDisabled()) return loaded;
         HKEY key{};
         if (RegOpenKeyExW(HKEY_CURRENT_USER, kCandidateFrequencyRegistryKey, 0, KEY_READ, &key) != ERROR_SUCCESS) return loaded;
         wchar_t valueName[256]{};
@@ -433,9 +441,10 @@ enput::CandidateFrequencyMap& CandidateFrequencies() {
             const LONG status = RegEnumValueW(key, index, valueName, &characterCount, nullptr, &type, reinterpret_cast<BYTE*>(&value), &valueSize);
             if (status == ERROR_NO_MORE_ITEMS) break;
             if (status != ERROR_SUCCESS || type != REG_DWORD || valueSize != sizeof(value)) continue;
-            const std::wstring normalized = enput::CandidateFrequencyKey(valueName);
+            const std::wstring normalized = enput::StoredCandidateFrequencyKey(valueName);
             if (normalized.empty()) continue;
-            loaded[normalized] = static_cast<unsigned int>(std::clamp(value, static_cast<DWORD>(1), static_cast<DWORD>(1000000)));
+            const unsigned int frequency = static_cast<unsigned int>(std::clamp(value, static_cast<DWORD>(1), static_cast<DWORD>(1000000)));
+            loaded[normalized] = (std::max)(loaded[normalized], frequency);
         }
         RegCloseKey(key);
         return loaded;
@@ -443,8 +452,9 @@ enput::CandidateFrequencyMap& CandidateFrequencies() {
     return frequencies;
 }
 
-void RecordCandidateSelection(const std::wstring& candidate) {
-    const std::wstring keyName = enput::CandidateFrequencyKey(candidate);
+void RecordCandidateSelection(const std::wstring& candidate, bool canonicalCaseRequired) {
+    if (CandidateFrequencyPersistenceDisabled()) return;
+    const std::wstring keyName = enput::CandidateFrequencyKey(candidate, canonicalCaseRequired);
     if (keyName.empty()) return;
     enput::CandidateFrequencyMap& frequencies = CandidateFrequencies();
     if (!frequencies.contains(keyName) && frequencies.size() >= 4096) return;
@@ -777,25 +787,30 @@ private:
 LexiconDatabase& Lexicon() { static LexiconDatabase database; return database; }
 std::wstring PrefixLimit(const std::wstring& prefix) { return prefix + static_cast<wchar_t>(0xffff); }
 
-std::vector<std::wstring> QueryWords(const std::wstring& prefix) {
-    SqliteStatement query(Lexicon().Open(), L"SELECT text FROM (SELECT text, ordinal, priority FROM word_case_variant WHERE normalized >= ?1 AND normalized < ?2 UNION ALL SELECT w.text, w.ordinal, 0 FROM words w WHERE w.normalized >= ?1 AND w.normalized < ?2 AND NOT EXISTS (SELECT 1 FROM word_case_variant v WHERE v.normalized = w.normalized)) ORDER BY priority DESC, ordinal;");
+struct StoredWordCandidate {
+    std::wstring text;
+    bool canonicalCaseRequired = false;
+};
+
+std::vector<StoredWordCandidate> QueryWords(const std::wstring& prefix) {
+    SqliteStatement query(Lexicon().Open(), L"SELECT text, canonical_case_required FROM (SELECT text, normalized, canonical_case_required, ordinal, priority FROM word_case_variant WHERE normalized >= ?1 AND normalized < ?2 UNION ALL SELECT w.text, w.normalized, 0, w.ordinal, 0 FROM words w WHERE w.normalized >= ?1 AND w.normalized < ?2 AND NOT EXISTS (SELECT 1 FROM word_case_variant v WHERE v.normalized = w.normalized)) ORDER BY CASE WHEN normalized = ?1 THEN 0 ELSE 1 END, priority DESC, ordinal LIMIT 256;");
     if (!query) return {};
     query.Bind(1, prefix); query.Bind(2, PrefixLimit(prefix));
-    std::vector<std::wstring> results;
-    while (query.Next()) results.push_back(query.Text(0));
+    std::vector<StoredWordCandidate> results;
+    while (query.Next()) results.push_back({ query.Text(0), query.Int(1) != 0 });
     return results;
 }
 
-std::vector<std::wstring> QueryApproximateWords(const std::wstring& queryText) {
+std::vector<StoredWordCandidate> QueryApproximateWords(const std::wstring& queryText) {
     if (queryText.size() < 3) return {};
-    SqliteStatement query(Lexicon().Open(), L"SELECT text, normalized FROM (SELECT text, normalized, ordinal, priority FROM word_case_variant WHERE normalized >= ?2 AND normalized < ?3 AND normalized LIKE ?1 ESCAPE '\\' UNION ALL SELECT w.text, w.normalized, w.ordinal, 0 FROM words w WHERE w.normalized >= ?2 AND w.normalized < ?3 AND w.normalized LIKE ?1 ESCAPE '\\' AND NOT EXISTS (SELECT 1 FROM word_case_variant v WHERE v.normalized = w.normalized)) ORDER BY priority DESC, ordinal LIMIT 96;");
+    SqliteStatement query(Lexicon().Open(), L"SELECT text, normalized, canonical_case_required FROM (SELECT text, normalized, canonical_case_required, ordinal, priority FROM word_case_variant WHERE normalized >= ?2 AND normalized < ?3 AND normalized LIKE ?1 ESCAPE '\\' UNION ALL SELECT w.text, w.normalized, 0, w.ordinal, 0 FROM words w WHERE w.normalized >= ?2 AND w.normalized < ?3 AND w.normalized LIKE ?1 ESCAPE '\\' AND NOT EXISTS (SELECT 1 FROM word_case_variant v WHERE v.normalized = w.normalized)) ORDER BY priority DESC, ordinal LIMIT 96;");
     if (!query) return {};
     const std::wstring firstCharacter(1, queryText.front());
     query.Bind(1, enput::LikeOrderedSubsequencePattern(queryText)); query.Bind(2, firstCharacter); query.Bind(3, PrefixLimit(firstCharacter));
-    std::vector<std::wstring> results;
+    std::vector<StoredWordCandidate> results;
     while (query.Next()) {
         const std::wstring normalized = query.Text(1);
-        if (enput::IsOrderedSubsequence(queryText, normalized)) results.push_back(query.Text(0));
+        if (enput::IsOrderedSubsequence(queryText, normalized)) results.push_back({ query.Text(0), query.Int(2) != 0 });
     }
     return results;
 }
@@ -803,7 +818,7 @@ std::vector<std::wstring> QueryApproximateWords(const std::wstring& queryText) {
 struct StoredSuggestion { std::wstring trigger; std::wstring candidate; int kind = 0; };
 
 std::vector<StoredSuggestion> QuerySuggestionPrefixes(const std::wstring& prefix) {
-    SqliteStatement query(Lexicon().Open(), L"SELECT trigger, kind, candidate FROM suggestions WHERE kind = 1 AND candidate COLLATE NOCASE >= ?1 AND candidate COLLATE NOCASE < ?2 ORDER BY priority DESC, ordinal;");
+    SqliteStatement query(Lexicon().Open(), L"SELECT trigger, kind, candidate FROM suggestions WHERE kind = 1 AND candidate COLLATE NOCASE >= ?1 AND candidate COLLATE NOCASE < ?2 ORDER BY priority DESC, ordinal LIMIT 128;");
     if (!query) return {};
     query.Bind(1, prefix); query.Bind(2, PrefixLimit(prefix));
     std::vector<StoredSuggestion> results;
@@ -868,9 +883,51 @@ std::vector<StoredEmoji> QueryApproximateEmoji(const std::wstring& queryText) {
     return results;
 }
 
+const TranslationEntry* FindLexemeTranslation(const std::wstring& text) {
+    SqliteStatement entries(Lexicon().Open(), L"SELECT l.id, e.source, e.text FROM lexeme l JOIN lexeme_translation_entry e ON e.lexeme_id = l.id WHERE l.text = ?1 COLLATE BINARY ORDER BY l.priority DESC, e.rank;");
+    if (!entries) return nullptr;
+    entries.Bind(1, text);
+    TranslationEntry merged;
+    bool found = false;
+    const auto appendUnique = [](std::vector<std::wstring>* values, const std::wstring& value) {
+        if (!value.empty() && std::none_of(values->begin(), values->end(), [&value](const std::wstring& existing) { return Lowercase(existing) == Lowercase(value); })) values->push_back(value);
+    };
+    while (entries.Next()) {
+        const std::wstring lexemeId = entries.Text(0);
+        const std::wstring source = entries.Text(1);
+        if (merged.text.empty()) merged.text = enput::NormalizeDictionaryText(entries.Text(2));
+        SqliteStatement parts(Lexicon().Open(), L"SELECT value FROM lexeme_translation_part WHERE lexeme_id = ?1 AND source = ?2 ORDER BY ordinal;");
+        if (parts) { parts.Bind(1, lexemeId); parts.Bind(2, source); while (parts.Next()) appendUnique(&merged.partsOfSpeech, enput::NormalizeDictionaryText(parts.Text(0))); }
+        SqliteStatement meanings(Lexicon().Open(), L"SELECT language, value FROM lexeme_translation_meaning WHERE lexeme_id = ?1 AND source = ?2 ORDER BY language, ordinal;");
+        if (meanings) {
+            meanings.Bind(1, lexemeId); meanings.Bind(2, source);
+            while (meanings.Next()) {
+                const std::wstring language = meanings.Text(0);
+                auto existing = std::find_if(merged.translations.begin(), merged.translations.end(), [&language](const auto& item) { return item.first == language; });
+                if (existing == merged.translations.end()) { merged.translations.emplace_back(language, std::vector<std::wstring>{}); existing = std::prev(merged.translations.end()); }
+                appendUnique(&existing->second, enput::NormalizeDictionaryText(meanings.Text(1)));
+            }
+        }
+        if (merged.example.empty()) {
+            SqliteStatement exampleQuery(Lexicon().Open(), L"SELECT value FROM lexeme_translation_example WHERE lexeme_id = ?1 AND source = ?2 ORDER BY ordinal LIMIT 1;");
+            if (exampleQuery) { exampleQuery.Bind(1, lexemeId); exampleQuery.Bind(2, source); if (exampleQuery.Next()) merged.example = enput::NormalizeDictionaryText(exampleQuery.Text(0)); }
+        }
+        found = true;
+    }
+    if (!found) return nullptr;
+    static TranslationEntry result;
+    result = std::move(merged);
+    return &result;
+}
+
+std::wstring CandidateIdentityKey(const std::wstring& candidate, bool canonicalCaseRequired) {
+    return canonicalCaseRequired ? L"canonical\x1f" + candidate : L"ordinary\x1f" + Lowercase(candidate);
+}
+
 const TranslationEntry* FindTranslation(const std::wstring& text) {
+    if (const TranslationEntry* exact = FindLexemeTranslation(text)) return exact;
     const std::wstring key = Lowercase(text);
-    SqliteStatement entries(Lexicon().Open(), L"SELECT source, text FROM translation_entry WHERE key = ?1 ORDER BY CASE WHEN text = ?2 THEN 0 ELSE 1 END, rank;");
+    SqliteStatement entries(Lexicon().Open(), L"SELECT source, text FROM translation_entry WHERE key = ?1 AND (text = ?2 COLLATE BINARY OR NOT EXISTS (SELECT 1 FROM translation_entry exact WHERE exact.key = ?1 AND exact.text = ?2 COLLATE BINARY)) ORDER BY rank;");
     if (!entries) return nullptr;
     entries.Bind(1, key); entries.Bind(2, text);
     TranslationEntry merged;
@@ -1995,6 +2052,7 @@ private:
     static const std::wstring& DisplayCandidate(const std::wstring& candidate, const std::wstring&, const RuntimeConfiguration&) { return candidate; }
 
     std::vector<std::wstring> FindCandidates(const std::wstring& typed) {
+        canonicalCaseRequiredByText_.clear();
         if (typed.empty()) return {};
         std::wstring lower = typed;
         ToLowerInPlace(&lower);
@@ -2008,17 +2066,17 @@ private:
         std::unordered_set<std::wstring> continuationKeys;
         std::unordered_set<std::wstring> prefixKeys;
         std::unordered_set<std::wstring> approximateKeys;
-        const auto appendUnique = [](std::vector<std::wstring>* candidates, std::unordered_set<std::wstring>* keys, const std::wstring& candidate) {
-            const std::wstring lowerCandidate = Lowercase(candidate);
-            if (keys->insert(lowerCandidate).second) candidates->push_back(candidate);
+        const auto appendUnique = [this](std::vector<std::wstring>* candidates, std::unordered_set<std::wstring>* keys, const std::wstring& candidate, bool canonicalCaseRequired = false) {
+            canonicalCaseRequiredByText_[candidate] = canonicalCaseRequiredByText_[candidate] || canonicalCaseRequired;
+            if (keys->insert(CandidateIdentityKey(candidate, canonicalCaseRequired)).second) candidates->push_back(candidate);
         };
-        for (const std::wstring& word : QueryWords(lower)) {
-            std::wstring candidate = word;
+        for (const StoredWordCandidate& word : QueryWords(lower)) {
+            std::wstring candidate = word.text;
             ToLowerInPlace(&candidate);
             if (!candidate.starts_with(lower)) continue;
-            if (word == typed) appendUnique(&exactCaseMatches, &exactCaseKeys, word);
-            else if (candidate == lower) appendUnique(&exactMatches, &exactKeys, word);
-            else appendUnique(&prefixMatches, &prefixKeys, word);
+            if (word.text == typed) appendUnique(&exactCaseMatches, &exactCaseKeys, word.text, word.canonicalCaseRequired);
+            else if (candidate == lower) appendUnique(&exactMatches, &exactKeys, word.text, word.canonicalCaseRequired);
+            else appendUnique(&prefixMatches, &prefixKeys, word.text, word.canonicalCaseRequired);
         }
         for (const StoredSuggestion& entry : QuerySuggestionPrefixes(lower)) {
             const std::wstring candidate = Lowercase(entry.candidate);
@@ -2038,26 +2096,33 @@ private:
                 appendUnique(&approximateMatches, &approximateKeys, entry.candidate);
             }
         }
-        for (const std::wstring& word : QueryApproximateWords(lower)) {
-            const std::wstring normalized = Lowercase(word);
+        for (const StoredWordCandidate& word : QueryApproximateWords(lower)) {
+            const std::wstring normalized = Lowercase(word.text);
             if (!normalized.starts_with(lower) && enput::IsOrderedSubsequence(lower, normalized)) {
-                appendUnique(&approximateMatches, &approximateKeys, word);
+                appendUnique(&approximateMatches, &approximateKeys, word.text, word.canonicalCaseRequired);
             }
         }
+        enput::PromoteCaseMatchingPrefix(&prefixMatches, typed);
         std::vector<std::wstring> matches;
         if (configuration_.adaptiveCandidateRanking) {
             const enput::CandidateFrequencyMap& frequencies = CandidateFrequencies();
-            enput::RankCandidatesByFrequency(&exactCaseMatches, frequencies);
-            enput::RankCandidatesByFrequency(&exactMatches, frequencies);
-            enput::RankCandidatesByFrequency(&continuationMatches, frequencies);
-            enput::RankCandidatesByFrequency(&prefixMatches, frequencies);
-            enput::RankCandidatesByFrequency(&approximateMatches, frequencies);
+            const auto frequencyKey = [this](const std::wstring& candidate) {
+                const auto metadata = canonicalCaseRequiredByText_.find(candidate);
+                return enput::CandidateFrequencyKey(candidate, metadata != canonicalCaseRequiredByText_.end() && metadata->second);
+            };
+            enput::RankCandidatesByFrequency(&exactCaseMatches, frequencies, true, frequencyKey);
+            enput::RankCandidatesByFrequency(&exactMatches, frequencies, true, frequencyKey);
+            enput::RankCandidatesByFrequency(&continuationMatches, frequencies, true, frequencyKey);
+            enput::RankCandidatesByFrequency(&prefixMatches, frequencies, true, frequencyKey);
+            enput::RankCandidatesByFrequency(&approximateMatches, frequencies, true, frequencyKey);
         }
         matches.reserve(exactCaseMatches.size() + exactMatches.size() + continuationMatches.size() + prefixMatches.size() + approximateMatches.size());
         std::unordered_set<std::wstring> matchKeys;
-        const auto appendMatches = [&matches, &matchKeys](const std::vector<std::wstring>& source) {
+        const auto appendMatches = [this, &matches, &matchKeys](const std::vector<std::wstring>& source) {
             for (const std::wstring& candidate : source) {
-                if (matchKeys.insert(Lowercase(candidate)).second) matches.push_back(candidate);
+                const auto metadata = canonicalCaseRequiredByText_.find(candidate);
+                const bool canonicalCaseRequired = metadata != canonicalCaseRequiredByText_.end() && metadata->second;
+                if (matchKeys.insert(CandidateIdentityKey(candidate, canonicalCaseRequired)).second) matches.push_back(candidate);
             }
         };
         appendMatches(exactCaseMatches);
@@ -2068,6 +2133,7 @@ private:
         return matches;
     }
     std::vector<std::wstring> FindAssociatedCandidates(const std::wstring& committedText) {
+        canonicalCaseRequiredByText_.clear();
         const std::wstring lower = Lowercase(committedText);
         const std::wstring phrasePrefix = lower + L" ";
         std::vector<std::wstring> matches;
@@ -2090,7 +2156,8 @@ private:
         return matches;
     }
 
-    static std::vector<std::wstring> FindEmojiCandidates(const std::wstring& typed) {
+    std::vector<std::wstring> FindEmojiCandidates(const std::wstring& typed) {
+        canonicalCaseRequiredByText_.clear();
         struct Match {
             std::wstring emoji;
             std::wstring candidate;
@@ -2134,6 +2201,7 @@ private:
 
     void UpdateCurrentPage() {
         candidates_.clear();
+        candidateCanonicalCaseRequired_.clear();
         const size_t pageCount = PageCount();
         if (!pageCount) { currentPage_ = 0; return; }
         currentPage_ = (std::min)(currentPage_, pageCount - 1);
@@ -2141,6 +2209,8 @@ private:
         const size_t last = (std::min)(allCandidates_.size(), first + static_cast<size_t>(configuration_.candidateCount));
         for (auto candidate = allCandidates_.begin() + first; candidate != allCandidates_.begin() + last; ++candidate) {
             candidates_.push_back(DisplayCandidate(*candidate, typed_, configuration_));
+            const auto metadata = canonicalCaseRequiredByText_.find(*candidate);
+            candidateCanonicalCaseRequired_.push_back(metadata != canonicalCaseRequiredByText_.end() && metadata->second);
         }
     }
 
@@ -2192,7 +2262,7 @@ private:
             ",\"compositionBottom\":" + std::to_string(compositionBounds.bottom) + ",\"ownerWindow\":" + std::to_string(ownerWindow) + ",\"items\":[";
         for (size_t index = 0; index < candidates_.size(); ++index) {
             if (index) message += ',';
-            message += JsonString(candidates_[index]);
+            message += "{\"text\":" + JsonString(candidates_[index]) + ",\"canonicalCaseRequired\":" + (index < candidateCanonicalCaseRequired_.size() && candidateCanonicalCaseRequired_[index] ? "true" : "false") + "}";
         }
         message += "],\"page\":" + std::to_string(currentPage_) + ",\"pageCount\":" + std::to_string(PageCount()) +
             ",\"selectedIndex\":" + std::to_string(selectedIndex_) + ",\"capsLock\":" + ((GetKeyState(VK_CAPITAL) & 1) != 0 ? "true" : "false") +
@@ -2343,7 +2413,7 @@ private:
         if (trailing) finalText += trailing;
         if (SUCCEEDED(hr)) { hr = range->SetText(cookie, 0, finalText.data(), static_cast<LONG>(finalText.size())); range->Release(); }
         ITfComposition* composition = composition_; composition_ = nullptr;
-        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidatePreviewActive_ = false; HideOverlay(); candidateWindow_.Hide(); translationWindow_.Hide();
+        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); candidateCanonicalCaseRequired_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidatePreviewActive_ = false; HideOverlay(); candidateWindow_.Hide(); translationWindow_.Hide();
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
         if (SUCCEEDED(hr)) hr = composition->EndComposition(cookie);
         composition->Release();
@@ -2383,6 +2453,7 @@ private:
         cursor_ = 0;
         allCandidates_.clear();
         candidates_.clear();
+        candidateCanonicalCaseRequired_.clear();
         currentPage_ = 0;
         selectedIndex_ = 0;
         HideOverlay();
@@ -2440,7 +2511,9 @@ private:
     HRESULT CommitCandidate(ITfContext* context, TfEditCookie cookie, const std::wstring& candidate, wchar_t trailing) {
         const size_t separator = candidate.find(static_cast<wchar_t>(0x1F));
         const std::wstring committed = separator == std::wstring::npos ? candidate : candidate.substr(0, separator);
-        if (separator == std::wstring::npos && configuration_.adaptiveCandidateRanking) RecordCandidateSelection(committed);
+        const auto metadata = canonicalCaseRequiredByText_.find(committed);
+        const bool canonicalCaseRequired = metadata != canonicalCaseRequiredByText_.end() && metadata->second;
+        if (separator == std::wstring::npos && configuration_.adaptiveCandidateRanking) RecordCandidateSelection(committed, canonicalCaseRequired);
         return detachedSuggestionActive_ ? CommitDetachedSuggestion(context, cookie, committed, trailing) : FinishWithSuggestions(context, cookie, committed, trailing);
     }
 
@@ -2448,7 +2521,7 @@ private:
         if (composition_) { composition_->Release(); composition_ = nullptr; }
         ClearDetachedSuggestions();
         if (compositionContext_) { compositionContext_->Release(); compositionContext_ = nullptr; }
-        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidatePreviewActive_ = false; HideOverlay(); candidateWindow_.Hide(); translationWindow_.Hide();
+        typed_.clear(); cursor_ = 0; allCandidates_.clear(); candidates_.clear(); candidateCanonicalCaseRequired_.clear(); currentPage_ = 0; selectedIndex_ = 0; candidatePreviewActive_ = false; HideOverlay(); candidateWindow_.Hide(); translationWindow_.Hide();
     }
 
     long refs_ = 1;
@@ -2461,6 +2534,9 @@ private:
     size_t cursor_ = 0;
     std::vector<std::wstring> allCandidates_;
     std::vector<std::wstring> candidates_;
+    std::vector<bool> candidateCanonicalCaseRequired_;
+    // Populated by the batched word query; candidate hot paths must not query SQLite per item.
+    std::unordered_map<std::wstring, bool> canonicalCaseRequiredByText_;
     size_t currentPage_ = 0;
     size_t selectedIndex_ = 0;
     std::wstring lastCommittedText_;
@@ -2549,6 +2625,10 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM key, LPARAM keyD
     if (!eaten) return E_INVALIDARG;
     *eaten = FALSE;
     if (!ShouldHandleKey(key)) return S_OK;
+    // A printable key following Shift means Shift is acting as a modifier, not
+    // as the standalone cancellation shortcut. Printable input bypasses ApplyKey,
+    // so it must clear the pending state before its edit session is dispatched.
+    if (shiftCancelPending_ && !IsShiftKey(key)) shiftCancelPending_ = false;
     const bool shouldPassThrough = ShouldPassThrough(key);
     wchar_t printableCharacter = shouldPassThrough ? PrintableCharacter(key, keyData) : L'\0';
     if (!printableCharacter && shouldPassThrough && IsBypassedCandidateSelectionDigit(key)) printableCharacter = DigitCharacter(key);

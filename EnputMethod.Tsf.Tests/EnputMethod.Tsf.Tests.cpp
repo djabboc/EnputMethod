@@ -153,6 +153,25 @@ void VerifyFrequencyRanking() {
     std::vector<std::wstring> disabledCandidates{ L"hello", L"help", L"helium", L"hero" };
     enput::RankCandidatesByFrequency(&disabledCandidates, frequencies, false);
     Expect(disabledCandidates == std::vector<std::wstring>{ L"hello", L"help", L"helium", L"hero" }, "Disabled frequency ranking must preserve dictionary order.");
+
+    const std::wstring ordinaryPolish = enput::CandidateFrequencyKey(L"polish", false);
+    const std::wstring canonicalPolish = enput::CandidateFrequencyKey(L"Polish", true);
+    Expect(ordinaryPolish != canonicalPolish, "Ordinary polish and canonical Polish must not share an adaptive-frequency identity.");
+    Expect(enput::StoredCandidateFrequencyKey(L"polish") == ordinaryPolish, "A legacy lowercase frequency key must migrate to the ordinary candidate identity only.");
+
+    std::vector<std::wstring> capitalizedPrefix{ L"polish", L"Polish" };
+    enput::PromoteCaseMatchingPrefix(&capitalizedPrefix, L"Polis");
+    Expect(capitalizedPrefix == std::vector<std::wstring>{ L"Polish", L"polish" }, "A matching capitalized prefix must weakly promote canonical Polish.");
+    std::vector<std::wstring> lowercasePrefix{ L"Polish", L"polish" };
+    enput::PromoteCaseMatchingPrefix(&lowercasePrefix, L"polis");
+    Expect(lowercasePrefix == std::vector<std::wstring>{ L"polish", L"Polish" }, "A matching lowercase prefix must weakly promote ordinary polish.");
+
+    enput::CandidateFrequencyMap distinctFrequencies;
+    distinctFrequencies[ordinaryPolish] = 5;
+    enput::RankCandidatesByFrequency(&capitalizedPrefix, distinctFrequencies, true, [](const std::wstring& candidate) {
+        return enput::CandidateFrequencyKey(candidate, candidate == L"Polish");
+    });
+    Expect(capitalizedPrefix == std::vector<std::wstring>{ L"polish", L"Polish" }, "A learned lexeme preference may override the weak typed-case prefix hint.");
 }
 void VerifyTranslationTextNormalization() {
     const std::wstring normalized = enput::NormalizeDictionaryText(L"n a brace\n{{or}} a support\nvt hold steady");

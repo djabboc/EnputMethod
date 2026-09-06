@@ -1,11 +1,12 @@
 param(
     [ValidateSet("Debug", "Release")]
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [switch]$ResetCandidateFrequency
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
-& (Join-Path $PSScriptRoot "build-local-package.ps1") -Configuration $Configuration
+& (Join-Path $PSScriptRoot "build-local-package.ps1") -Configuration $Configuration -ResetCandidateFrequency:$ResetCandidateFrequency
 & (Join-Path $PSScriptRoot "run-overlay-tests.ps1") -Configuration $Configuration
 $installer = Join-Path $projectRoot "artifacts\local\$Configuration\Install Enput Method.exe"
 $uninstaller = Join-Path $projectRoot "artifacts\local\$Configuration\Uninstall Enput Method.exe"

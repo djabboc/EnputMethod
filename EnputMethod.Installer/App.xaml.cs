@@ -104,8 +104,17 @@ public partial class App : System.Windows.Application
 
     private static void WriteVerificationLog(string fileName, string message)
     {
-        string directory = ProductLayout.UserDataDirectory;
-        System.IO.Directory.CreateDirectory(directory);
-        System.IO.File.WriteAllText(System.IO.Path.Combine(directory, fileName), message);
+        try
+        {
+            string directory = ProductLayout.UserDataDirectory;
+            System.IO.Directory.CreateDirectory(directory);
+            System.IO.File.WriteAllText(System.IO.Path.Combine(directory, fileName), message);
+        }
+        catch (Exception exception)
+        {
+            // Logging cannot turn a completed headless verification into an apphost crash.
+            Console.Error.WriteLine($"{fileName}: {message}");
+            Console.Error.WriteLine($"Verification log was not written: {exception.Message}");
+        }
     }
 }

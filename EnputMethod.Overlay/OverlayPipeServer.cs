@@ -10,17 +10,28 @@ internal sealed class OverlayPipeServer : IDisposable
 {
     private readonly CancellationTokenSource _cancellation = new();
     private readonly ConcurrentDictionary<string, PipeConnection> _connections = new(StringComparer.Ordinal);
+    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Action<OverlayMessage, Func<OverlayMessage, Task>> _messageHandler;
     private readonly Action<string>? _clientDisconnected;
+    private readonly Func<string, NamedPipeServerStream> _pipeFactory;
     private readonly string _pipeName;
     private Task? _listener;
 
-    public OverlayPipeServer(Action<OverlayMessage, Func<OverlayMessage, Task>> messageHandler, Action<string>? clientDisconnected = null, string? pipeName = null)
+    public OverlayPipeServer(
+        Action<OverlayMessage, Func<OverlayMessage, Task>> messageHandler,
+        Action<string>? clientDisconnected = null,
+        string? pipeName = null,
+        Func<string, NamedPipeServerStream>? pipeFactory = null)
     {
         _messageHandler = messageHandler;
         _clientDisconnected = clientDisconnected;
         _pipeName = string.IsNullOrWhiteSpace(pipeName) ? OverlayProtocol.PipeName : pipeName;
+        _pipeFactory = pipeFactory ?? CreatePipe;
     }
+
+    public Task Ready => _ready.Task;
+    public Task Completion => _listener ?? Task.CompletedTask;
+    public bool IsStopping => _cancellation.IsCancellationRequested;
 
     public void Start()
     {
@@ -29,29 +40,52 @@ internal sealed class OverlayPipeServer : IDisposable
 
     private async Task ListenAsync()
     {
-        while (!_cancellation.IsCancellationRequested)
+        try
         {
-            try
+            while (!_cancellation.IsCancellationRequested)
             {
-                var pipe = new NamedPipeServerStream(
-                    _pipeName,
-                    PipeDirection.InOut,
-                    NamedPipeServerStream.MaxAllowedServerInstances,
-                    PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous);
-                await pipe.WaitForConnectionAsync(_cancellation.Token);
-                _ = Task.Run(() => ServeConnectionAsync(pipe, _cancellation.Token));
-            }
-            catch (OperationCanceledException) when (_cancellation.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (IOException)
-            {
-                // A failed connection must not prevent the next TSF Host from connecting.
+                NamedPipeServerStream? pipe = null;
+                try
+                {
+                    pipe = _pipeFactory(_pipeName);
+                    _ready.TrySetResult();
+                    await pipe.WaitForConnectionAsync(_cancellation.Token);
+                    NamedPipeServerStream connectedPipe = pipe;
+                    pipe = null;
+                    _ = Task.Run(() => ServeConnectionAsync(connectedPipe, _cancellation.Token));
+                }
+                catch (OperationCanceledException) when (_cancellation.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (IOException)
+                {
+                    // A failed connection must not prevent the next TSF Host from connecting.
+                    if (!_cancellation.IsCancellationRequested) await Task.Delay(100, _cancellation.Token);
+                }
+                finally
+                {
+                    pipe?.Dispose();
+                }
             }
         }
+        catch (Exception exception)
+        {
+            _ready.TrySetException(exception);
+            throw;
+        }
+        finally
+        {
+            if (!_ready.Task.IsCompleted) _ready.TrySetCanceled(_cancellation.Token);
+        }
     }
+
+    private static NamedPipeServerStream CreatePipe(string pipeName) => new(
+        pipeName,
+        PipeDirection.InOut,
+        NamedPipeServerStream.MaxAllowedServerInstances,
+        PipeTransmissionMode.Byte,
+        PipeOptions.Asynchronous);
 
     private async Task ServeConnectionAsync(NamedPipeServerStream pipe, CancellationToken cancellationToken)
     {
@@ -116,6 +150,7 @@ internal sealed class OverlayPipeServer : IDisposable
     public void Dispose()
     {
         _cancellation.Cancel();
+        if (!_ready.Task.IsCompleted) _ready.TrySetCanceled(_cancellation.Token);
         try { _listener?.Wait(TimeSpan.FromSeconds(1)); }
         catch (AggregateException) { }
         foreach (PipeConnection connection in _connections.Values) connection.Dispose();

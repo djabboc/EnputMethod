@@ -10,10 +10,10 @@
 
 | 编号 | 需求 | 实现边界 | 自动化验收 | 状态 |
 | --- | --- | --- | --- | --- |
-| M-01 | `spiderman`、`bars`、`Washington DC`、`AT&T`、`R&B` 等可显示现代中文释义 | 安装器向 SQLite 写入有来源标识的内置补充翻译，不替代 ECDICT/CC-CEDICT 记录；升级时只替换 `enput-modern-*` 内置来源 | 最终 Release 包、系统安装与已安装 SQLite 词库校验通过 | 待真实宿主翻译验收 |
-| M-02 | `thewhitehouse`、`Donald` 能召回 `The White House`、`Donald Trump` | 高优先级短语支持无空格保序匹配，且 SQL 检索不因展示大小写排除实体 | TSF Release DLL 已安装；SQLite 词库校验通过 | 待完全重开宿主后的候选验收 |
-| M-03 | `Shift+7` 输入 `&`，`R&B` 和 `AT&T` 不触发第 7 候选 | 延迟处理单独按下的 Shift 取消动作；带 Shift 的顶排数字按其可打印符号处理 | 原生按键路由单元测试 | 原生测试与安装通过，待真实宿主验收 |
-| M-04 | 上下键浏览候选时，composition 可预览当前候选 | `previewSelectedCandidateInComposition` 默认启用；继续输入或退格保留原始查询，左右键提升预览候选为可编辑文本 | 原生预览状态单元测试与真实宿主观察 | 原生测试与安装通过，待真实宿主验收 |
+| M-01 | `spiderman`、`bars`、`Washington DC`、`AT&T`、`R&B` 等可显示现代中文释义 | 安装器向 SQLite 写入有来源标识的内置补充翻译，不替代 ECDICT/CC-CEDICT 记录；升级时只替换 `enput-modern-*` 内置来源 | 最终 Release 包、系统安装与已安装 SQLite 词库校验通过 | `AT&T` / `R&B` 真实翻译窗通过；其余词条待扩展真实 F3 矩阵 |
+| M-02 | `thewhitehouse`、`Donald` 能召回 `The White House`、`Donald Trump` | 高优先级短语支持无空格保序匹配，且 SQL 检索不因展示大小写排除实体 | TSF Release DLL 已安装；SQLite 词库校验通过 | 真实候选窗口与提交通过 |
+| M-03 | `Shift+7` 输入 `&`，`R&B` 和 `AT&T` 不触发第 7 候选 | 延迟处理单独按下的 Shift 取消动作；带 Shift 的顶排数字按其可打印符号处理 | 原生按键路由单元测试 | 原生、安装和真实宿主候选/翻译窗口通过 |
+| M-04 | 上下键浏览候选时，composition 可预览当前候选 | `previewSelectedCandidateInComposition` 默认启用；继续输入或退格保留原始查询，左右键提升预览候选为可编辑文本 | 原生预览状态单元测试与真实宿主观察 | 默认预览与 `Washington D|C` 真实宿主通过；关闭配置仍待扩展矩阵 |
 | M-05 | 文档、总账与开发日志同步 | 记录数据来源边界、配置、回归步骤与真实宿主限制 | 文档复核 | 已完成 |
 | M-06 | composition 中间位置允许正常编辑 | 光标不在末尾时，空格、`0`-`9` 与任何可打印符号均插入 composition；不触发确认或直选 | 原生纯逻辑回归；真实 TSF 宿主自动化 | 原生回归、Release 构建、系统重装通过；真实宿主自动化因无交互桌面阻塞 |
 | M-07 | composition 末尾保留快捷确认，并允许数字绕过 | 仅末尾的空格和 `1`-`9` 保留原有确认；`shortcut.json.bypassCandidateSelectionModifiers` 默认 `Control`，按住后顶排和小键盘数字作为文本输入 | 原生纯逻辑回归、重装后的真实 TSF 宿主自动化 | 原生回归、Release 构建、系统重装通过；真实宿主自动化因无交互桌面阻塞 |

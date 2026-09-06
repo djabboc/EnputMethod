@@ -5,11 +5,14 @@ namespace EnputMethod.Installer;
 
 internal static class LexiconDatabaseBuilder
 {
-    internal const int SchemaVersion = 2;
+    internal const int SchemaVersion = 4;
     private const string BuiltinPhraseVersion = "wordnet-3.1-20260829";
-    private const string ModernLexiconVersion = "modern-terms-20260905.3";
-    private const string ModernLexiconSource = "enput-modern-20260905.3";
-    private const string CaseLexiconVersion = "case-terms-20260905";
+    private const string ModernLexiconVersion = "modern-terms-20260906.1";
+    private const string ModernLexiconSource = "enput-modern-20260906.1";
+    private const string LexemeVersion = "lexeme-identity-20260906.2";
+    private const string LexemeSource = "enput-curated-20260906.1";
+    private const string LexemeLicense = "Product-curated supplement; authority-source migration pending.";
+    private const string CaseLexiconVersion = "case-terms-20260906.1";
     private const string CaseLexiconSource = "enput-case-20260905";
     private static readonly string[] CoreAcademicPhrases =
     [
@@ -22,8 +25,13 @@ internal static class LexiconDatabaseBuilder
     ];
     private static readonly string[] ModernWords = ["Spiderman", "AT&T", "R&B", "ChatGPT", "OpenAI", "TikTok", "GitHub", "Discord", "K-pop", "meme", "rizz", "stan", "slay", "doomscrolling", "deepfake", "livestream", "vlog", "cosplay", "e-sports"];
     private static readonly string[] ModernPhrases = ["The White House", "Donald Trump", "Washington DC", "New York", "Monte Carlo", "Taylor Swift", "Michael Jackson"];
-    private static readonly string[] CaseWords = ["AT&T", "R&B", "ChatGPT", "OpenAI", "TikTok", "GitHub", "Discord", "K-pop", "Chicago", "Manhattan", "polish", "Polish"];
-    private sealed record ModernTranslation(string Key, string Text, string[] Parts, string[] ChineseMeanings);
+    private sealed record CaseWord(string Text, bool CanonicalCaseRequired);
+    private static readonly CaseWord[] CaseWords =
+    [
+        new("AT&T", true), new("R&B", true), new("ChatGPT", true), new("OpenAI", true), new("TikTok", true), new("GitHub", true), new("Discord", true), new("K-pop", true),
+        new("Chicago", true), new("Manhattan", true), new("polish", false), new("Polish", true)
+    ];
+    private sealed record ModernTranslation(string Key, string Text, string[] Parts, string[] ChineseMeanings, string? Id = null);
     private static readonly ModernTranslation[] ModernTranslations =
     [
         new("spiderman", "Spider-Man", ["proper noun"], ["蜘蛛侠（漫威超级英雄角色）"]),
@@ -45,8 +53,8 @@ internal static class LexiconDatabaseBuilder
         new("monte carlo", "Monte Carlo", ["proper noun"], ["蒙特卡洛（摩纳哥地区）"]),
         new("taylor swift", "Taylor Swift", ["proper noun"], ["泰勒·斯威夫特（美国歌手、词曲作者）"]),
         new("michael jackson", "Michael Jackson", ["proper noun"], ["迈克尔·杰克逊（美国歌手、舞者）"]),
-        new("polish", "polish", ["verb/noun"], ["擦亮；润色；光泽剂"]),
-        new("polish", "Polish", ["adjective/noun"], ["波兰的；波兰人；波兰语"]),
+        new("polish", "polish", ["verb/noun"], ["擦亮；润色；光泽剂"], "enput:lexeme:polish:common"),
+        new("polish", "Polish", ["adjective/noun"], ["波兰的；波兰人；波兰语"], "enput:lexeme:polish:language"),
         new("meme", "meme", ["noun; internet"], ["网络模因；在网络中传播、模仿和再创作的内容"]),
         new("rizz", "rizz", ["noun; slang"], ["魅力、撩人能力（网络俚语）"]),
         new("stan", "stan", ["noun/verb; internet"], ["狂热粉丝；狂热追随（网络用语）"]),
@@ -177,15 +185,19 @@ internal static class LexiconDatabaseBuilder
         if (!File.Exists(databasePath) || !File.Exists(Path.Combine(userDirectory, "enput.db.ready"))) throw new InvalidOperationException("SQLite lexicon is not ready.");
         using var database = new NativeSqliteConnection(databasePath);
         if (database.ScalarInt("SELECT CAST(value AS INTEGER) FROM metadata WHERE key = 'schemaVersion';") != SchemaVersion) throw new InvalidOperationException("SQLite schema version is invalid.");
-        if (database.ScalarInt("SELECT COUNT(*) FROM words WHERE normalized >= 'he' AND normalized < 'he' || char(65535);") < 3 || database.ScalarInt("SELECT COUNT(*) FROM word_case_variant WHERE normalized IN ('at&t', 'r&b', 'polish');") < 4) throw new InvalidOperationException("Word prefix lookup validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM words WHERE normalized >= 'he' AND normalized < 'he' || char(65535);") < 3 || database.ScalarInt("SELECT COUNT(*) FROM word_case_variant WHERE normalized IN ('at&t', 'r&b', 'polish');") < 4 || database.ScalarInt("SELECT COUNT(*) FROM word_case_variant WHERE text = 'Polish' COLLATE BINARY AND canonical_case_required = 1;") != 1 || database.ScalarInt("SELECT COUNT(*) FROM word_case_variant WHERE text = 'polish' COLLATE BINARY AND canonical_case_required = 0;") != 1) throw new InvalidOperationException("Word prefix lookup validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE trigger = 'can' AND candidate = 'can i help you?';") != 1) throw new InvalidOperationException("Phrase suggestion validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE trigger = 'empire' AND candidate = 'empire state building';") != 1) throw new InvalidOperationException("Built-in compact phrase validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE candidate IN ('new york', 'computer science', 'machine learning', 'contract law');") < 4) throw new InvalidOperationException("Bundled domain phrase validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'fire';") < 1 || database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'saw';") < 1) throw new InvalidOperationException("Emoji lookup validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM words WHERE normalized >= 'h' AND normalized < ('h' || char(65535)) AND normalized LIKE '%h%p%y%';") < 1) throw new InvalidOperationException("Ordered word subsequence validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM emoji_keyword WHERE normalized = 'pig_nose';") != 1) throw new InvalidOperationException("Ordered Emoji subsequence validation failed.");
-        if (database.ScalarInt("SELECT COUNT(*) FROM translation_entry WHERE key IN ('braces', 'hug', 'spiderman', 'bars', 'washington dc', 'at&t', 'r&b', 'chatgpt', 'meme', 'taylor swift', 'michael jackson');") < 11) throw new InvalidOperationException("Translation lookup validation failed.");
-        if (database.ScalarInt("SELECT COUNT(*) FROM translation_meaning WHERE key = 'spiderman' AND language = 'zh-CN' AND value LIKE '%蜘蛛侠%';") < 1) throw new InvalidOperationException("Modern translation validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM translation_entry WHERE key IN ('braces', 'hug');") < 2) throw new InvalidOperationException("Legacy translation lookup validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM lexeme WHERE text IN ('Spider-Man', 'bars', 'Washington, D.C.', 'AT&T', 'R&B', 'ChatGPT', 'meme', 'Taylor Swift', 'Michael Jackson');") < 9) throw new InvalidOperationException("Lexeme lookup validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_meaning m JOIN lexeme l ON l.id = m.lexeme_id WHERE l.text = 'Spider-Man' COLLATE BINARY AND m.language = 'zh-CN' AND m.value LIKE '%蜘蛛侠%';") < 1) throw new InvalidOperationException("Modern translation validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM lexeme WHERE normalized = 'polish' AND text IN ('polish', 'Polish');") != 2) throw new InvalidOperationException("Case-sensitive lexeme identity validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM lexeme WHERE id IN ('enput:lexeme:polish:common', 'enput:lexeme:polish:language');") != 2) throw new InvalidOperationException("Stable lexeme identifier validation failed.");
+        if (database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_meaning m JOIN lexeme l ON l.id = m.lexeme_id WHERE l.text = 'polish' COLLATE BINARY AND m.value LIKE '%擦亮%';") < 1 || database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_meaning m JOIN lexeme l ON l.id = m.lexeme_id WHERE l.text = 'polish' COLLATE BINARY AND m.value LIKE '%波兰语%';") != 0 || database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_meaning m JOIN lexeme l ON l.id = m.lexeme_id WHERE l.text = 'Polish' COLLATE BINARY AND m.value LIKE '%波兰语%';") < 1 || database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_meaning m JOIN lexeme l ON l.id = m.lexeme_id WHERE l.text = 'Polish' COLLATE BINARY AND m.value LIKE '%擦亮%';") != 0) throw new InvalidOperationException("Lexeme sense isolation validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE candidate IN ('The White House', 'Donald Trump', 'Washington DC', 'New York', 'Monte Carlo', 'Taylor Swift', 'Michael Jackson');") < 7) throw new InvalidOperationException("Modern phrase validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM word_case_variant WHERE text IN ('AT&T', 'R&B', 'Chicago', 'Manhattan', 'polish', 'Polish');") < 6) throw new InvalidOperationException("Modern word validation failed.");
         if (database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE kind = 1 AND candidate COLLATE NOCASE >= 'donald' AND candidate COLLATE NOCASE < ('donald' || char(65535)) AND candidate = 'Donald Trump';") != 1) throw new InvalidOperationException("Case-insensitive modern phrase lookup validation failed.");
@@ -219,7 +231,12 @@ internal static class LexiconDatabaseBuilder
                 translationEntries = database.ScalarInt("SELECT COUNT(*) FROM translation_entry;"),
                 translationMeanings = database.ScalarInt("SELECT COUNT(*) FROM translation_meaning;"),
                 translationParts = database.ScalarInt("SELECT COUNT(*) FROM translation_part;"),
-                translationExamples = database.ScalarInt("SELECT COUNT(*) FROM translation_example;")
+                translationExamples = database.ScalarInt("SELECT COUNT(*) FROM translation_example;"),
+                lexemes = database.ScalarInt("SELECT COUNT(*) FROM lexeme;"),
+                lexemeTranslationEntries = database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_entry;"),
+                lexemeTranslationMeanings = database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_meaning;"),
+                lexemeTranslationParts = database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_part;"),
+                lexemeTranslationExamples = database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_example;")
             },
             fullScanFindings = new
             {
@@ -227,6 +244,7 @@ internal static class LexiconDatabaseBuilder
                 wordNormalizedMismatches = database.ScalarInt("SELECT COUNT(*) FROM words WHERE lower(text) <> normalized;"),
                 invalidCaseVariantRows = database.ScalarInt("SELECT COUNT(*) FROM word_case_variant WHERE trim(normalized) = '' OR trim(text) = '' OR trim(source) = '';"),
                 caseVariantNormalizedMismatches = database.ScalarInt("SELECT COUNT(*) FROM word_case_variant WHERE lower(text) <> normalized;"),
+                canonicalCaseRequiredVariants = database.ScalarInt("SELECT COUNT(*) FROM word_case_variant WHERE canonical_case_required <> 0;"),
                 ambiguousCaseVariantKeys = database.ScalarInt("SELECT COUNT(*) FROM (SELECT normalized FROM word_case_variant GROUP BY normalized HAVING COUNT(*) > 1);"),
                 ambiguousCaseVariantKeySamples = database.QueryTextColumn("SELECT normalized FROM word_case_variant GROUP BY normalized HAVING COUNT(*) > 1 ORDER BY normalized LIMIT 100;"),
                 invalidSuggestionRows = database.ScalarInt("SELECT COUNT(*) FROM suggestions WHERE trim(trigger) = '' OR trim(candidate) = '';"),
@@ -235,6 +253,16 @@ internal static class LexiconDatabaseBuilder
                 orphanTranslationParts = database.ScalarInt("SELECT COUNT(*) FROM translation_part p WHERE NOT EXISTS (SELECT 1 FROM translation_entry e WHERE e.key = p.key AND e.source = p.source);"),
                 orphanTranslationMeanings = database.ScalarInt("SELECT COUNT(*) FROM translation_meaning m WHERE NOT EXISTS (SELECT 1 FROM translation_entry e WHERE e.key = m.key AND e.source = m.source);"),
                 orphanTranslationExamples = database.ScalarInt("SELECT COUNT(*) FROM translation_example x WHERE NOT EXISTS (SELECT 1 FROM translation_entry e WHERE e.key = x.key AND e.source = x.source);"),
+                invalidLexemeRows = database.ScalarInt("SELECT COUNT(*) FROM lexeme WHERE trim(id) = '' OR trim(normalized) = '' OR trim(text) = '' OR trim(category) = '' OR trim(source) = '' OR trim(license) = '';"),
+                lexemeCanonicalIndexDifferences = database.ScalarInt("SELECT COUNT(*) FROM lexeme WHERE lower(text) <> normalized;"),
+                lexemeCanonicalIndexDifferenceSamples = database.QueryTextColumn("SELECT text || ' -> ' || normalized FROM lexeme WHERE lower(text) <> normalized ORDER BY text LIMIT 100;"),
+                ambiguousLexemeNormalizedKeys = database.ScalarInt("SELECT COUNT(*) FROM (SELECT normalized FROM lexeme GROUP BY normalized HAVING COUNT(*) > 1);"),
+                ambiguousLexemeNormalizedKeySamples = database.QueryTextColumn("SELECT normalized FROM lexeme GROUP BY normalized HAVING COUNT(*) > 1 ORDER BY normalized LIMIT 100;"),
+                lexemesWithoutMeaning = database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_entry e WHERE NOT EXISTS (SELECT 1 FROM lexeme_translation_meaning m WHERE m.lexeme_id = e.lexeme_id AND m.source = e.source);"),
+                orphanLexemeTranslationEntries = database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_entry e WHERE NOT EXISTS (SELECT 1 FROM lexeme l WHERE l.id = e.lexeme_id);"),
+                orphanLexemeTranslationParts = database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_part p WHERE NOT EXISTS (SELECT 1 FROM lexeme_translation_entry e WHERE e.lexeme_id = p.lexeme_id AND e.source = p.source);"),
+                orphanLexemeTranslationMeanings = database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_meaning m WHERE NOT EXISTS (SELECT 1 FROM lexeme_translation_entry e WHERE e.lexeme_id = m.lexeme_id AND e.source = m.source);"),
+                orphanLexemeTranslationExamples = database.ScalarInt("SELECT COUNT(*) FROM lexeme_translation_example x WHERE NOT EXISTS (SELECT 1 FROM lexeme_translation_entry e WHERE e.lexeme_id = x.lexeme_id AND e.source = x.source);"),
                 foreignKeyViolations = database.ScalarInt("SELECT COUNT(*) FROM pragma_foreign_key_check;")
             },
             provenance = new
@@ -244,7 +272,10 @@ internal static class LexiconDatabaseBuilder
                 suggestionRowsWithPerEntrySource = 0,
                 wordRowsWithPerEntryType = 0,
                 suggestionRowsWithPerEntryType = 0,
-                note = "Legacy words and suggestions tables do not carry per-entry source or semantic type. The audit reports this gap; it does not infer proper nouns, meanings, or capitalization from spelling."
+                lexemeRowsWithPerEntrySource = database.ScalarInt("SELECT COUNT(*) FROM lexeme WHERE trim(source) <> '';"),
+                lexemeRowsWithPerEntryType = database.ScalarInt("SELECT COUNT(*) FROM lexeme WHERE trim(category) <> '';"),
+                lexemeRowsWithPerEntryLicense = database.ScalarInt("SELECT COUNT(*) FROM lexeme WHERE trim(license) <> '';"),
+                note = "Legacy words and suggestions tables do not carry per-entry source or semantic type. Lexeme rows carry explicit identity metadata. The audit does not infer proper nouns, meanings, or capitalization from spelling."
             }
         };
 
@@ -279,51 +310,65 @@ internal static class LexiconDatabaseBuilder
 
     private static void EnsureModernLexicon(NativeSqliteConnection database)
     {
-        if (database.ScalarInt($"SELECT COUNT(*) FROM metadata WHERE key = 'modernLexiconVersion' AND value = '{ModernLexiconVersion}';") != 0) return;
-
-        using (NativeSqliteStatement insertWord = database.Prepare("INSERT OR IGNORE INTO words(normalized, text, ordinal) VALUES(?, ?, ?);"))
+        if (database.ScalarInt($"SELECT COUNT(*) FROM metadata WHERE key = 'modernLexiconVersion' AND value = '{ModernLexiconVersion}';") == 0)
         {
-            int ordinal = -1000;
-            foreach (string word in ModernWords)
+            using (NativeSqliteStatement insertWord = database.Prepare("INSERT OR IGNORE INTO words(normalized, text, ordinal) VALUES(?, ?, ?);"))
             {
-                insertWord.BindText(1, word.ToLowerInvariant()); insertWord.BindText(2, word); insertWord.BindInt(3, ordinal++); insertWord.Execute();
+                int ordinal = -1000;
+                foreach (string word in ModernWords)
+                {
+                    insertWord.BindText(1, word.ToLowerInvariant()); insertWord.BindText(2, word); insertWord.BindInt(3, ordinal++); insertWord.Execute();
+                }
             }
+            using (NativeSqliteStatement insertPhrase = database.Prepare("INSERT OR IGNORE INTO suggestions(trigger, kind, candidate, ordinal, priority) VALUES(?, 1, ?, ?, ?);"))
+            {
+                int ordinal = 0;
+                foreach (string phrase in ModernPhrases) InsertPhrase(insertPhrase, phrase, ordinal++, 200, preserveCase: true);
+            }
+            database.Execute($"INSERT INTO metadata(key, value) VALUES('modernLexiconVersion', '{ModernLexiconVersion}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
         }
-        using (NativeSqliteStatement insertPhrase = database.Prepare("INSERT OR IGNORE INTO suggestions(trigger, kind, candidate, ordinal, priority) VALUES(?, 1, ?, ?, ?);"))
-        {
-            int ordinal = 0;
-            foreach (string phrase in ModernPhrases) InsertPhrase(insertPhrase, phrase, ordinal++, 200, preserveCase: true);
-        }
+
+        EnsureModernLexemes(database);
+    }
+
+    private static void EnsureModernLexemes(NativeSqliteConnection database)
+    {
+        if (database.ScalarInt($"SELECT COUNT(*) FROM metadata WHERE key = 'lexemeVersion' AND value = '{LexemeVersion}';") != 0) return;
 
         database.Execute("DELETE FROM translation_part WHERE source LIKE 'enput-modern-%'; DELETE FROM translation_meaning WHERE source LIKE 'enput-modern-%'; DELETE FROM translation_example WHERE source LIKE 'enput-modern-%'; DELETE FROM translation_entry WHERE source LIKE 'enput-modern-%';");
-        using NativeSqliteStatement insertEntry = database.Prepare("INSERT INTO translation_entry(key, source, rank, text) VALUES(?, ?, 0, ?);");
-        using NativeSqliteStatement insertPart = database.Prepare("INSERT INTO translation_part(key, source, ordinal, value) VALUES(?, ?, ?, ?);");
-        using NativeSqliteStatement insertMeaning = database.Prepare("INSERT INTO translation_meaning(key, source, language, ordinal, value) VALUES(?, ?, 'zh-CN', ?, ?);");
+        database.Execute("DELETE FROM lexeme_translation_part WHERE source LIKE 'enput-curated-%'; DELETE FROM lexeme_translation_meaning WHERE source LIKE 'enput-curated-%'; DELETE FROM lexeme_translation_example WHERE source LIKE 'enput-curated-%'; DELETE FROM lexeme_translation_entry WHERE source LIKE 'enput-curated-%'; DELETE FROM lexeme WHERE source LIKE 'enput-curated-%';");
+
+        using NativeSqliteStatement insertLexeme = database.Prepare("INSERT INTO lexeme(id, normalized, text, category, source, license, priority) VALUES(?, ?, ?, ?, ?, ?, 300);");
+        using NativeSqliteStatement insertEntry = database.Prepare("INSERT INTO lexeme_translation_entry(lexeme_id, source, rank, text) VALUES(?, ?, 0, ?);");
+        using NativeSqliteStatement insertPart = database.Prepare("INSERT INTO lexeme_translation_part(lexeme_id, source, ordinal, value) VALUES(?, ?, ?, ?);");
+        using NativeSqliteStatement insertMeaning = database.Prepare("INSERT INTO lexeme_translation_meaning(lexeme_id, source, language, ordinal, value) VALUES(?, ?, 'zh-CN', ?, ?);");
         foreach (ModernTranslation translation in ModernTranslations)
         {
-            string source = $"{ModernLexiconSource}:{translation.Text}";
-            insertEntry.BindText(1, translation.Key); insertEntry.BindText(2, source); insertEntry.BindText(3, translation.Text); insertEntry.Execute();
+            string id = translation.Id ?? $"enput:lexeme:{translation.Key}";
+            string category = translation.Parts.Length > 0 ? translation.Parts[0] : "unspecified";
+            insertLexeme.BindText(1, id); insertLexeme.BindText(2, translation.Key); insertLexeme.BindText(3, translation.Text); insertLexeme.BindText(4, category); insertLexeme.BindText(5, LexemeSource); insertLexeme.BindText(6, LexemeLicense); insertLexeme.Execute();
+            insertEntry.BindText(1, id); insertEntry.BindText(2, LexemeSource); insertEntry.BindText(3, translation.Text); insertEntry.Execute();
             for (int ordinal = 0; ordinal < translation.Parts.Length; ++ordinal)
             {
-                insertPart.BindText(1, translation.Key); insertPart.BindText(2, source); insertPart.BindInt(3, ordinal); insertPart.BindText(4, translation.Parts[ordinal]); insertPart.Execute();
+                insertPart.BindText(1, id); insertPart.BindText(2, LexemeSource); insertPart.BindInt(3, ordinal); insertPart.BindText(4, translation.Parts[ordinal]); insertPart.Execute();
             }
             for (int ordinal = 0; ordinal < translation.ChineseMeanings.Length; ++ordinal)
             {
-                insertMeaning.BindText(1, translation.Key); insertMeaning.BindText(2, source); insertMeaning.BindInt(3, ordinal); insertMeaning.BindText(4, translation.ChineseMeanings[ordinal]); insertMeaning.Execute();
+                insertMeaning.BindText(1, id); insertMeaning.BindText(2, LexemeSource); insertMeaning.BindInt(3, ordinal); insertMeaning.BindText(4, translation.ChineseMeanings[ordinal]); insertMeaning.Execute();
             }
         }
-        database.Execute($"INSERT INTO metadata(key, value) VALUES('modernLexiconVersion', '{ModernLexiconVersion}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
+        database.Execute($"INSERT INTO metadata(key, value) VALUES('lexemeVersion', '{LexemeVersion}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
     }
 
     private static void EnsureCaseLexicon(NativeSqliteConnection database)
     {
         if (database.ScalarInt($"SELECT COUNT(*) FROM metadata WHERE key = 'caseLexiconVersion' AND value = '{CaseLexiconVersion}';") != 0) return;
         database.Execute($"DELETE FROM word_case_variant WHERE source LIKE '{CaseLexiconSource}%';");
-        using NativeSqliteStatement insert = database.Prepare("INSERT INTO word_case_variant(normalized, text, ordinal, priority, source) VALUES(?, ?, ?, 300, ?);");
+        using NativeSqliteStatement insert = database.Prepare("INSERT INTO word_case_variant(normalized, text, ordinal, priority, source, canonical_case_required) VALUES(?, ?, ?, 300, ?, ?);");
         int ordinal = 0;
-        foreach (string word in CaseWords)
+        foreach (CaseWord word in CaseWords)
         {
-            insert.BindText(1, word.ToLowerInvariant()); insert.BindText(2, word); insert.BindInt(3, ordinal++); insert.BindText(4, CaseLexiconSource); insert.Execute();
+            insert.BindText(1, word.Text.ToLowerInvariant()); insert.BindText(2, word.Text); insert.BindInt(3, ordinal++); insert.BindText(4, CaseLexiconSource); insert.BindInt(5, word.CanonicalCaseRequired ? 1 : 0); insert.Execute();
         }
         database.Execute($"INSERT INTO metadata(key, value) VALUES('caseLexiconVersion', '{CaseLexiconVersion}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
     }
@@ -341,7 +386,7 @@ internal static class LexiconDatabaseBuilder
         CREATE TABLE metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE words(normalized TEXT PRIMARY KEY, text TEXT NOT NULL, ordinal INTEGER NOT NULL);
         CREATE INDEX words_prefix ON words(normalized, ordinal);
-        CREATE TABLE word_case_variant(normalized TEXT NOT NULL, text TEXT NOT NULL, ordinal INTEGER NOT NULL, priority INTEGER NOT NULL, source TEXT NOT NULL, PRIMARY KEY(normalized, text));
+        CREATE TABLE word_case_variant(normalized TEXT NOT NULL, text TEXT NOT NULL, ordinal INTEGER NOT NULL, priority INTEGER NOT NULL, source TEXT NOT NULL, canonical_case_required INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(normalized, text));
         CREATE INDEX word_case_variant_prefix ON word_case_variant(normalized, priority DESC, ordinal);
         CREATE TABLE suggestions(trigger TEXT NOT NULL, kind INTEGER NOT NULL, candidate TEXT NOT NULL, ordinal INTEGER NOT NULL, priority INTEGER NOT NULL, PRIMARY KEY(trigger, kind, candidate));
         CREATE INDEX suggestions_trigger ON suggestions(trigger, priority DESC, ordinal);
@@ -353,11 +398,19 @@ internal static class LexiconDatabaseBuilder
         CREATE TABLE translation_meaning(key TEXT NOT NULL, source TEXT NOT NULL, language TEXT NOT NULL, ordinal INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(key, source, language, ordinal));
         CREATE TABLE translation_example(key TEXT NOT NULL, source TEXT NOT NULL, ordinal INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(key, source, ordinal));
         CREATE INDEX translation_lookup ON translation_entry(key, rank);
+        CREATE TABLE lexeme(id TEXT PRIMARY KEY, normalized TEXT NOT NULL, text TEXT NOT NULL COLLATE BINARY, category TEXT NOT NULL, source TEXT NOT NULL, license TEXT NOT NULL, priority INTEGER NOT NULL);
+        CREATE INDEX lexeme_exact ON lexeme(text, priority DESC);
+        CREATE INDEX lexeme_normalized ON lexeme(normalized, priority DESC);
+        CREATE TABLE lexeme_translation_entry(lexeme_id TEXT NOT NULL REFERENCES lexeme(id), source TEXT NOT NULL, rank INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY(lexeme_id, source));
+        CREATE TABLE lexeme_translation_part(lexeme_id TEXT NOT NULL, source TEXT NOT NULL, ordinal INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(lexeme_id, source, ordinal));
+        CREATE TABLE lexeme_translation_meaning(lexeme_id TEXT NOT NULL, source TEXT NOT NULL, language TEXT NOT NULL, ordinal INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(lexeme_id, source, language, ordinal));
+        CREATE TABLE lexeme_translation_example(lexeme_id TEXT NOT NULL, source TEXT NOT NULL, ordinal INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(lexeme_id, source, ordinal));
         """);
 
     private static void MigrateSchema(NativeSqliteConnection database)
     {
-        database.Execute("CREATE TABLE IF NOT EXISTS word_case_variant(normalized TEXT NOT NULL, text TEXT NOT NULL, ordinal INTEGER NOT NULL, priority INTEGER NOT NULL, source TEXT NOT NULL, PRIMARY KEY(normalized, text)); CREATE INDEX IF NOT EXISTS word_case_variant_prefix ON word_case_variant(normalized, priority DESC, ordinal);");
+        database.Execute("CREATE TABLE IF NOT EXISTS word_case_variant(normalized TEXT NOT NULL, text TEXT NOT NULL, ordinal INTEGER NOT NULL, priority INTEGER NOT NULL, source TEXT NOT NULL, PRIMARY KEY(normalized, text)); CREATE INDEX IF NOT EXISTS word_case_variant_prefix ON word_case_variant(normalized, priority DESC, ordinal); CREATE TABLE IF NOT EXISTS lexeme(id TEXT PRIMARY KEY, normalized TEXT NOT NULL, text TEXT NOT NULL COLLATE BINARY, category TEXT NOT NULL, source TEXT NOT NULL, license TEXT NOT NULL, priority INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS lexeme_exact ON lexeme(text, priority DESC); CREATE INDEX IF NOT EXISTS lexeme_normalized ON lexeme(normalized, priority DESC); CREATE TABLE IF NOT EXISTS lexeme_translation_entry(lexeme_id TEXT NOT NULL REFERENCES lexeme(id), source TEXT NOT NULL, rank INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY(lexeme_id, source)); CREATE TABLE IF NOT EXISTS lexeme_translation_part(lexeme_id TEXT NOT NULL, source TEXT NOT NULL, ordinal INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(lexeme_id, source, ordinal)); CREATE TABLE IF NOT EXISTS lexeme_translation_meaning(lexeme_id TEXT NOT NULL, source TEXT NOT NULL, language TEXT NOT NULL, ordinal INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(lexeme_id, source, language, ordinal)); CREATE TABLE IF NOT EXISTS lexeme_translation_example(lexeme_id TEXT NOT NULL, source TEXT NOT NULL, ordinal INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(lexeme_id, source, ordinal));");
+        if (database.QueryTextColumn("SELECT name FROM pragma_table_info('word_case_variant') WHERE name = 'canonical_case_required';").Count == 0) database.Execute("ALTER TABLE word_case_variant ADD COLUMN canonical_case_required INTEGER NOT NULL DEFAULT 0;");
         database.Execute($"INSERT INTO metadata(key, value) VALUES('schemaVersion', '{SchemaVersion}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
     }
 

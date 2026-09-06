@@ -27,6 +27,7 @@ internal sealed class CandidateOverlayWindow : Window
 
     public CandidateOverlayWindow()
     {
+        Title = "Enput Candidate Overlay";
         AllowsTransparency = true;
         Background = Brushes.Transparent;
         Focusable = false;
@@ -170,14 +171,17 @@ internal sealed class CandidateOverlayWindow : Window
         _frame.Padding = new Thickness(theme.Padding);
     }
 
-    private static FrameworkElement CreateCandidateContent(int index, string candidate, bool emojiMode, FontFamily font, OverlayTheme theme, bool isSelected)
+    private static FrameworkElement CreateCandidateContent(int index, CandidateItemView item, bool emojiMode, FontFamily font, OverlayTheme theme, bool isSelected)
     {
         Brush foreground = isSelected ? Brush(theme.SelectedForeground, Brushes.White) : Brush(theme.Foreground, Brushes.White);
+        string candidate = item.Text;
         if (!emojiMode) return new TextBlock
         {
             FontFamily = font,
             FontSize = theme.WpfFontSize,
-            Foreground = foreground,
+            Foreground = item.CanonicalCaseRequired && !isSelected ? Brush(theme.SelectedForeground, Brushes.LightSkyBlue) : foreground,
+            FontWeight = item.CanonicalCaseRequired ? FontWeights.Bold : FontWeights.Normal,
+            ToolTip = item.CanonicalCaseRequired ? "Canonical capitalization required" : null,
             Text = $"{index + 1}  {candidate}",
         };
 

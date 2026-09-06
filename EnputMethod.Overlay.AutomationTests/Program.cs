@@ -1,4 +1,8 @@
 using EnputMethod.Overlay;
+using System.Diagnostics;
+using System.IO;
+using System.IO.Pipes;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -13,10 +17,11 @@ namespace EnputMethod.Overlay.AutomationTests;
 internal static class Program
 {
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
         try
         {
+            if (args.Length == 1) VerifyFailedListenerAllowsHealthyTakeover(args[0]);
             VerifyForegroundOwnerArbitration();
             VerifyOwnerWindowProtocol();
             VerifyEmojiAssetNaming();
@@ -37,6 +42,56 @@ internal static class Program
         }
     }
 
+    private static void VerifyFailedListenerAllowsHealthyTakeover(string overlayExecutable)
+    {
+        Assert(File.Exists(overlayExecutable), $"Overlay lifecycle executable does not exist: {overlayExecutable}");
+        string token = Guid.NewGuid().ToString("N");
+        string mutexName = $"Local\\EnputMethod.Overlay.LifecycleTest.{token}";
+        string pipeName = $"EnputMethod.Overlay.LifecycleTest.{token}";
+
+        using (Process failed = StartOverlay(overlayExecutable, $"--lifecycle-test={token}", "--fail-pipe-listener"))
+        {
+            if (!failed.WaitForExit(5000))
+            {
+                failed.Kill(entireProcessTree: true);
+                throw new InvalidOperationException("An Overlay with a failed listener did not exit promptly.");
+            }
+            Assert(failed.ExitCode == 1, $"A failed Overlay listener must exit with code 1, got {failed.ExitCode}.");
+        }
+
+        using (var takeoverMutex = new Mutex(true, mutexName, out bool createdNew))
+        {
+            Assert(createdNew, "The failed Overlay process retained its single-instance mutex.");
+            takeoverMutex.ReleaseMutex();
+        }
+
+        using Process healthy = StartOverlay(overlayExecutable, $"--lifecycle-test={token}");
+        try
+        {
+            using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            pipe.Connect(5000);
+            using var reader = new StreamReader(pipe, new UTF8Encoding(false), false, 4096, true);
+            string? ready = reader.ReadLine();
+            Assert(ready is not null && ready.Contains("\"ready\"", StringComparison.Ordinal), "A healthy Overlay could not take over after the failed instance.");
+            Console.WriteLine("Overlay failed-listener exit and healthy takeover test passed.");
+        }
+        finally
+        {
+            if (!healthy.HasExited)
+            {
+                healthy.Kill(entireProcessTree: true);
+                healthy.WaitForExit(5000);
+            }
+        }
+    }
+
+    private static Process StartOverlay(string executable, params string[] arguments)
+    {
+        var startInfo = new ProcessStartInfo(executable) { UseShellExecute = false };
+        foreach (string argument in arguments) startInfo.ArgumentList.Add(argument);
+        return Process.Start(startInfo) ?? throw new InvalidOperationException($"Could not start Overlay lifecycle process: {executable}");
+    }
+
     private static void VerifyForegroundOwnerArbitration()
     {
         using HwndSource firstEditor = CreateEditorWindow("first-editor");
@@ -49,7 +104,7 @@ internal static class Program
 
     private static void VerifyOwnerWindowProtocol()
     {
-        const string message = """{"type":"showCandidates","clientId":"host-1","stateId":4,"candidates":{"x":120,"y":80,"compositionLeft":120,"compositionTop":56,"compositionRight":168,"compositionBottom":80,"ownerWindow":42,"items":["hello"],"page":0,"pageCount":1,"selectedIndex":0,"layout":"vertical"}}""";
+        const string message = """{"type":"showCandidates","clientId":"host-1","stateId":4,"candidates":{"x":120,"y":80,"compositionLeft":120,"compositionTop":56,"compositionRight":168,"compositionBottom":80,"ownerWindow":42,"items":[{"text":"hello"}],"page":0,"pageCount":1,"selectedIndex":0,"layout":"vertical"}}""";
         Assert(OverlayProtocol.TryParse(message, out OverlayMessage? parsed) && parsed?.Candidates?.OwnerWindow == 42, "The candidate owner window must survive protocol parsing.");
         Assert(parsed?.Candidates?.HasCompositionBounds == true, "Candidate messages must carry the complete composition bounds for collision avoidance.");
     }
@@ -69,7 +124,7 @@ internal static class Program
         {
             overlay.ShowCandidates("emoji-test", 1, new CandidateView
             {
-                Items = ["😀\u001Fgrinning, smile"],
+                Items = [new CandidateItemView { Text = "😀\u001Fgrinning, smile" }],
                 Page = 0,
                 PageCount = 1,
                 SelectedIndex = 0,
@@ -94,6 +149,7 @@ internal static class Program
         var overlay = new CandidateOverlayWindow();
         try
         {
+            Assert(overlay.Title == "Enput Candidate Overlay", "Candidate windows need a stable native title for real-host automation.");
             overlay.WarmUp();
             Assert(new WindowInteropHelper(overlay).Handle != IntPtr.Zero, "Warmup must create the native window before the first candidate arrives.");
             Assert(!overlay.IsVisible, "Warmup must not leave a visible candidate window on screen.");
@@ -110,7 +166,7 @@ internal static class Program
         {
             overlay.ShowCandidates("font-test", 1, new CandidateView
             {
-                Items = ["hello"],
+                Items = [new CandidateItemView { Text = "hello" }],
                 Page = 0,
                 PageCount = 1,
                 SelectedIndex = 0,
@@ -136,7 +192,7 @@ internal static class Program
         {
             overlay.ShowCandidates("layout-test", 1, new CandidateView
             {
-                Items = ["encyclopedia"],
+                Items = [new CandidateItemView { Text = "encyclopedia" }],
                 Page = 0,
                 PageCount = 2,
                 SelectedIndex = 0,
@@ -183,6 +239,7 @@ internal static class Program
         var overlay = new TranslationOverlayWindow(text => copiedText = text);
         try
         {
+            Assert(overlay.Title == "Enput Translation Overlay", "Translation windows need a stable native title for real-host automation.");
             overlay.ShowTranslation("translation-test", new TranslationView
             {
                 Title = "braces",

@@ -73,6 +73,7 @@ internal sealed class TranslationOverlayWindow : Window
 
     public TranslationOverlayWindow(Action<string>? clipboardWriter = null)
     {
+        Title = "Enput Translation Overlay";
         _clipboardWriter = clipboardWriter ?? Clipboard.SetText;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
